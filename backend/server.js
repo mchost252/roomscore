@@ -115,7 +115,9 @@ socketHandler(io);
 
 // Start server
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
+console.log(`🚀 Starting server on port ${PORT}...`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
   logger.info(`Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
 });
 
