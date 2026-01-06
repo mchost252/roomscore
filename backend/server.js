@@ -66,12 +66,23 @@ const limiter = rateLimit({
 app.use('/api/', limiter);
 
 // Database connection
+console.log('🔌 Attempting MongoDB connection...');
+console.log('📋 MongoDB URI:', process.env.MONGODB_URI ? 'Set (hidden for security)' : 'NOT SET!');
+
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/roomscore', {
   useNewUrlParser: true,
-  useUnifiedTopology: true
+  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 10000, // Timeout after 10 seconds instead of hanging forever
 })
-.then(() => logger.info('MongoDB connected successfully'))
-.catch((err) => logger.error('MongoDB connection error:', err));
+.then(() => {
+  console.log('✅ MongoDB connected successfully');
+  logger.info('MongoDB connected successfully');
+})
+.catch((err) => {
+  console.error('❌ MongoDB connection error:', err.message);
+  logger.error('MongoDB connection error:', err);
+  // Don't exit - let app run for health checks
+});
 
 // Make io accessible to routes and services
 app.set('io', io);
