@@ -2,16 +2,30 @@ const webpush = require('web-push');
 const User = require('../models/User');
 const logger = require('../utils/logger');
 
-// Configure web-push with VAPID keys
-webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT || 'mailto:admin@roomscore.com',
-  process.env.VAPID_PUBLIC_KEY,
-  process.env.VAPID_PRIVATE_KEY
-);
+// Configure web-push with VAPID keys (only if they exist)
+const vapidPublicKey = process.env.VAPID_PUBLIC_KEY;
+const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
+const pushNotificationsEnabled = !!(vapidPublicKey && vapidPrivateKey);
+
+if (pushNotificationsEnabled) {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || 'mailto:admin@roomscore.com',
+    vapidPublicKey,
+    vapidPrivateKey
+  );
+  console.log('✅ Push notifications enabled');
+} else {
+  console.log('⚠️  Push notifications disabled (VAPID keys not configured)');
+}
 
 class PushNotificationService {
   // Send push notification to a user
   static async sendToUser(userId, payload) {
+    // Skip if push notifications not configured
+    if (!pushNotificationsEnabled) {
+      return { success: false, reason: 'Push notifications not configured' };
+    }
+    
     try {
       const user = await User.findById(userId);
       
