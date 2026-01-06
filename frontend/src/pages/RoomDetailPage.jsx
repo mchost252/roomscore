@@ -165,6 +165,12 @@ const RoomDetailPage = () => {
       // Listen for new chat messages
       socket.on('chat:message', (data) => {
         if (data.message.roomId === roomId) {
+          // Don't add if it's from current user (already added optimistically)
+          const isOwnMessage = data.message.userId?._id === user?.id || data.message.userId === user?.id;
+          if (isOwnMessage) {
+            console.log('Ignoring own message from socket');
+            return;
+          }
           setChatMessages(prev => [...prev, data.message]);
         }
       });
@@ -489,6 +495,51 @@ const RoomDetailPage = () => {
     }
   };
 
+  const handleSendMessageFromDrawer = async (messageText) => {
+    if (!messageText.trim()) return;
+    
+    // OPTIMISTIC UPDATE - Add message to UI immediately with correct user data
+    const optimisticMessage = {
+      _id: `temp-${Date.now()}`,
+      message: messageText,
+      userId: {
+        _id: user?._id || user?.id,
+        username: user?.username || 'You',
+        avatar: user?.avatar || user?.profilePicture || null
+      },
+      createdAt: new Date().toISOString(),
+      sending: true // Flag to show sending state
+    };
+    
+    setChatMessages(prev => [...prev, optimisticMessage]);
+
+    // API call in background
+    try {
+      const response = await api.post(`/rooms/${roomId}/chat`, {
+        message: messageText
+      });
+      
+      // Replace optimistic message with real one
+      setChatMessages(prev => 
+        prev.map(msg => 
+          msg._id === optimisticMessage._id 
+            ? { ...response.data.message, sending: false }
+            : msg
+        )
+      );
+      
+      // Invalidate chat cache
+      invalidateCache(`/rooms/${roomId}/chat`);
+    } catch (err) {
+      console.error('Error sending message:', err);
+      
+      // Remove optimistic message and show error
+      setChatMessages(prev => prev.filter(msg => msg._id !== optimisticMessage._id));
+      setError('Failed to send message');
+      setTimeout(() => setError(null), 5000);
+    }
+  };
+
   const handleSendMessage = async () => {
     if (!chatMessage.trim()) return;
 
@@ -498,7 +549,7 @@ const RoomDetailPage = () => {
     const optimisticMessage = {
       _id: `temp-${Date.now()}`,
       message: messageText,
-      sender: {
+      userId: {
         _id: user?._id || user?.id,
         username: user?.username || 'You',
         avatar: user?.avatar || user?.profilePicture || null
@@ -1531,7 +1582,7 @@ const RoomDetailPage = () => {
         open={chatDrawerOpen}
         onClose={() => setChatDrawerOpen(false)}
         messages={chatMessages}
-        onSendMessage={handleSendMessage}
+        onSendMessage={handleSendMessageFromDrawer}
         currentUser={user}
         roomName={room?.name || 'Room Chat'}
       />
