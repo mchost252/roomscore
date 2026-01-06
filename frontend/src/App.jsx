@@ -1,0 +1,112 @@
+import React, { Suspense, lazy } from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { CssBaseline, Box } from '@mui/material';
+import { useAuth } from './context/AuthContext';
+import { useTheme as useCustomTheme } from './context/ThemeContext';
+
+// Components (loaded immediately)
+import Navbar from './components/Navbar';
+import ThemeToggle from './components/ThemeToggle';
+import LoadingScreen from './components/LoadingScreen';
+
+// Pages (lazy loaded for code splitting)
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const SignupPage = lazy(() => import('./pages/SignupPage'));
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const RoomListPage = lazy(() => import('./pages/RoomListPage'));
+const RoomDetailPage = lazy(() => import('./pages/RoomDetailPage'));
+const CreateRoomPage = lazy(() => import('./pages/CreateRoomPage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+
+// Protected Route Component
+const ProtectedRoute = ({ children }) => {
+  const { user, loading } = useAuth();
+  
+  if (loading) {
+    return <LoadingScreen />;
+  }
+  
+  return user ? children : <Navigate to="/login" />;
+};
+
+// Public Route Component (redirect to dashboard if logged in)
+const PublicRoute = ({ children }) => {
+  const { user, loading } = useAuth();
+  
+  if (loading) {
+    return <LoadingScreen />;
+  }
+  
+  return user ? <Navigate to="/dashboard" /> : children;
+};
+
+function App() {
+  const { mode } = useCustomTheme();
+
+  return (
+    <>
+      <CssBaseline />
+      <Box sx={{ 
+        minHeight: '100vh',
+        bgcolor: 'background.default',
+        pb: { xs: 8, sm: 0 }
+      }}>
+        <Suspense fallback={<LoadingScreen />}>
+          <Routes>
+            {/* Public Routes */}
+            <Route path="/login" element={
+              <PublicRoute>
+                <LoginPage />
+              </PublicRoute>
+            } />
+            <Route path="/signup" element={
+              <PublicRoute>
+                <SignupPage />
+              </PublicRoute>
+            } />
+
+            {/* Protected Routes */}
+            <Route path="/dashboard" element={
+              <ProtectedRoute>
+                <Navbar />
+                <DashboardPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/rooms" element={
+              <ProtectedRoute>
+                <Navbar />
+                <RoomListPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/rooms/create" element={
+              <ProtectedRoute>
+                <Navbar />
+                <CreateRoomPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/rooms/:roomId" element={
+              <ProtectedRoute>
+                <Navbar />
+                <RoomDetailPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/profile" element={
+              <ProtectedRoute>
+                <Navbar />
+                <ProfilePage />
+              </ProtectedRoute>
+            } />
+
+            {/* Default Route */}
+            <Route path="/" element={<Navigate to="/dashboard" />} />
+            <Route path="*" element={<Navigate to="/dashboard" />} />
+          </Routes>
+        </Suspense>
+
+        <ThemeToggle />
+      </Box>
+    </>
+  );
+}
+
+export default App;
