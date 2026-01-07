@@ -19,7 +19,7 @@ import {
   Tooltip,
   Button
 } from '@mui/material';
-import { Send, ArrowBack, EmojiEmotions } from '@mui/icons-material';
+import { Send, ArrowBack, EmojiEmotions, DoneAll, Done } from '@mui/icons-material';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
@@ -41,9 +41,27 @@ const MessagesPage = () => {
   const [emojiAnchor, setEmojiAnchor] = useState(null);
   const [conversationsLoaded, setConversationsLoaded] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
+  const [onlineUsers, setOnlineUsers] = useState(new Set());
   const messagesEndRef = useRef(null);
 
   const quickEmojis = ['👍', '❤️', '😂', '🔥', '🎉'];
+
+  // Online status indicator component
+  const OnlineIndicator = ({ isOnline, size = 12 }) => (
+    <Box
+      sx={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        bgcolor: isOnline ? '#44b700' : 'grey.400',
+        border: '2px solid',
+        borderColor: 'background.paper',
+        position: 'absolute',
+        bottom: 0,
+        right: 0,
+      }}
+    />
+  );
 
   useEffect(() => {
     // Load from cache first for instant display
@@ -82,15 +100,57 @@ const MessagesPage = () => {
           (message.sender._id === selectedFriend._id || message.recipient._id === selectedFriend._id)) {
         setMessages(prev => [...prev, message]);
         scrollToBottom();
+        
+        // Mark message as read and notify sender
+        if (message.sender._id === selectedFriend._id) {
+          socket.emit('dm:read', { 
+            senderId: message.sender._id, 
+            messageIds: [message._id] 
+          });
+        }
       }
       // Update conversations in cache only - don't refetch
       // This prevents slow API calls on every message
     };
 
+    // Handle online status updates
+    const handleUserStatus = ({ userId, isOnline }) => {
+      setOnlineUsers(prev => {
+        const newSet = new Set(prev);
+        if (isOnline) {
+          newSet.add(userId);
+        } else {
+          newSet.delete(userId);
+        }
+        return newSet;
+      });
+    };
+
+    // Handle initial online users list
+    const handleOnlineUsers = (userIds) => {
+      setOnlineUsers(new Set(userIds));
+    };
+
+    // Handle read receipts
+    const handleDmRead = ({ readBy, messageIds, readAt }) => {
+      setMessages(prev => prev.map(msg => {
+        if (messageIds.includes(msg._id)) {
+          return { ...msg, isRead: true, readAt };
+        }
+        return msg;
+      }));
+    };
+
     socket.on('new_direct_message', handleNewDirectMessage);
+    socket.on('user:status', handleUserStatus);
+    socket.on('users:online', handleOnlineUsers);
+    socket.on('dm:read', handleDmRead);
 
     return () => {
       socket.off('new_direct_message', handleNewDirectMessage);
+      socket.off('user:status', handleUserStatus);
+      socket.off('users:online', handleOnlineUsers);
+      socket.off('dm:read', handleDmRead);
     };
   }, [socket, selectedFriend]);
 
@@ -359,10 +419,18 @@ const MessagesPage = () => {
                 sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1, cursor: 'pointer' }}
                 onClick={() => setProfileDialogOpen(true)}
               >
-                <Avatar src={selectedFriend.avatar} sx={{ width: 44, height: 44 }}>{selectedFriend.username[0]}</Avatar>
-                <Typography variant="h6" fontWeight="bold">
-                  {selectedFriend.username}
-                </Typography>
+                <Box sx={{ position: 'relative' }}>
+                  <Avatar src={selectedFriend.avatar} sx={{ width: 44, height: 44 }}>{selectedFriend.username[0]}</Avatar>
+                  <OnlineIndicator isOnline={onlineUsers.has(selectedFriend._id)} size={14} />
+                </Box>
+                <Box>
+                  <Typography variant="h6" fontWeight="bold" sx={{ lineHeight: 1.2 }}>
+                    {selectedFriend.username}
+                  </Typography>
+                  <Typography variant="caption" color={onlineUsers.has(selectedFriend._id) ? 'success.main' : 'text.secondary'}>
+                    {onlineUsers.has(selectedFriend._id) ? 'Online' : 'Offline'}
+                  </Typography>
+                </Box>
               </Box>
             </Paper>
 
@@ -422,19 +490,25 @@ const MessagesPage = () => {
                           }}
                         >
                           <Typography variant="body1" sx={{ color: 'inherit', wordBreak: 'break-word' }}>{msg.message}</Typography>
-                          <Typography 
-                            variant="caption" 
-                            sx={{ 
-                              opacity: 0.7, 
-                              display: 'block', 
-                              mt: 0.5, 
-                              color: 'inherit',
-                              textAlign: 'right',
-                              fontSize: '0.7rem'
-                            }}
-                          >
-                            {formatTime(msg.createdAt)}
-                          </Typography>
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5, mt: 0.5 }}>
+                            <Typography 
+                              variant="caption" 
+                              sx={{ 
+                                opacity: 0.7, 
+                                color: 'inherit',
+                                fontSize: '0.7rem'
+                              }}
+                            >
+                              {formatTime(msg.createdAt)}
+                            </Typography>
+                            {isOwn && (
+                              msg.isRead ? (
+                                <DoneAll sx={{ fontSize: 14, color: 'inherit', opacity: 0.9 }} />
+                              ) : (
+                                <Done sx={{ fontSize: 14, color: 'inherit', opacity: 0.7 }} />
+                              )
+                            )}
+                          </Box>
                         </Box>
                       </Box>
                     );
@@ -525,7 +599,6 @@ const MessagesPage = () => {
               ))}
             </Box>
           </Popover>
-          </Container>
         </>
       );
     }
@@ -570,7 +643,10 @@ const MessagesPage = () => {
                   <ListItem button onClick={() => handleSelectConversation(conv.friend)}>
                     <ListItemAvatar>
                       <Badge badgeContent={conv.unreadCount} color="error">
-                        <Avatar src={conv.friend.avatar}>{conv.friend.username[0]}</Avatar>
+                        <Box sx={{ position: 'relative' }}>
+                          <Avatar src={conv.friend.avatar}>{conv.friend.username[0]}</Avatar>
+                          <OnlineIndicator isOnline={onlineUsers.has(conv.friend._id)} />
+                        </Box>
                       </Badge>
                     </ListItemAvatar>
                     <ListItemText
@@ -644,7 +720,10 @@ const MessagesPage = () => {
                   >
                     <ListItemAvatar>
                       <Badge badgeContent={conv.unreadCount} color="error">
-                        <Avatar src={conv.friend.avatar}>{conv.friend.username[0]}</Avatar>
+                        <Box sx={{ position: 'relative' }}>
+                          <Avatar src={conv.friend.avatar}>{conv.friend.username[0]}</Avatar>
+                          <OnlineIndicator isOnline={onlineUsers.has(conv.friend._id)} />
+                        </Box>
                       </Badge>
                     </ListItemAvatar>
                     <ListItemText
@@ -682,10 +761,18 @@ const MessagesPage = () => {
                 }}
                 onClick={() => setProfileDialogOpen(true)}
               >
-                <Avatar src={selectedFriend.avatar}>{selectedFriend.username[0]}</Avatar>
-                <Typography variant="h6" fontWeight="bold">
-                  {selectedFriend.username}
-                </Typography>
+                <Box sx={{ position: 'relative' }}>
+                  <Avatar src={selectedFriend.avatar}>{selectedFriend.username[0]}</Avatar>
+                  <OnlineIndicator isOnline={onlineUsers.has(selectedFriend._id)} />
+                </Box>
+                <Box>
+                  <Typography variant="h6" fontWeight="bold" sx={{ lineHeight: 1.2 }}>
+                    {selectedFriend.username}
+                  </Typography>
+                  <Typography variant="caption" color={onlineUsers.has(selectedFriend._id) ? 'success.main' : 'text.secondary'}>
+                    {onlineUsers.has(selectedFriend._id) ? 'Online' : 'Offline'}
+                  </Typography>
+                </Box>
               </Box>
 
               {/* Messages */}
@@ -744,19 +831,25 @@ const MessagesPage = () => {
                             }}
                           >
                             <Typography variant="body1" sx={{ color: 'inherit', wordBreak: 'break-word' }}>{msg.message}</Typography>
-                            <Typography 
-                              variant="caption" 
-                              sx={{ 
-                                opacity: 0.7, 
-                                display: 'block', 
-                                mt: 0.5, 
-                                color: 'inherit',
-                                textAlign: 'right',
-                                fontSize: '0.7rem'
-                              }}
-                            >
-                              {formatTime(msg.createdAt)}
-                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5, mt: 0.5 }}>
+                              <Typography 
+                                variant="caption" 
+                                sx={{ 
+                                  opacity: 0.7, 
+                                  color: 'inherit',
+                                  fontSize: '0.7rem'
+                                }}
+                              >
+                                {formatTime(msg.createdAt)}
+                              </Typography>
+                              {isOwn && (
+                                msg.isRead ? (
+                                  <DoneAll sx={{ fontSize: 14, color: 'inherit', opacity: 0.9 }} />
+                                ) : (
+                                  <Done sx={{ fontSize: 14, color: 'inherit', opacity: 0.7 }} />
+                                )
+                              )}
+                            </Box>
                           </Box>
                         </Box>
                       );

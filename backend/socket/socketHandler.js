@@ -2,7 +2,13 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const logger = require('../utils/logger');
 
+// Track online users: Map<userId, Set<socketId>>
+const onlineUsers = new Map();
+
 module.exports = (io) => {
+  // Helper to get online user IDs
+  const getOnlineUserIds = () => Array.from(onlineUsers.keys());
+
   // Authentication middleware for socket connections
   io.use(async (socket, next) => {
     try {
@@ -30,8 +36,20 @@ module.exports = (io) => {
   io.on('connection', (socket) => {
     logger.info(`User connected: ${socket.username} (${socket.userId})`);
 
+    // Track online status
+    if (!onlineUsers.has(socket.userId)) {
+      onlineUsers.set(socket.userId, new Set());
+    }
+    onlineUsers.get(socket.userId).add(socket.id);
+
+    // Broadcast to all users that this user is online
+    io.emit('user:status', { userId: socket.userId, isOnline: true });
+
     // Join user's personal room
     socket.join(`user:${socket.userId}`);
+
+    // Send current online users to the newly connected user
+    socket.emit('users:online', getOnlineUserIds());
 
     // Join room
     socket.on('room:join', (roomId) => {
@@ -75,9 +93,29 @@ module.exports = (io) => {
       });
     });
 
+    // Mark messages as read - notify sender
+    socket.on('dm:read', ({ senderId, messageIds }) => {
+      socket.to(`user:${senderId}`).emit('dm:read', {
+        readBy: socket.userId,
+        messageIds,
+        readAt: new Date().toISOString()
+      });
+    });
+
     // Handle disconnect
     socket.on('disconnect', () => {
       logger.info(`User disconnected: ${socket.username} (${socket.userId})`);
+      
+      // Remove socket from online tracking
+      if (onlineUsers.has(socket.userId)) {
+        onlineUsers.get(socket.userId).delete(socket.id);
+        // If user has no more active sockets, they're offline
+        if (onlineUsers.get(socket.userId).size === 0) {
+          onlineUsers.delete(socket.userId);
+          // Broadcast to all users that this user is offline
+          io.emit('user:status', { userId: socket.userId, isOnline: false });
+        }
+      }
     });
 
     // Error handling
