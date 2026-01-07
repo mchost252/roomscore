@@ -66,6 +66,15 @@ module.exports = (io) => {
       });
     });
 
+    // Direct message typing indicator
+    socket.on('dm:typing', ({ recipientId, isTyping }) => {
+      socket.to(`user:${recipientId}`).emit('dm:typing', {
+        userId: socket.userId,
+        username: socket.username,
+        isTyping
+      });
+    });
+
     // Handle disconnect
     socket.on('disconnect', () => {
       logger.info(`User disconnected: ${socket.username} (${socket.userId})`);

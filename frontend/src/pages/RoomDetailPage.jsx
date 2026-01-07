@@ -1045,9 +1045,12 @@ const RoomDetailPage = () => {
                   borderRadius: 1,
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 1
+                  gap: 1,
+                  cursor: 'pointer'
                 }}
                 id="chat-container"
+                onDoubleClick={() => setChatDrawerOpen(true)}
+                title="Double-click to open full chat"
               >
                 {chatMessages.length === 0 ? (
                   <Box sx={{ textAlign: 'center', py: 4 }}>

@@ -16,6 +16,8 @@ const roomRoutes = require('./routes/rooms');
 const taskRoutes = require('./routes/tasks');
 const notificationRoutes = require('./routes/notifications');
 const pushRoutes = require('./routes/push');
+const friendRoutes = require('./routes/friends');
+const directMessageRoutes = require('./routes/directMessages');
 
 // Import socket handler and cron jobs
 const socketHandler = require('./socket/socketHandler');
@@ -97,6 +99,8 @@ app.use('/api/rooms', roomRoutes);
 app.use('/api/rooms', taskRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/push', pushRoutes);
+app.use('/api/friends', friendRoutes);
+app.use('/api/direct-messages', directMessageRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

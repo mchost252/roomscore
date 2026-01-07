@@ -17,6 +17,7 @@ const RoomListPage = lazy(() => import('./pages/RoomListPage'));
 const RoomDetailPage = lazy(() => import('./pages/RoomDetailPage'));
 const CreateRoomPage = lazy(() => import('./pages/CreateRoomPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const FriendsPage = lazy(() => import('./pages/FriendsPage'));
 const MessagesPage = lazy(() => import('./pages/MessagesPage'));
 const ChangelogPage = lazy(() => import('./pages/ChangelogPage'));
 
@@ -98,7 +99,19 @@ function App() {
                 <ProfilePage />
               </ProtectedRoute>
             } />
+            <Route path="/friends" element={
+              <ProtectedRoute>
+                <Navbar />
+                <FriendsPage />
+              </ProtectedRoute>
+            } />
             <Route path="/messages" element={
+              <ProtectedRoute>
+                <Navbar />
+                <MessagesPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/messages/:friendId" element={
               <ProtectedRoute>
                 <Navbar />
                 <MessagesPage />

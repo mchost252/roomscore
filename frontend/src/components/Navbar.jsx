@@ -29,6 +29,8 @@ import {
   Add,
   Logout,
   Settings,
+  People,
+  Message,
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { useDeviceType } from '../hooks/useDeviceType';
@@ -58,7 +60,9 @@ const Navbar = () => {
   const getNavValue = () => {
     if (location.pathname === '/dashboard') return 0;
     if (location.pathname.startsWith('/rooms')) return 1;
-    if (location.pathname === '/profile') return 2;
+    if (location.pathname === '/friends') return 2;
+    if (location.pathname.startsWith('/messages')) return 3;
+    if (location.pathname === '/profile') return 4;
     return 0;
   };
 
@@ -81,12 +85,16 @@ const Navbar = () => {
             onChange={(event, newValue) => {
               if (newValue === 0) navigate('/dashboard');
               if (newValue === 1) navigate('/rooms');
-              if (newValue === 2) navigate('/profile');
+              if (newValue === 2) navigate('/friends');
+              if (newValue === 3) navigate('/messages');
+              if (newValue === 4) navigate('/profile');
             }}
             showLabels
           >
             <BottomNavigationAction label="Dashboard" icon={<Dashboard />} />
             <BottomNavigationAction label="Rooms" icon={<Groups />} />
+            <BottomNavigationAction label="Friends" icon={<People />} />
+            <BottomNavigationAction label="Messages" icon={<Message />} />
             <BottomNavigationAction label="Profile" icon={<AccountCircle />} />
           </BottomNavigation>
         </Paper>
@@ -121,6 +129,20 @@ const Navbar = () => {
           >
             <Groups sx={{ mr: 1 }} />
             Rooms
+          </MenuItem>
+          <MenuItem
+            onClick={() => navigate('/friends')}
+            selected={location.pathname === '/friends'}
+          >
+            <People sx={{ mr: 1 }} />
+            Friends
+          </MenuItem>
+          <MenuItem
+            onClick={() => navigate('/messages')}
+            selected={location.pathname.startsWith('/messages')}
+          >
+            <Message sx={{ mr: 1 }} />
+            Messages
           </MenuItem>
         </Box>
 
