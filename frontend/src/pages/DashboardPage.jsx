@@ -26,6 +26,8 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import api, { invalidateCache } from '../utils/api';
 import { format, startOfDay, differenceInDays } from 'date-fns';
+import OnboardingModal from '../components/OnboardingModal';
+import WhatsNewCard from '../components/WhatsNewCard';
 
 const DashboardPage = () => {
   const { user } = useAuth();
@@ -34,8 +36,14 @@ const DashboardPage = () => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
+    // Show onboarding if just signed up (flag set in SignupPage)
+    if (localStorage.getItem('isNewUser') === 'true') {
+      setShowOnboarding(true);
+    }
+
     // Show content immediately, load data in background
     if (user) {
       // Set stats immediately from user context
@@ -51,6 +59,11 @@ const DashboardPage = () => {
     }
   }, [user]);
   
+  const handleOnboardingClose = () => {
+    setShowOnboarding(false);
+    localStorage.removeItem('isNewUser');
+  };
+
   // Preload rooms on mount for instant display
   useEffect(() => {
     if (user) {
@@ -88,6 +101,9 @@ const DashboardPage = () => {
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+      {/* Onboarding Modal (after signup) */}
+      <OnboardingModal open={showOnboarding} onClose={handleOnboardingClose} />
+
       {/* What's New */}
       <WhatsNewCard />
 

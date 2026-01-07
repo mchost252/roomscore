@@ -3,6 +3,11 @@ const router = express.Router();
 const passport = require('passport');
 const User = require('../models/User');
 const { protect } = require('../middleware/auth');
+const TaskCompletion = require('../models/TaskCompletion');
+const UserRoomProgress = require('../models/UserRoomProgress');
+const Room = require('../models/Room');
+const ChatMessage = require('../models/ChatMessage');
+const Notification = require('../models/Notification');
 const { validate, registerSchema, loginSchema, updateProfileSchema } = require('../middleware/validation');
 const { sendTokenResponse, verifyRefreshToken, generateToken } = require('../utils/jwt');
 const logger = require('../utils/logger');
@@ -187,6 +192,43 @@ router.post('/logout', protect, (req, res) => {
     success: true,
     message: 'Logged out successfully'
   });
+});
+
+// @route   DELETE /api/auth/account
+// @desc    Permanently delete current user's account and related data
+// @access  Private
+router.delete('/account', protect, async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    // Remove user from all rooms
+    await Room.updateMany(
+      { 'members.userId': userId },
+      { $pull: { members: { userId } } }
+    );
+
+    // If user is owner of any rooms, mark them inactive (simple safe behavior)
+    await Room.updateMany(
+      { owner: userId },
+      { $set: { isActive: false, deletedAt: new Date() } }
+    );
+
+    // Delete related records
+    await Promise.all([
+      TaskCompletion.deleteMany({ userId }),
+      UserRoomProgress.deleteMany({ userId }),
+      ChatMessage.deleteMany({ userId }),
+      Notification.deleteMany({ userId })
+    ]);
+
+    // Finally delete the user
+    await User.findByIdAndDelete(userId);
+
+    logger.info(`User account deleted: ${userId}`);
+    res.json({ success: true, message: 'Account deleted' });
+  } catch (error) {
+    next(error);
+  }
 });
 
 module.exports = router;
