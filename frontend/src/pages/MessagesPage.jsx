@@ -161,6 +161,23 @@ const MessagesPage = () => {
         }
       }
       
+      // If friend still not found, fetch from API first
+      if (!friendFound) {
+        try {
+          const friendsRes = await api.get('/friends');
+          const friends = friendsRes.data.friends || [];
+          const friend = friends.find(f => f._id === fId);
+          if (friend) {
+            setSelectedFriend(friend);
+            friendFound = true;
+            // Update cache
+            sessionStorage.setItem('friends_cache', JSON.stringify(friends));
+          }
+        } catch (e) {
+          console.error('Error fetching friends:', e);
+        }
+      }
+      
       // Fetch messages from API
       const res = await api.get(`/direct-messages/${fId}`);
       const messagesData = res.data.messages || [];
@@ -173,17 +190,6 @@ const MessagesPage = () => {
         const firstMsg = messagesData[0];
         const friendData = firstMsg.sender._id === user?._id ? firstMsg.recipient : firstMsg.sender;
         setSelectedFriend(friendData);
-      }
-      
-      // If still no friend found, fetch from friends API
-      if (!friendFound && messagesData.length === 0) {
-        try {
-          const friendsRes = await api.get('/friends');
-          const friend = friendsRes.data.friends?.find(f => f._id === fId);
-          if (friend) {
-            setSelectedFriend(friend);
-          }
-        } catch (e) {}
       }
     } catch (err) {
       console.error('Error loading messages:', err);
@@ -243,7 +249,17 @@ const MessagesPage = () => {
 
   // Mobile view - show either conversations or selected chat
   if (isMobile) {
-    if (friendId && selectedFriend) {
+    // Show loading or chat when friendId is present
+    if (friendId) {
+      // Show loading spinner while selectedFriend is being fetched
+      if (!selectedFriend) {
+        return (
+          <Container maxWidth="md" sx={{ height: 'calc(100vh - 120px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <CircularProgress />
+          </Container>
+        );
+      }
+      
       return (
         <>
           <UserProfileDialog 

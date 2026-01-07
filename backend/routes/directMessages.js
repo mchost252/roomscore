@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const { protect } = require('../middleware/auth');
 const DirectMessage = require('../models/DirectMessage');
 const Friend = require('../models/Friend');
@@ -10,7 +11,7 @@ const User = require('../models/User');
 // @access  Private
 router.get('/conversations', protect, async (req, res, next) => {
   try {
-    const userId = req.user.id;
+    const userId = new mongoose.Types.ObjectId(req.user.id);
 
     // Get all friends - single query
     const friendships = await Friend.find({
@@ -25,9 +26,9 @@ router.get('/conversations', protect, async (req, res, next) => {
       return res.json({ success: true, conversations: [] });
     }
 
-    // Get friend IDs
+    // Get friend IDs as ObjectIds
     const friendIds = friendships.map(f => 
-      f.requester._id.toString() === userId ? f.recipient._id : f.requester._id
+      f.requester._id.toString() === userId.toString() ? f.recipient._id : f.requester._id
     );
 
     // Get last messages and unread counts in parallel with aggregation
@@ -87,7 +88,7 @@ router.get('/conversations', protect, async (req, res, next) => {
 
     // Build conversations array
     const conversations = friendships.map(friendship => {
-      const friendData = friendship.requester._id.toString() === userId 
+      const friendData = friendship.requester._id.toString() === userId.toString() 
         ? friendship.recipient 
         : friendship.requester;
       

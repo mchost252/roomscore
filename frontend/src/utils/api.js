@@ -6,16 +6,16 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 15000, // 15 second timeout
 });
 
-// Cache configuration for different endpoints
+// Cache configuration for different endpoints - use exact match or regex
 const CACHE_CONFIG = {
-  '/auth/profile': { ttl: 10 * 60 * 1000, cacheable: true }, // 10 minutes
-  '/rooms': { ttl: 2 * 60 * 1000, cacheable: true }, // 2 minutes
-  '/rooms/': { ttl: 3 * 60 * 1000, cacheable: true }, // 3 minutes for specific room (longer for better UX)
-  '/tasks': { ttl: 2 * 60 * 1000, cacheable: true }, // 2 minutes for tasks
-  '/chat': { ttl: 1 * 60 * 1000, cacheable: true }, // 1 minute for chat
-  '/notifications': { ttl: 30 * 1000, cacheable: true }, // 30 seconds
+  '/auth/profile': { ttl: 10 * 60 * 1000, cacheable: true, exact: true },
+  '/rooms': { ttl: 2 * 60 * 1000, cacheable: true, exact: true },
+  '/notifications': { ttl: 30 * 1000, cacheable: true, exact: true },
+  '/direct-messages/conversations': { ttl: 30 * 1000, cacheable: true, exact: true },
+  '/friends': { ttl: 60 * 1000, cacheable: true, exact: true },
 };
 
 // Check if endpoint should be cached
@@ -23,7 +23,12 @@ const shouldCache = (url, method) => {
   if (method !== 'get' && method !== 'GET') return false;
   
   for (const [pattern, config] of Object.entries(CACHE_CONFIG)) {
-    if (url.includes(pattern) && config.cacheable) {
+    if (config.exact) {
+      // Exact match - URL must end with pattern or be exactly the pattern
+      if (url === pattern || url.endsWith(pattern)) {
+        return config;
+      }
+    } else if (url.includes(pattern) && config.cacheable) {
       return config;
     }
   }
