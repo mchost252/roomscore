@@ -214,34 +214,31 @@ const MessagesPage = () => {
     const messageText = newMessage.trim();
     setNewMessage(''); // Clear input immediately for better UX
     
+    // Create optimistic message for instant UI feedback
+    const tempId = `temp_${Date.now()}`;
+    const optimisticMessage = {
+      _id: tempId,
+      message: messageText,
+      createdAt: new Date().toISOString(),
+      sender: { _id: user._id || user.id },
+      recipient: { _id: selectedFriend._id }
+    };
+    
+    // Show message immediately
+    setMessages(prev => [...prev, optimisticMessage]);
+    scrollToBottom();
+    
     try {
       setSending(true);
       const res = await api.post(`/direct-messages/${selectedFriend._id}`, {
         message: messageText
       });
-      const updatedMessages = [...messages, res.data.message];
-      setMessages(updatedMessages);
-      // Update cache - strip large data and keep only last 20 messages
-      try {
-        const messagesToCache = updatedMessages.slice(-20).map(m => ({
-          _id: m._id,
-          message: m.message,
-          createdAt: m.createdAt,
-          sender: { _id: m.sender?._id },
-          recipient: { _id: m.recipient?._id }
-        }));
-        sessionStorage.setItem(`messages_${selectedFriend._id}`, JSON.stringify(messagesToCache));
-      } catch (e) {
-        // If storage is full, clear all message caches
-        Object.keys(sessionStorage).forEach(key => {
-          if (key.startsWith('messages_')) sessionStorage.removeItem(key);
-        });
-      }
-      scrollToBottom();
-      // Don't refresh conversations on send - it's too slow
-      // loadConversations(); // Removed for performance
+      // Replace optimistic message with real one
+      setMessages(prev => prev.map(m => m._id === tempId ? res.data.message : m));
     } catch (err) {
       console.error('Error sending message:', err);
+      // Remove optimistic message on error
+      setMessages(prev => prev.filter(m => m._id !== tempId));
       setNewMessage(messageText); // Restore message on error
     } finally {
       setSending(false);
@@ -321,14 +318,17 @@ const MessagesPage = () => {
               messages.map((msg, idx) => {
                 // Skip messages with missing sender data
                 if (!msg?.sender?._id) return null;
-                const isOwn = msg.sender._id.toString() === user?._id?.toString();
+                const senderId = String(msg.sender._id);
+                const currentUserId = String(user?._id || user?.id || '');
+                const isOwn = senderId === currentUserId;
                 return (
                   <Box
                     key={msg._id || idx}
                     sx={{
                       display: 'flex',
                       justifyContent: isOwn ? 'flex-end' : 'flex-start',
-                      mb: 1
+                      mb: 1,
+                      transition: 'all 0.2s ease-in-out'
                     }}
                   >
                     <Paper
@@ -339,7 +339,8 @@ const MessagesPage = () => {
                         bgcolor: isOwn ? 'primary.main' : 'background.default',
                         color: isOwn ? 'primary.contrastText' : 'text.primary',
                         border: isOwn ? 'none' : '1px solid',
-                        borderColor: isOwn ? 'transparent' : 'divider'
+                        borderColor: isOwn ? 'transparent' : 'divider',
+                        animation: msg._id?.startsWith?.('temp_') ? 'fadeIn 0.2s ease-in' : 'none'
                       }}
                     >
                       <Typography variant="body2" sx={{ color: 'inherit' }}>{msg.message}</Typography>
@@ -580,14 +581,17 @@ const MessagesPage = () => {
                   messages.map((msg, idx) => {
                     // Skip messages with missing sender data
                     if (!msg?.sender?._id) return null;
-                    const isOwn = msg.sender._id.toString() === user?._id?.toString();
+                    const senderId = String(msg.sender._id);
+                    const currentUserId = String(user?._id || user?.id || '');
+                    const isOwn = senderId === currentUserId;
                     return (
                       <Box
                         key={msg._id || idx}
                         sx={{
                           display: 'flex',
                           justifyContent: isOwn ? 'flex-end' : 'flex-start',
-                          mb: 1
+                          mb: 1,
+                          transition: 'all 0.2s ease-in-out'
                         }}
                       >
                         <Paper
@@ -598,7 +602,8 @@ const MessagesPage = () => {
                             bgcolor: isOwn ? 'primary.main' : 'background.default',
                             color: isOwn ? 'primary.contrastText' : 'text.primary',
                             border: isOwn ? 'none' : '1px solid',
-                            borderColor: isOwn ? 'transparent' : 'divider'
+                            borderColor: isOwn ? 'transparent' : 'divider',
+                            animation: msg._id?.startsWith?.('temp_') ? 'fadeIn 0.2s ease-in' : 'none'
                           }}
                         >
                           <Typography variant="body2" sx={{ color: 'inherit' }}>{msg.message}</Typography>
