@@ -182,8 +182,13 @@ const MessagesPage = () => {
       const res = await api.get(`/direct-messages/${fId}`);
       const messagesData = res.data.messages || [];
       setMessages(messagesData);
-      // Cache messages
-      sessionStorage.setItem(`messages_${fId}`, JSON.stringify(messagesData));
+      // Cache messages - only keep last 50 to avoid quota issues
+      const messagesToCache = messagesData.slice(-50);
+      try {
+        sessionStorage.setItem(`messages_${fId}`, JSON.stringify(messagesToCache));
+      } catch (e) {
+        console.warn('Storage quota exceeded when caching messages');
+      }
       
       // If friend not found in cache, extract from first message
       if (!friendFound && messagesData.length > 0) {
@@ -210,8 +215,24 @@ const MessagesPage = () => {
       });
       const updatedMessages = [...messages, res.data.message];
       setMessages(updatedMessages);
-      // Update cache immediately
-      sessionStorage.setItem(`messages_${selectedFriend._id}`, JSON.stringify(updatedMessages));
+      // Update cache immediately - only keep last 50 messages to avoid quota issues
+      const messagesToCache = updatedMessages.slice(-50);
+      try {
+        sessionStorage.setItem(`messages_${selectedFriend._id}`, JSON.stringify(messagesToCache));
+      } catch (e) {
+        // If storage is full, clear old message caches and try again
+        console.warn('Storage quota exceeded, clearing old caches');
+        Object.keys(sessionStorage).forEach(key => {
+          if (key.startsWith('messages_')) {
+            sessionStorage.removeItem(key);
+          }
+        });
+        try {
+          sessionStorage.setItem(`messages_${selectedFriend._id}`, JSON.stringify(messagesToCache));
+        } catch (e2) {
+          console.error('Failed to cache messages even after clearing:', e2);
+        }
+      }
       scrollToBottom();
       // Don't refresh conversations on send - it's too slow
       // loadConversations(); // Removed for performance
@@ -294,7 +315,9 @@ const MessagesPage = () => {
               </Box>
             ) : (
               messages.map((msg, idx) => {
-                const isOwn = msg.sender._id.toString() === user?._id.toString();
+                // Skip messages with missing sender data
+                if (!msg?.sender?._id) return null;
+                const isOwn = msg.sender._id.toString() === user?._id?.toString();
                 return (
                   <Box
                     key={msg._id || idx}
@@ -551,7 +574,9 @@ const MessagesPage = () => {
                   </Box>
                 ) : (
                   messages.map((msg, idx) => {
-                    const isOwn = msg.sender._id.toString() === user?._id.toString();
+                    // Skip messages with missing sender data
+                    if (!msg?.sender?._id) return null;
+                    const isOwn = msg.sender._id.toString() === user?._id?.toString();
                     return (
                       <Box
                         key={msg._id || idx}
