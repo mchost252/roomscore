@@ -16,7 +16,8 @@ import {
   Tab,
   Chip,
   InputAdornment,
-  CircularProgress
+  CircularProgress,
+  Alert
 } from '@mui/material';
 import {
   PersonAdd,
@@ -26,10 +27,12 @@ import {
   Message as MessageIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import { useDeviceType } from '../hooks/useDeviceType';
 import api from '../utils/api';
 
 const FriendsPage = () => {
   const navigate = useNavigate();
+  const { isMobile } = useDeviceType();
   const [tab, setTab] = useState(0);
   const [friends, setFriends] = useState([]);
   const [requests, setRequests] = useState([]);
@@ -40,6 +43,23 @@ const FriendsPage = () => {
   const [success, setSuccess] = useState(null);
 
   useEffect(() => {
+    // Load from cache first for instant display
+    const cachedFriends = sessionStorage.getItem('friends_cache');
+    const cachedRequests = sessionStorage.getItem('friend_requests_cache');
+    
+    if (cachedFriends) {
+      try {
+        setFriends(JSON.parse(cachedFriends));
+      } catch (e) {}
+    }
+    
+    if (cachedRequests) {
+      try {
+        setRequests(JSON.parse(cachedRequests));
+      } catch (e) {}
+    }
+    
+    // Then load fresh data in background
     loadFriends();
     loadRequests();
   }, []);
@@ -47,7 +67,10 @@ const FriendsPage = () => {
   const loadFriends = async () => {
     try {
       const res = await api.get('/friends');
-      setFriends(res.data.friends || []);
+      const friendsData = res.data.friends || [];
+      setFriends(friendsData);
+      // Cache for instant loading next time
+      sessionStorage.setItem('friends_cache', JSON.stringify(friendsData));
     } catch (err) {
       console.error('Error loading friends:', err);
     }
@@ -56,7 +79,10 @@ const FriendsPage = () => {
   const loadRequests = async () => {
     try {
       const res = await api.get('/friends/requests');
-      setRequests(res.data.requests || []);
+      const requestsData = res.data.requests || [];
+      setRequests(requestsData);
+      // Cache for instant loading next time
+      sessionStorage.setItem('friend_requests_cache', JSON.stringify(requestsData));
     } catch (err) {
       console.error('Error loading requests:', err);
     }
@@ -130,28 +156,28 @@ const FriendsPage = () => {
   };
 
   return (
-    <Container maxWidth="md" sx={{ mt: 4, mb: 4 }}>
-      <Paper sx={{ p: 3 }}>
+    <Container maxWidth="md" sx={{ mt: isMobile ? 2 : 4, mb: isMobile ? 10 : 4, px: isMobile ? 1 : 3 }}>
+      <Paper sx={{ p: isMobile ? 2 : 3 }}>
         <Typography variant="h5" fontWeight="bold" gutterBottom>
           Friends
         </Typography>
 
-        <Tabs value={tab} onChange={(e, v) => setTab(v)} sx={{ mb: 2 }}>
+        <Tabs value={tab} onChange={(e, v) => setTab(v)} sx={{ mb: 2 }} variant={isMobile ? "fullWidth" : "standard"}>
           <Tab label={`Friends (${friends.length})`} />
           <Tab label={`Requests (${requests.length})`} />
-          <Tab label="Find Friends" />
+          <Tab label="Find" />
         </Tabs>
 
         {success && (
-          <Box sx={{ mb: 2, p: 1, bgcolor: 'success.light', borderRadius: 1 }}>
-            <Typography variant="body2" color="success.dark">{success}</Typography>
-          </Box>
+          <Alert severity="success" onClose={() => setSuccess(null)} sx={{ mb: 2 }}>
+            {success}
+          </Alert>
         )}
 
         {error && (
-          <Box sx={{ mb: 2, p: 1, bgcolor: 'error.light', borderRadius: 1 }}>
-            <Typography variant="body2" color="error.dark">{error}</Typography>
-          </Box>
+          <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>
+            {error}
+          </Alert>
         )}
 
         {/* Friends List */}
@@ -245,7 +271,7 @@ const FriendsPage = () => {
           <>
             <TextField
               fullWidth
-              placeholder="Search by username or email..."
+              placeholder="Search by username..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleSearch()}

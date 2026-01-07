@@ -22,6 +22,7 @@ import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import { useDeviceType } from '../hooks/useDeviceType';
+import UserProfileDialog from '../components/UserProfileDialog';
 
 const MessagesPage = () => {
   const navigate = useNavigate();
@@ -35,9 +36,19 @@ const MessagesPage = () => {
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
+    // Load from cache first for instant display
+    const cachedConversations = sessionStorage.getItem('conversations_cache');
+    if (cachedConversations) {
+      try {
+        setConversations(JSON.parse(cachedConversations));
+      } catch (e) {}
+    }
+    
+    // Then load fresh data in background
     loadConversations();
   }, []);
 
@@ -79,7 +90,10 @@ const MessagesPage = () => {
   const loadConversations = async () => {
     try {
       const res = await api.get('/direct-messages/conversations');
-      setConversations(res.data.conversations || []);
+      const conversationsData = res.data.conversations || [];
+      setConversations(conversationsData);
+      // Cache for instant loading next time
+      sessionStorage.setItem('conversations_cache', JSON.stringify(conversationsData));
     } catch (err) {
       console.error('Error loading conversations:', err);
     }
@@ -87,9 +101,21 @@ const MessagesPage = () => {
 
   const loadMessages = async (fId) => {
     try {
-      setLoading(true);
+      // Load from cache first for instant display
+      const cachedMessages = sessionStorage.getItem(`messages_${fId}`);
+      if (cachedMessages) {
+        try {
+          setMessages(JSON.parse(cachedMessages));
+        } catch (e) {}
+      } else {
+        setLoading(true);
+      }
+      
       const res = await api.get(`/direct-messages/${fId}`);
-      setMessages(res.data.messages || []);
+      const messagesData = res.data.messages || [];
+      setMessages(messagesData);
+      // Cache messages
+      sessionStorage.setItem(`messages_${fId}`, JSON.stringify(messagesData));
       
       // Find friend info from conversations or fetch it
       const conv = conversations.find(c => c.friend._id === fId);
@@ -122,8 +148,11 @@ const MessagesPage = () => {
       const res = await api.post(`/direct-messages/${selectedFriend._id}`, {
         message: newMessage.trim()
       });
-      setMessages(prev => [...prev, res.data.message]);
+      const updatedMessages = [...messages, res.data.message];
+      setMessages(updatedMessages);
       setNewMessage('');
+      // Update cache immediately
+      sessionStorage.setItem(`messages_${selectedFriend._id}`, JSON.stringify(updatedMessages));
       scrollToBottom();
       loadConversations();
     } catch (err) {
@@ -161,16 +190,21 @@ const MessagesPage = () => {
   if (isMobile) {
     if (friendId && selectedFriend) {
       return (
-        <Container maxWidth="md" sx={{ height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column', p: 0 }}>
+        <Container maxWidth="md" sx={{ height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column', p: 0, mb: 8 }}>
           {/* Chat Header */}
           <Paper sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
             <IconButton onClick={() => navigate('/messages')}>
               <ArrowBack />
             </IconButton>
-            <Avatar src={selectedFriend.avatar}>{selectedFriend.username[0]}</Avatar>
-            <Typography variant="h6" fontWeight="bold">
-              {selectedFriend.username}
-            </Typography>
+            <Box 
+              sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1, cursor: 'pointer' }}
+              onClick={() => setProfileDialogOpen(true)}
+            >
+              <Avatar src={selectedFriend.avatar}>{selectedFriend.username[0]}</Avatar>
+              <Typography variant="h6" fontWeight="bold">
+                {selectedFriend.username}
+              </Typography>
+            </Box>
           </Paper>
 
           {/* Messages */}
@@ -198,15 +232,18 @@ const MessagesPage = () => {
                     }}
                   >
                     <Paper
+                      elevation={1}
                       sx={{
                         p: 1.5,
                         maxWidth: '70%',
-                        bgcolor: isOwn ? 'primary.main' : 'grey.100',
-                        color: isOwn ? 'white' : 'text.primary'
+                        bgcolor: isOwn ? 'primary.main' : 'background.default',
+                        color: isOwn ? 'primary.contrastText' : 'text.primary',
+                        border: isOwn ? 'none' : '1px solid',
+                        borderColor: isOwn ? 'transparent' : 'divider'
                       }}
                     >
-                      <Typography variant="body2">{msg.message}</Typography>
-                      <Typography variant="caption" sx={{ opacity: 0.7, display: 'block', mt: 0.5 }}>
+                      <Typography variant="body2" sx={{ color: 'inherit' }}>{msg.message}</Typography>
+                      <Typography variant="caption" sx={{ opacity: 0.7, display: 'block', mt: 0.5, color: 'inherit' }}>
                         {formatTime(msg.createdAt)}
                       </Typography>
                     </Paper>
@@ -242,7 +279,14 @@ const MessagesPage = () => {
 
     // Conversations list for mobile
     return (
-      <Container maxWidth="md" sx={{ mt: 2, mb: 4 }}>
+      <>
+        <UserProfileDialog 
+          open={profileDialogOpen}
+          onClose={() => setProfileDialogOpen(false)}
+          userId={selectedFriend?._id}
+        />
+      </>
+      <Container maxWidth="md" sx={{ mt: isMobile ? 2 : 4, mb: isMobile ? 10 : 4, px: isMobile ? 1 : 3 }}>
         <Paper>
           <Box sx={{ p: 2 }}>
             <Typography variant="h5" fontWeight="bold">
@@ -291,12 +335,18 @@ const MessagesPage = () => {
             </List>
           )}
         </Paper>
-      </Container>
+      </>
     );
   }
 
   // Desktop view - split screen
   return (
+    <>
+      <UserProfileDialog 
+        open={profileDialogOpen}
+        onClose={() => setProfileDialogOpen(false)}
+        userId={selectedFriend?._id}
+      />
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Paper sx={{ height: '70vh', display: 'flex' }}>
         {/* Conversations List */}
@@ -352,7 +402,19 @@ const MessagesPage = () => {
           {selectedFriend ? (
             <>
               {/* Chat Header */}
-              <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Box 
+                sx={{ 
+                  p: 2, 
+                  borderBottom: 1, 
+                  borderColor: 'divider', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: 2,
+                  cursor: 'pointer',
+                  '&:hover': { bgcolor: 'action.hover' }
+                }}
+                onClick={() => setProfileDialogOpen(true)}
+              >
                 <Avatar src={selectedFriend.avatar}>{selectedFriend.username[0]}</Avatar>
                 <Typography variant="h6" fontWeight="bold">
                   {selectedFriend.username}
@@ -384,15 +446,18 @@ const MessagesPage = () => {
                         }}
                       >
                         <Paper
+                          elevation={1}
                           sx={{
                             p: 1.5,
                             maxWidth: '70%',
-                            bgcolor: isOwn ? 'primary.main' : 'grey.100',
-                            color: isOwn ? 'white' : 'text.primary'
+                            bgcolor: isOwn ? 'primary.main' : 'background.default',
+                            color: isOwn ? 'primary.contrastText' : 'text.primary',
+                            border: isOwn ? 'none' : '1px solid',
+                            borderColor: isOwn ? 'transparent' : 'divider'
                           }}
                         >
-                          <Typography variant="body2">{msg.message}</Typography>
-                          <Typography variant="caption" sx={{ opacity: 0.7, display: 'block', mt: 0.5 }}>
+                          <Typography variant="body2" sx={{ color: 'inherit' }}>{msg.message}</Typography>
+                          <Typography variant="caption" sx={{ opacity: 0.7, display: 'block', mt: 0.5, color: 'inherit' }}>
                             {formatTime(msg.createdAt)}
                           </Typography>
                         </Paper>
@@ -433,6 +498,7 @@ const MessagesPage = () => {
         </Box>
       </Paper>
     </Container>
+    </>
   );
 };
 

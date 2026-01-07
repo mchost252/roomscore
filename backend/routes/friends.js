@@ -217,10 +217,7 @@ router.get('/search', protect, async (req, res, next) => {
 
     const users = await User.find({
       _id: { $ne: req.user.id }, // Exclude self
-      $or: [
-        { username: { $regex: query, $options: 'i' } },
-        { email: { $regex: query, $options: 'i' } }
-      ]
+      username: { $regex: query, $options: 'i' }
     })
       .select('username email avatar totalPoints currentStreak')
       .limit(10);
