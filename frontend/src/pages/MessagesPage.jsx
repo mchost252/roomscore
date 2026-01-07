@@ -40,6 +40,7 @@ const MessagesPage = () => {
   const [sending, setSending] = useState(false);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [emojiAnchor, setEmojiAnchor] = useState(null);
+  const [conversationsLoaded, setConversationsLoaded] = useState(false);
   const messagesEndRef = useRef(null);
 
   const quickEmojis = ['👍', '❤️', '😂', '🔥', '🎉'];
@@ -50,16 +51,24 @@ const MessagesPage = () => {
     if (cachedConversations) {
       try {
         const parsed = JSON.parse(cachedConversations);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           setConversations(parsed);
+          setConversationsLoaded(true); // Mark as loaded from cache
         }
       } catch (e) {
         console.error('Error parsing cached conversations:', e);
       }
     }
     
-    // Always load fresh data
-    loadConversations();
+    // Load fresh data only if cache is old or empty
+    const lastFetch = sessionStorage.getItem('messages_last_fetch');
+    const now = Date.now();
+    if (!lastFetch || now - parseInt(lastFetch) > 30000) { // 30 seconds
+      loadConversations();
+      sessionStorage.setItem('messages_last_fetch', now.toString());
+    } else if (!cachedConversations) {
+      loadConversations(); // Always load if no cache
+    }
   }, []);
 
   useEffect(() => {
@@ -107,12 +116,12 @@ const MessagesPage = () => {
       const res = await api.get('/direct-messages/conversations');
       const conversationsData = res.data.conversations || [];
       setConversations(conversationsData);
-      // Cache for instant loading next time
-      if (conversationsData.length > 0) {
-        sessionStorage.setItem('conversations_cache', JSON.stringify(conversationsData));
-      }
+      setConversationsLoaded(true);
+      // Cache for instant loading next time - cache even if empty
+      sessionStorage.setItem('conversations_cache', JSON.stringify(conversationsData));
     } catch (err) {
       console.error('Error loading conversations:', err);
+      setConversationsLoaded(true); // Still mark as loaded even on error
       // Don't clear cache on error - keep showing cached data
     }
   };
@@ -152,8 +161,8 @@ const MessagesPage = () => {
       // Cache messages
       sessionStorage.setItem(`messages_${fId}`, JSON.stringify(messagesData));
       
-      // Refresh conversations to update unread count
-      loadConversations();
+      // Don't refresh conversations on every message - only update cache
+      // loadConversations(); // Removed for performance
     } catch (err) {
       console.error('Error loading messages:', err);
     }
@@ -176,7 +185,8 @@ const MessagesPage = () => {
       // Update cache immediately
       sessionStorage.setItem(`messages_${selectedFriend._id}`, JSON.stringify(updatedMessages));
       scrollToBottom();
-      loadConversations();
+      // Don't refresh conversations on send - it's too slow
+      // loadConversations(); // Removed for performance
     } catch (err) {
       console.error('Error sending message:', err);
       setNewMessage(messageText); // Restore message on error
@@ -351,7 +361,11 @@ const MessagesPage = () => {
             </Typography>
           </Box>
           <Divider />
-          {conversations.length === 0 ? (
+          {!conversationsLoaded ? (
+            <Box sx={{ textAlign: 'center', py: 6 }}>
+              <CircularProgress />
+            </Box>
+          ) : conversations.length === 0 ? (
             <Box sx={{ textAlign: 'center', py: 6 }}>
               <Typography variant="body1" color="text.secondary" gutterBottom>
                 No conversations yet
@@ -418,7 +432,11 @@ const MessagesPage = () => {
             </Typography>
           </Box>
           <Box sx={{ flex: 1, overflowY: 'auto' }}>
-            {conversations.length === 0 ? (
+            {!conversationsLoaded ? (
+              <Box sx={{ textAlign: 'center', py: 6, px: 2 }}>
+                <CircularProgress size={30} />
+              </Box>
+            ) : conversations.length === 0 ? (
               <Box sx={{ textAlign: 'center', py: 6, px: 2 }}>
                 <Typography variant="body2" color="text.secondary" gutterBottom>
                   No conversations yet

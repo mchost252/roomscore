@@ -49,19 +49,30 @@ const FriendsPage = () => {
     
     if (cachedFriends) {
       try {
-        setFriends(JSON.parse(cachedFriends));
+        const parsed = JSON.parse(cachedFriends);
+        if (Array.isArray(parsed)) {
+          setFriends(parsed);
+        }
       } catch (e) {}
     }
     
     if (cachedRequests) {
       try {
-        setRequests(JSON.parse(cachedRequests));
+        const parsed = JSON.parse(cachedRequests);
+        if (Array.isArray(parsed)) {
+          setRequests(parsed);
+        }
       } catch (e) {}
     }
     
-    // Then load fresh data in background
-    loadFriends();
-    loadRequests();
+    // Then load fresh data in background only if cache is old or empty
+    const lastFetch = sessionStorage.getItem('friends_last_fetch');
+    const now = Date.now();
+    if (!lastFetch || now - parseInt(lastFetch) > 30000) { // 30 seconds
+      loadFriends();
+      loadRequests();
+      sessionStorage.setItem('friends_last_fetch', now.toString());
+    }
   }, []);
 
   const loadFriends = async () => {

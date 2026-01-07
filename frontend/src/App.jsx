@@ -6,7 +6,6 @@ import { useTheme as useCustomTheme } from './context/ThemeContext';
 
 // Components (loaded immediately)
 import Navbar from './components/Navbar';
-import ThemeToggle from './components/ThemeToggle';
 import LoadingScreen from './components/LoadingScreen';
 
 // Pages (lazy loaded for code splitting)
@@ -130,7 +129,6 @@ function App() {
           </Routes>
         </Suspense>
 
-        <ThemeToggle />
       </Box>
     </>
   );
