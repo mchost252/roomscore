@@ -300,15 +300,22 @@ const MessagesPage = () => {
     const d = new Date(date);
     const now = new Date();
     const diffMs = now - d;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return d.toLocaleDateString();
+    
+    // Format time as HH:MM AM/PM
+    const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    // Today: just show time
+    if (diffDays === 0) return timeStr;
+    // Yesterday
+    if (diffDays === 1) return `Yesterday ${timeStr}`;
+    // This week: show day name
+    if (diffDays < 7) {
+      const dayName = d.toLocaleDateString([], { weekday: 'short' });
+      return `${dayName} ${timeStr}`;
+    }
+    // Older: show date and time
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ` ${timeStr}`;
   };
 
   // Mobile view - show either conversations or selected chat
@@ -331,101 +338,168 @@ const MessagesPage = () => {
             onClose={() => setProfileDialogOpen(false)}
             userId={selectedFriend?._id}
           />
-          <Container maxWidth="md" sx={{ height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column', p: 0, mb: 8 }}>
+          <Box sx={{ 
+            height: '100vh', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            bgcolor: 'background.paper',
+            zIndex: 1100
+          }}>
             {/* Chat Header */}
-            <Paper sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
-            <IconButton onClick={() => navigate('/messages')}>
-              <ArrowBack />
-            </IconButton>
-            <Box 
-              sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1, cursor: 'pointer' }}
-              onClick={() => setProfileDialogOpen(true)}
-            >
-              <Avatar src={selectedFriend.avatar}>{selectedFriend.username[0]}</Avatar>
-              <Typography variant="h6" fontWeight="bold">
-                {selectedFriend.username}
-              </Typography>
-            </Box>
-          </Paper>
-
-          {/* Messages */}
-          <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
-            {messagesLoading && messages.length === 0 ? (
-              <Box sx={{ textAlign: 'center', py: 4 }}>
-                <CircularProgress size={24} />
-              </Box>
-            ) : messages.length === 0 ? (
-              <Box sx={{ textAlign: 'center', py: 4 }}>
-                <Typography variant="body2" color="text.secondary">
-                  No messages yet. Start the conversation!
+            <Paper elevation={2} sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2, borderRadius: 0 }}>
+              <IconButton onClick={() => navigate('/messages')}>
+                <ArrowBack />
+              </IconButton>
+              <Box 
+                sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1, cursor: 'pointer' }}
+                onClick={() => setProfileDialogOpen(true)}
+              >
+                <Avatar src={selectedFriend.avatar} sx={{ width: 44, height: 44 }}>{selectedFriend.username[0]}</Avatar>
+                <Typography variant="h6" fontWeight="bold">
+                  {selectedFriend.username}
                 </Typography>
               </Box>
-            ) : (
-              messages.map((msg, idx) => {
-                // Skip messages with missing sender data
-                if (!msg?.sender?._id) return null;
-                const senderId = String(msg.sender._id);
-                const currentUserId = String(user?._id || user?.id || '');
-                const isOwn = senderId === currentUserId;
-                return (
-                  <Box
-                    key={msg._id || idx}
-                    sx={{
-                      display: 'flex',
-                      justifyContent: isOwn ? 'flex-end' : 'flex-start',
-                      mb: 1,
-                      transition: 'all 0.2s ease-in-out'
-                    }}
-                  >
-                    <Paper
-                      elevation={1}
-                      sx={{
-                        p: 1.5,
-                        maxWidth: '70%',
-                        bgcolor: isOwn ? 'primary.main' : 'background.default',
-                        color: isOwn ? 'primary.contrastText' : 'text.primary',
-                        border: isOwn ? 'none' : '1px solid',
-                        borderColor: isOwn ? 'transparent' : 'divider',
-                        animation: msg._id?.startsWith?.('temp_') ? 'fadeIn 0.2s ease-in' : 'none'
-                      }}
-                    >
-                      <Typography variant="body2" sx={{ color: 'inherit' }}>{msg.message}</Typography>
-                      <Typography variant="caption" sx={{ opacity: 0.7, display: 'block', mt: 0.5, color: 'inherit' }}>
-                        {formatTime(msg.createdAt)}
-                      </Typography>
-                    </Paper>
-                  </Box>
-                );
-              })
-            )}
-            <div ref={messagesEndRef} />
-          </Box>
+            </Paper>
 
-          {/* Message Input */}
-          <Paper component="form" onSubmit={handleSendMessage} sx={{ p: 2 }}>
-            <TextField
-              fullWidth
-              placeholder="Type a message..."
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <IconButton size="small" onClick={(e) => setEmojiAnchor(e.currentTarget)}>
-                      <EmojiEmotions />
-                    </IconButton>
-                  </InputAdornment>
-                ),
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton type="submit" disabled={!newMessage.trim()}>
-                      <Send />
-                    </IconButton>
-                  </InputAdornment>
-                )
+            {/* Messages */}
+            <Box sx={{ 
+              flex: 1, 
+              overflowY: 'auto', 
+              p: 2, 
+              bgcolor: 'background.default',
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+              {messagesLoading && messages.length === 0 ? (
+                <Box sx={{ textAlign: 'center', py: 4, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <CircularProgress size={24} />
+                </Box>
+              ) : messages.length === 0 ? (
+                <Box sx={{ textAlign: 'center', py: 4, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">
+                    No messages yet. Start the conversation!
+                  </Typography>
+                </Box>
+              ) : (
+                <>
+                  <Box sx={{ flexGrow: 1 }} /> {/* Pushes messages to bottom */}
+                  {messages.map((msg, idx) => {
+                    // Skip messages with missing sender data
+                    if (!msg?.sender?._id) return null;
+                    const senderId = String(msg.sender._id);
+                    const currentUserId = String(user?._id || user?.id || '');
+                    const isOwn = senderId === currentUserId;
+                    return (
+                      <Box
+                        key={msg._id || idx}
+                        sx={{
+                          display: 'flex',
+                          justifyContent: isOwn ? 'flex-end' : 'flex-start',
+                          mb: 1.5,
+                          animation: msg._id?.startsWith?.('temp_') ? 'slideIn 0.2s ease-out' : 'none',
+                          '@keyframes slideIn': {
+                            from: { opacity: 0, transform: 'translateY(10px)' },
+                            to: { opacity: 1, transform: 'translateY(0)' }
+                          }
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            py: 1.5,
+                            px: 2,
+                            maxWidth: '75%',
+                            bgcolor: isOwn ? 'primary.main' : 'background.paper',
+                            color: isOwn ? 'primary.contrastText' : 'text.primary',
+                            borderRadius: isOwn ? '20px 20px 4px 20px' : '20px 20px 20px 4px',
+                            boxShadow: isOwn ? '0 1px 2px rgba(0,0,0,0.15)' : '0 1px 2px rgba(0,0,0,0.1)',
+                            border: isOwn ? 'none' : '1px solid',
+                            borderColor: 'divider'
+                          }}
+                        >
+                          <Typography variant="body1" sx={{ color: 'inherit', wordBreak: 'break-word' }}>{msg.message}</Typography>
+                          <Typography 
+                            variant="caption" 
+                            sx={{ 
+                              opacity: 0.7, 
+                              display: 'block', 
+                              mt: 0.5, 
+                              color: 'inherit',
+                              textAlign: 'right',
+                              fontSize: '0.7rem'
+                            }}
+                          >
+                            {formatTime(msg.createdAt)}
+                          </Typography>
+                        </Box>
+                      </Box>
+                    );
+                  })}
+                </>
+              )}
+              <div ref={messagesEndRef} />
+            </Box>
+
+            {/* Message Input */}
+            <Paper 
+              component="form" 
+              onSubmit={handleSendMessage} 
+              elevation={3}
+              sx={{ 
+                p: 1.5, 
+                borderRadius: 0,
+                borderTop: '1px solid',
+                borderColor: 'divider'
               }}
-            />
-          </Paper>
+            >
+              <TextField
+                fullWidth
+                placeholder="Type a message..."
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                size="small"
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: '24px',
+                    bgcolor: 'background.default'
+                  }
+                }}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <IconButton size="small" onClick={(e) => setEmojiAnchor(e.currentTarget)}>
+                        <EmojiEmotions />
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton 
+                        type="submit" 
+                        disabled={!newMessage.trim()}
+                        color="primary"
+                        sx={{ 
+                          bgcolor: newMessage.trim() ? 'primary.main' : 'transparent',
+                          color: newMessage.trim() ? 'primary.contrastText' : 'text.disabled',
+                          '&:hover': {
+                            bgcolor: newMessage.trim() ? 'primary.dark' : 'transparent'
+                          },
+                          width: 36,
+                          height: 36
+                        }}
+                      >
+                        <Send fontSize="small" />
+                      </IconButton>
+                    </InputAdornment>
+                  )
+                }}
+              />
+            </Paper>
+          </Box>
           
           {/* Emoji Picker Popover */}
           <Popover
@@ -533,8 +607,8 @@ const MessagesPage = () => {
         onClose={() => setProfileDialogOpen(false)}
         userId={selectedFriend?._id}
       />
-      <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Paper sx={{ height: '70vh', display: 'flex' }}>
+      <Container maxWidth="lg" sx={{ mt: 2, mb: 2, height: 'calc(100vh - 100px)' }}>
+      <Paper sx={{ height: '100%', display: 'flex', overflow: 'hidden' }}>
         {/* Conversations List */}
         <Box sx={{ width: 320, borderRight: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column' }}>
           <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
@@ -615,65 +689,106 @@ const MessagesPage = () => {
               </Box>
 
               {/* Messages */}
-              <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
+              <Box sx={{ 
+                flex: 1, 
+                overflowY: 'auto', 
+                p: 2, 
+                bgcolor: 'background.default',
+                display: 'flex',
+                flexDirection: 'column'
+              }}>
                 {messagesLoading && messages.length === 0 ? (
-                  <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <Box sx={{ textAlign: 'center', py: 4, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <CircularProgress size={24} />
                   </Box>
                 ) : messages.length === 0 ? (
-                  <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <Box sx={{ textAlign: 'center', py: 4, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Typography variant="body2" color="text.secondary">
                       No messages yet. Start the conversation!
                     </Typography>
                   </Box>
                 ) : (
-                  messages.map((msg, idx) => {
-                    // Skip messages with missing sender data
-                    if (!msg?.sender?._id) return null;
-                    const senderId = String(msg.sender._id);
-                    const currentUserId = String(user?._id || user?.id || '');
-                    const isOwn = senderId === currentUserId;
-                    return (
-                      <Box
-                        key={msg._id || idx}
-                        sx={{
-                          display: 'flex',
-                          justifyContent: isOwn ? 'flex-end' : 'flex-start',
-                          mb: 1,
-                          transition: 'all 0.2s ease-in-out'
-                        }}
-                      >
-                        <Paper
-                          elevation={1}
+                  <>
+                    <Box sx={{ flexGrow: 1 }} /> {/* Pushes messages to bottom */}
+                    {messages.map((msg, idx) => {
+                      // Skip messages with missing sender data
+                      if (!msg?.sender?._id) return null;
+                      const senderId = String(msg.sender._id);
+                      const currentUserId = String(user?._id || user?.id || '');
+                      const isOwn = senderId === currentUserId;
+                      return (
+                        <Box
+                          key={msg._id || idx}
                           sx={{
-                            p: 1.5,
-                            maxWidth: '70%',
-                            bgcolor: isOwn ? 'primary.main' : 'background.default',
-                            color: isOwn ? 'primary.contrastText' : 'text.primary',
-                            border: isOwn ? 'none' : '1px solid',
-                            borderColor: isOwn ? 'transparent' : 'divider',
-                            animation: msg._id?.startsWith?.('temp_') ? 'fadeIn 0.2s ease-in' : 'none'
+                            display: 'flex',
+                            justifyContent: isOwn ? 'flex-end' : 'flex-start',
+                            mb: 1.5,
+                            animation: msg._id?.startsWith?.('temp_') ? 'slideIn 0.2s ease-out' : 'none',
+                            '@keyframes slideIn': {
+                              from: { opacity: 0, transform: 'translateY(10px)' },
+                              to: { opacity: 1, transform: 'translateY(0)' }
+                            }
                           }}
                         >
-                          <Typography variant="body2" sx={{ color: 'inherit' }}>{msg.message}</Typography>
-                          <Typography variant="caption" sx={{ opacity: 0.7, display: 'block', mt: 0.5, color: 'inherit' }}>
-                            {formatTime(msg.createdAt)}
-                          </Typography>
-                        </Paper>
-                      </Box>
-                    );
-                  })
+                          <Box
+                            sx={{
+                              py: 1.5,
+                              px: 2,
+                              maxWidth: '60%',
+                              bgcolor: isOwn ? 'primary.main' : 'background.paper',
+                              color: isOwn ? 'primary.contrastText' : 'text.primary',
+                              borderRadius: isOwn ? '20px 20px 4px 20px' : '20px 20px 20px 4px',
+                              boxShadow: isOwn ? '0 1px 2px rgba(0,0,0,0.15)' : '0 1px 2px rgba(0,0,0,0.1)',
+                              border: isOwn ? 'none' : '1px solid',
+                              borderColor: 'divider'
+                            }}
+                          >
+                            <Typography variant="body1" sx={{ color: 'inherit', wordBreak: 'break-word' }}>{msg.message}</Typography>
+                            <Typography 
+                              variant="caption" 
+                              sx={{ 
+                                opacity: 0.7, 
+                                display: 'block', 
+                                mt: 0.5, 
+                                color: 'inherit',
+                                textAlign: 'right',
+                                fontSize: '0.7rem'
+                              }}
+                            >
+                              {formatTime(msg.createdAt)}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      );
+                    })}
+                  </>
                 )}
                 <div ref={messagesEndRef} />
               </Box>
 
               {/* Message Input */}
-              <Box component="form" onSubmit={handleSendMessage} sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
+              <Box 
+                component="form" 
+                onSubmit={handleSendMessage} 
+                sx={{ 
+                  p: 2, 
+                  borderTop: 1, 
+                  borderColor: 'divider',
+                  bgcolor: 'background.paper'
+                }}
+              >
                 <TextField
                   fullWidth
                   placeholder="Type a message..."
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
+                  size="small"
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: '24px',
+                      bgcolor: 'background.default'
+                    }
+                  }}
                   InputProps={{
                     startAdornment: (
                       <InputAdornment position="start">
@@ -684,8 +799,21 @@ const MessagesPage = () => {
                     ),
                     endAdornment: (
                       <InputAdornment position="end">
-                        <IconButton type="submit" disabled={!newMessage.trim()}>
-                          <Send />
+                        <IconButton 
+                          type="submit" 
+                          disabled={!newMessage.trim()}
+                          color="primary"
+                          sx={{ 
+                            bgcolor: newMessage.trim() ? 'primary.main' : 'transparent',
+                            color: newMessage.trim() ? 'primary.contrastText' : 'text.disabled',
+                            '&:hover': {
+                              bgcolor: newMessage.trim() ? 'primary.dark' : 'transparent'
+                            },
+                            width: 36,
+                            height: 36
+                          }}
+                        >
+                          <Send fontSize="small" />
                         </IconButton>
                       </InputAdornment>
                     )
