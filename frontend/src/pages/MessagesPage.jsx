@@ -48,27 +48,23 @@ const MessagesPage = () => {
   useEffect(() => {
     // Load from cache first for instant display
     const cachedConversations = sessionStorage.getItem('conversations_cache');
+    let hasCache = false;
+    
     if (cachedConversations) {
       try {
         const parsed = JSON.parse(cachedConversations);
         if (Array.isArray(parsed)) {
           setConversations(parsed);
           setConversationsLoaded(true); // Mark as loaded from cache
+          hasCache = true;
         }
       } catch (e) {
         console.error('Error parsing cached conversations:', e);
       }
     }
     
-    // Load fresh data only if cache is old or empty
-    const lastFetch = sessionStorage.getItem('messages_last_fetch');
-    const now = Date.now();
-    if (!lastFetch || now - parseInt(lastFetch) > 30000) { // 30 seconds
-      loadConversations();
-      sessionStorage.setItem('messages_last_fetch', now.toString());
-    } else if (!cachedConversations) {
-      loadConversations(); // Always load if no cache
-    }
+    // Always load fresh data on mount (but cache makes it feel instant)
+    loadConversations();
   }, []);
 
   useEffect(() => {
@@ -87,8 +83,8 @@ const MessagesPage = () => {
         setMessages(prev => [...prev, message]);
         scrollToBottom();
       }
-      // Refresh conversations to update last message and unread count
-      loadConversations();
+      // Update conversations in cache only - don't refetch
+      // This prevents slow API calls on every message
     };
 
     socket.on('new_direct_message', handleNewDirectMessage);
@@ -136,12 +132,22 @@ const MessagesPage = () => {
         } catch (e) {}
       }
       
-      // Find friend info from conversations or fetch it immediately
-      const conv = conversations.find(c => c.friend._id === fId);
-      if (conv) {
-        setSelectedFriend(conv.friend);
-      } else {
-        // If not in conversations yet, fetch friend info from cache first
+      // Find friend info from conversations cache first
+      let friendFound = false;
+      const cachedConversations = sessionStorage.getItem('conversations_cache');
+      if (cachedConversations) {
+        try {
+          const convs = JSON.parse(cachedConversations);
+          const conv = convs.find(c => c.friend._id === fId);
+          if (conv) {
+            setSelectedFriend(conv.friend);
+            friendFound = true;
+          }
+        } catch (e) {}
+      }
+      
+      // Try friends cache if not in conversations
+      if (!friendFound) {
         const cachedFriends = sessionStorage.getItem('friends_cache');
         if (cachedFriends) {
           try {
@@ -149,20 +155,36 @@ const MessagesPage = () => {
             const friend = friends.find(f => f._id === fId);
             if (friend) {
               setSelectedFriend(friend);
+              friendFound = true;
             }
           } catch (e) {}
         }
       }
       
-      // Fetch fresh data in background
+      // Fetch messages from API
       const res = await api.get(`/direct-messages/${fId}`);
       const messagesData = res.data.messages || [];
       setMessages(messagesData);
       // Cache messages
       sessionStorage.setItem(`messages_${fId}`, JSON.stringify(messagesData));
       
-      // Don't refresh conversations on every message - only update cache
-      // loadConversations(); // Removed for performance
+      // If friend not found in cache, extract from first message
+      if (!friendFound && messagesData.length > 0) {
+        const firstMsg = messagesData[0];
+        const friendData = firstMsg.sender._id === user?._id ? firstMsg.recipient : firstMsg.sender;
+        setSelectedFriend(friendData);
+      }
+      
+      // If still no friend found, fetch from friends API
+      if (!friendFound && messagesData.length === 0) {
+        try {
+          const friendsRes = await api.get('/friends');
+          const friend = friendsRes.data.friends?.find(f => f._id === fId);
+          if (friend) {
+            setSelectedFriend(friend);
+          }
+        } catch (e) {}
+      }
     } catch (err) {
       console.error('Error loading messages:', err);
     }

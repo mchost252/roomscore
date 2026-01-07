@@ -12,42 +12,93 @@ router.get('/conversations', protect, async (req, res, next) => {
   try {
     const userId = req.user.id;
 
-    // Get all friends
+    // Get all friends - single query
     const friendships = await Friend.find({
       $or: [{ requester: userId }, { recipient: userId }],
       status: 'accepted'
     })
       .populate('requester', 'username avatar')
-      .populate('recipient', 'username avatar');
+      .populate('recipient', 'username avatar')
+      .lean();
 
-    const conversations = [];
+    if (friendships.length === 0) {
+      return res.json({ success: true, conversations: [] });
+    }
 
-    for (const friendship of friendships) {
+    // Get friend IDs
+    const friendIds = friendships.map(f => 
+      f.requester._id.toString() === userId ? f.recipient._id : f.requester._id
+    );
+
+    // Get last messages and unread counts in parallel with aggregation
+    const [lastMessages, unreadCounts] = await Promise.all([
+      // Get last message for each conversation using aggregation
+      DirectMessage.aggregate([
+        {
+          $match: {
+            $or: [
+              { sender: userId, recipient: { $in: friendIds } },
+              { sender: { $in: friendIds }, recipient: userId }
+            ]
+          }
+        },
+        { $sort: { createdAt: -1 } },
+        {
+          $group: {
+            _id: {
+              $cond: [
+                { $eq: ['$sender', userId] },
+                '$recipient',
+                '$sender'
+              ]
+            },
+            lastMessage: { $first: '$$ROOT' }
+          }
+        }
+      ]),
+      // Get unread counts for each friend
+      DirectMessage.aggregate([
+        {
+          $match: {
+            sender: { $in: friendIds },
+            recipient: userId,
+            isRead: false
+          }
+        },
+        {
+          $group: {
+            _id: '$sender',
+            count: { $sum: 1 }
+          }
+        }
+      ])
+    ]);
+
+    // Create lookup maps for O(1) access
+    const lastMessageMap = new Map();
+    lastMessages.forEach(m => {
+      lastMessageMap.set(m._id.toString(), m.lastMessage);
+    });
+
+    const unreadCountMap = new Map();
+    unreadCounts.forEach(u => {
+      unreadCountMap.set(u._id.toString(), u.count);
+    });
+
+    // Build conversations array
+    const conversations = friendships.map(friendship => {
       const friendData = friendship.requester._id.toString() === userId 
         ? friendship.recipient 
         : friendship.requester;
-
-      // Get last message
-      const lastMessage = await DirectMessage.findOne({
-        $or: [
-          { sender: userId, recipient: friendData._id },
-          { sender: friendData._id, recipient: userId }
-        ]
-      }).sort({ createdAt: -1 });
-
-      // Count unread messages
-      const unreadCount = await DirectMessage.countDocuments({
-        sender: friendData._id,
-        recipient: userId,
-        isRead: false
-      });
-
-      conversations.push({
+      
+      const friendIdStr = friendData._id.toString();
+      
+      return {
         friend: friendData,
-        lastMessage: lastMessage || null,
-        unreadCount
-      });
-    }
+        lastMessage: lastMessageMap.get(friendIdStr) || null,
+        unreadCount: unreadCountMap.get(friendIdStr) || 0
+      };
+    });
 
     // Sort by last message time
     conversations.sort((a, b) => {
