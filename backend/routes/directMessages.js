@@ -122,6 +122,14 @@ router.get('/:friendId', protect, async (req, res, next) => {
     const userId = req.user.id;
     const friendId = req.params.friendId;
 
+    // Validate friendId is a valid MongoDB ObjectId (24 hex chars)
+    if (!friendId || !/^[a-fA-F0-9]{24}$/.test(friendId)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Invalid friend ID format: ${friendId}` 
+      });
+    }
+
     // Verify friendship exists
     const friendship = await Friend.findOne({
       $or: [
@@ -171,6 +179,14 @@ router.post('/:friendId', protect, async (req, res, next) => {
     const { message } = req.body;
     const userId = req.user.id;
     const friendId = req.params.friendId;
+
+    // Validate friendId is a valid MongoDB ObjectId (24 hex chars)
+    if (!friendId || !/^[a-fA-F0-9]{24}$/.test(friendId)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Invalid friend ID format: ${friendId}` 
+      });
+    }
 
     if (!message || message.trim().length === 0) {
       return res.status(400).json({ success: false, message: 'Message cannot be empty' });

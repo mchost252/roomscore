@@ -80,8 +80,22 @@ const FriendsPage = () => {
       const res = await api.get('/friends');
       const friendsData = res.data.friends || [];
       setFriends(friendsData);
-      // Cache for instant loading next time
-      sessionStorage.setItem('friends_cache', JSON.stringify(friendsData));
+      // Cache for instant loading - strip large avatar data to prevent quota errors
+      try {
+        const cacheData = friendsData.map(f => ({
+          _id: f._id,
+          username: f.username,
+          email: f.email,
+          totalPoints: f.totalPoints,
+          currentStreak: f.currentStreak,
+          friendsSince: f.friendsSince
+          // avatar intentionally excluded - too large for storage
+        }));
+        sessionStorage.setItem('friends_cache', JSON.stringify(cacheData));
+      } catch (e) {
+        // Clear old caches if storage is full
+        sessionStorage.removeItem('friends_cache');
+      }
     } catch (err) {
       console.error('Error loading friends:', err);
     }
@@ -92,8 +106,22 @@ const FriendsPage = () => {
       const res = await api.get('/friends/requests');
       const requestsData = res.data.requests || [];
       setRequests(requestsData);
-      // Cache for instant loading next time
-      sessionStorage.setItem('friend_requests_cache', JSON.stringify(requestsData));
+      // Cache for instant loading - strip avatar data
+      try {
+        const cacheData = requestsData.map(r => ({
+          _id: r._id,
+          requester: r.requester ? {
+            _id: r.requester._id,
+            username: r.requester.username,
+            email: r.requester.email
+          } : null,
+          status: r.status,
+          createdAt: r.createdAt
+        }));
+        sessionStorage.setItem('friend_requests_cache', JSON.stringify(cacheData));
+      } catch (e) {
+        sessionStorage.removeItem('friend_requests_cache');
+      }
     } catch (err) {
       console.error('Error loading requests:', err);
     }

@@ -113,12 +113,27 @@ const MessagesPage = () => {
       const conversationsData = res.data.conversations || [];
       setConversations(conversationsData);
       setConversationsLoaded(true);
-      // Cache for instant loading next time - cache even if empty
-      sessionStorage.setItem('conversations_cache', JSON.stringify(conversationsData));
+      // Cache for instant loading - strip large avatar data
+      try {
+        const cacheData = conversationsData.map(c => ({
+          friend: {
+            _id: c.friend._id,
+            username: c.friend.username
+            // avatar excluded - too large
+          },
+          lastMessage: c.lastMessage ? {
+            message: c.lastMessage.message?.substring(0, 50), // Truncate long messages
+            createdAt: c.lastMessage.createdAt
+          } : null,
+          unreadCount: c.unreadCount
+        }));
+        sessionStorage.setItem('conversations_cache', JSON.stringify(cacheData));
+      } catch (e) {
+        sessionStorage.removeItem('conversations_cache');
+      }
     } catch (err) {
       console.error('Error loading conversations:', err);
       setConversationsLoaded(true); // Still mark as loaded even on error
-      // Don't clear cache on error - keep showing cached data
     }
   };
 
@@ -171,8 +186,17 @@ const MessagesPage = () => {
           if (friend) {
             setSelectedFriend(friend);
             friendFound = true;
-            // Update cache
-            sessionStorage.setItem('friends_cache', JSON.stringify(friends));
+            // Update cache - strip avatars
+            try {
+              const cacheData = friends.map(f => ({
+                _id: f._id,
+                username: f.username,
+                email: f.email,
+                totalPoints: f.totalPoints,
+                currentStreak: f.currentStreak
+              }));
+              sessionStorage.setItem('friends_cache', JSON.stringify(cacheData));
+            } catch (e) {}
           }
         } catch (e) {
           console.error('Error fetching friends:', e);
