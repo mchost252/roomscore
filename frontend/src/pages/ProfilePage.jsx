@@ -40,10 +40,13 @@ import {
   NotificationsActive,
   NotificationsOff,
   Delete,
-  Clear
+  Clear,
+  Brightness4,
+  Brightness7
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
+import { useTheme as useCustomTheme } from '../context/ThemeContext';
 import pushNotificationManager from '../utils/pushNotifications';
 import { useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
@@ -52,6 +55,7 @@ import api from '../utils/api';
 const ProfilePage = () => {
   const { user, logout, enablePushNotifications, disablePushNotifications } = useAuth();
   const { socket } = useSocket();
+  const { mode, toggleTheme } = useCustomTheme();
   const navigate = useNavigate();
   const [tabValue, setTabValue] = useState(0);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -783,13 +787,49 @@ const ProfilePage = () => {
           {tabValue === 3 && (
             <Paper sx={{ p: 3 }}>
               <Typography variant="h6" fontWeight="bold" gutterBottom>
-                Notification Settings
+                Settings
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                Manage how you receive notifications
+                Manage your preferences
               </Typography>
 
-              <Divider sx={{ my: 2 }} />
+              {/* Appearance Section */}
+              <Box sx={{ mb: 3 }}>
+                <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                  Appearance
+                </Typography>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    {mode === 'dark' ? (
+                      <Brightness4 color="primary" />
+                    ) : (
+                      <Brightness7 color="primary" />
+                    )}
+                    <Box>
+                      <Typography variant="body1" fontWeight="bold">
+                        Theme
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {mode === 'dark' ? 'Dark Mode' : 'Light Mode'}
+                      </Typography>
+                    </Box>
+                  </Box>
+                  <Button
+                    variant="outlined"
+                    onClick={toggleTheme}
+                    startIcon={mode === 'dark' ? <Brightness7 /> : <Brightness4 />}
+                  >
+                    Switch to {mode === 'dark' ? 'Light' : 'Dark'}
+                  </Button>
+                </Box>
+              </Box>
+
+              <Divider sx={{ my: 3 }} />
+
+              {/* Notifications Section */}
+              <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                Notifications
+              </Typography>
 
               {/* Push Notifications Section */}
               <Box sx={{ mb: 3 }}>

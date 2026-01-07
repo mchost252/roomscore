@@ -48,11 +48,16 @@ const MessagesPage = () => {
     const cachedConversations = sessionStorage.getItem('conversations_cache');
     if (cachedConversations) {
       try {
-        setConversations(JSON.parse(cachedConversations));
-      } catch (e) {}
+        const parsed = JSON.parse(cachedConversations);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setConversations(parsed);
+        }
+      } catch (e) {
+        console.error('Error parsing cached conversations:', e);
+      }
     }
     
-    // Then load fresh data in background
+    // Always load fresh data
     loadConversations();
   }, []);
 
@@ -102,9 +107,12 @@ const MessagesPage = () => {
       const conversationsData = res.data.conversations || [];
       setConversations(conversationsData);
       // Cache for instant loading next time
-      sessionStorage.setItem('conversations_cache', JSON.stringify(conversationsData));
+      if (conversationsData.length > 0) {
+        sessionStorage.setItem('conversations_cache', JSON.stringify(conversationsData));
+      }
     } catch (err) {
       console.error('Error loading conversations:', err);
+      // Don't clear cache on error - keep showing cached data
     }
   };
 
@@ -152,22 +160,25 @@ const MessagesPage = () => {
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim() || !selectedFriend) return;
+    if (!newMessage.trim() || !selectedFriend || sending) return;
 
+    const messageText = newMessage.trim();
+    setNewMessage(''); // Clear input immediately for better UX
+    
     try {
       setSending(true);
       const res = await api.post(`/direct-messages/${selectedFriend._id}`, {
-        message: newMessage.trim()
+        message: messageText
       });
       const updatedMessages = [...messages, res.data.message];
       setMessages(updatedMessages);
-      setNewMessage('');
       // Update cache immediately
       sessionStorage.setItem(`messages_${selectedFriend._id}`, JSON.stringify(updatedMessages));
       scrollToBottom();
       loadConversations();
     } catch (err) {
       console.error('Error sending message:', err);
+      setNewMessage(messageText); // Restore message on error
     } finally {
       setSending(false);
     }
@@ -344,9 +355,12 @@ const MessagesPage = () => {
               <Typography variant="body1" color="text.secondary" gutterBottom>
                 No conversations yet
               </Typography>
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 Add friends to start messaging
               </Typography>
+              <Button variant="contained" onClick={() => navigate('/friends')}>
+                Go to Friends
+              </Button>
             </Box>
           ) : (
             <List sx={{ p: 0 }}>
@@ -408,9 +422,12 @@ const MessagesPage = () => {
                 <Typography variant="body2" color="text.secondary" gutterBottom>
                   No conversations yet
                 </Typography>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
                   Add friends to start messaging
                 </Typography>
+                <Button variant="contained" size="small" onClick={() => navigate('/friends')}>
+                  Go to Friends
+                </Button>
               </Box>
             ) : (
               <List sx={{ p: 0 }}>

@@ -197,29 +197,52 @@ const FriendsPage = () => {
                 {friends.map((friend) => (
                   <ListItem
                     key={friend._id}
-                    secondaryAction={
-                      <Box sx={{ display: 'flex', gap: 1 }}>
-                        <IconButton onClick={() => navigate(`/messages/${friend._id}`)}>
-                          <MessageIcon />
-                        </IconButton>
-                        <Button size="small" color="error" onClick={() => handleRemoveFriend(friend._id)}>
-                          Remove
-                        </Button>
-                      </Box>
-                    }
+                    sx={{ 
+                      flexDirection: isMobile ? 'column' : 'row',
+                      alignItems: isMobile ? 'stretch' : 'center',
+                      gap: isMobile ? 1 : 0
+                    }}
                   >
-                    <ListItemAvatar>
-                      <Avatar src={friend.avatar}>{friend.username[0]}</Avatar>
-                    </ListItemAvatar>
-                    <ListItemText
-                      primary={friend.username}
-                      secondary={
-                        <>
-                          <Chip label={`${friend.totalPoints || 0} pts`} size="small" sx={{ mr: 1 }} />
-                          <Chip label={`${friend.currentStreak || 0} day streak`} size="small" />
-                        </>
-                      }
-                    />
+                    <Box sx={{ display: 'flex', alignItems: 'center', width: isMobile ? '100%' : 'auto', flex: 1 }}>
+                      <ListItemAvatar>
+                        <Avatar src={friend.avatar}>{friend.username[0]}</Avatar>
+                      </ListItemAvatar>
+                      <ListItemText
+                        primary={friend.username}
+                        secondary={
+                          <>
+                            <Chip label={`${friend.totalPoints || 0} pts`} size="small" sx={{ mr: 1 }} />
+                            <Chip label={`${friend.currentStreak || 0} day streak`} size="small" />
+                          </>
+                        }
+                      />
+                    </Box>
+                    <Box sx={{ 
+                      display: 'flex', 
+                      gap: 1,
+                      justifyContent: isMobile ? 'flex-end' : 'flex-start',
+                      width: isMobile ? '100%' : 'auto',
+                      pl: isMobile ? 7 : 0
+                    }}>
+                      <Button 
+                        size="small" 
+                        variant="outlined"
+                        startIcon={<MessageIcon />}
+                        onClick={() => navigate(`/messages/${friend._id}`)}
+                        sx={{ flex: isMobile ? 1 : 'none' }}
+                      >
+                        Message
+                      </Button>
+                      <Button 
+                        size="small" 
+                        color="error" 
+                        variant="outlined"
+                        onClick={() => handleRemoveFriend(friend._id)}
+                        sx={{ flex: isMobile ? 1 : 'none' }}
+                      >
+                        Remove
+                      </Button>
+                    </Box>
                   </ListItem>
                 ))}
               </List>
