@@ -806,7 +806,22 @@ const RoomDetailPage = () => {
             <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)}>
               <Tab icon={<Assignment />} label="Tasks" iconPosition="start" />
               <Tab icon={<EmojiEvents />} label="Leaderboard" iconPosition="start" />
-              <Tab icon={<Chat />} label="Chat" iconPosition="start" />
+              <Tab
+                icon={<Chat />}
+                label="Chat"
+                iconPosition="start"
+                onClick={(e) => {
+                  // If already on Chat tab, clicking the tab header opens full chat
+                  if (tabValue === 2) {
+                    e.stopPropagation();
+                    setChatDrawerOpen(true);
+                  }
+                }}
+                sx={{
+                  cursor: tabValue === 2 ? 'pointer' : 'default',
+                  '&:hover': tabValue === 2 ? { bgcolor: 'action.hover' } : {}
+                }}
+              />
             </Tabs>
           </Paper>
 
@@ -1599,45 +1614,6 @@ const RoomDetailPage = () => {
           }}>Close</Button>
         </DialogActions>
       </Dialog>
-      {/* Floating Chat Button - Positioned higher to avoid theme toggle */}
-      <Box
-        sx={{
-          position: 'fixed',
-          bottom: 90,
-          right: 24,
-          zIndex: 999
-        }}
-      >
-        <Tooltip title="Open Chat" placement="left">
-          <Box
-            component="button"
-            onClick={() => setChatDrawerOpen(true)}
-            sx={{
-              width: 56,
-              height: 56,
-              borderRadius: '50%',
-              border: 'none',
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              color: 'white',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 4px 20px rgba(102, 126, 234, 0.5)',
-              transition: 'all 0.3s ease',
-              '&:hover': {
-                transform: 'scale(1.1)',
-                boxShadow: '0 6px 30px rgba(102, 126, 234, 0.7)',
-              },
-              '&:active': {
-                transform: 'scale(0.95)',
-              }
-            }}
-          >
-            <Chat sx={{ fontSize: 28 }} />
-          </Box>
-        </Tooltip>
-      </Box>
 
       {/* Task Type Selector */}
       <TaskTypeSelector
