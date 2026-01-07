@@ -17,6 +17,8 @@ const RoomListPage = lazy(() => import('./pages/RoomListPage'));
 const RoomDetailPage = lazy(() => import('./pages/RoomDetailPage'));
 const CreateRoomPage = lazy(() => import('./pages/CreateRoomPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const MessagesPage = lazy(() => import('./pages/MessagesPage'));
+const ChangelogPage = lazy(() => import('./pages/ChangelogPage'));
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -94,6 +96,18 @@ function App() {
               <ProtectedRoute>
                 <Navbar />
                 <ProfilePage />
+              </ProtectedRoute>
+            } />
+            <Route path="/messages" element={
+              <ProtectedRoute>
+                <Navbar />
+                <MessagesPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/changelog" element={
+              <ProtectedRoute>
+                <Navbar />
+                <ChangelogPage />
               </ProtectedRoute>
             } />
 

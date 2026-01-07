@@ -9,7 +9,7 @@ const WHATS_NEW = [
     title: "New: Onboarding, Today's Focus, Better Chat, Task Types",
     body: "We added a quick setup guide after signup, a 'Today\'s Focus' section on the dashboard, clearer room vs personal tasks, system messages in chat, and a room intro card.",
     ctaLabel: 'View details',
-    ctaHref: '/profile',
+    ctaHref: '/changelog',
   }
 ];
 
