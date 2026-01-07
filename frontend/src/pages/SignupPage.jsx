@@ -16,6 +16,7 @@ import {
 } from '@mui/material';
 import { Visibility, VisibilityOff, PersonAdd } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
+import OnboardingModal from '../components/OnboardingModal';
 
 const SignupPage = () => {
   const navigate = useNavigate();
@@ -29,6 +30,7 @@ const SignupPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   const handleChange = (e) => {
     setFormData({
@@ -63,7 +65,9 @@ const SignupPage = () => {
     const result = await register(formData.email, formData.password, formData.username);
 
     if (result.success) {
-      navigate('/dashboard');
+      // Mark as new user and show onboarding
+      localStorage.setItem('isNewUser', 'true');
+      setShowOnboarding(true);
     } else {
       setError(result.message);
     }
@@ -71,13 +75,26 @@ const SignupPage = () => {
     setLoading(false);
   };
 
+  const handleOnboardingClose = () => {
+    setShowOnboarding(false);
+    localStorage.removeItem('isNewUser');
+    navigate('/dashboard');
+  };
+
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+    <>
+      {/* Onboarding Modal */}
+      <OnboardingModal 
+        open={showOnboarding} 
+        onClose={handleOnboardingClose}
+      />
+
+      <Box
+        sx={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
         bgcolor: 'background.default',
         px: 2,
       }}
@@ -193,6 +210,7 @@ const SignupPage = () => {
         </Card>
       </Container>
     </Box>
+    </>
   );
 };
 
