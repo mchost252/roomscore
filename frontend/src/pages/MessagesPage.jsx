@@ -182,12 +182,18 @@ const MessagesPage = () => {
       const res = await api.get(`/direct-messages/${fId}`);
       const messagesData = res.data.messages || [];
       setMessages(messagesData);
-      // Cache messages - only keep last 50 to avoid quota issues
-      const messagesToCache = messagesData.slice(-50);
+      // Cache messages - strip large data and keep only last 20
       try {
+        const messagesToCache = messagesData.slice(-20).map(m => ({
+          _id: m._id,
+          message: m.message,
+          createdAt: m.createdAt,
+          sender: { _id: m.sender?._id },
+          recipient: { _id: m.recipient?._id }
+        }));
         sessionStorage.setItem(`messages_${fId}`, JSON.stringify(messagesToCache));
       } catch (e) {
-        console.warn('Storage quota exceeded when caching messages');
+        // Silently fail - caching is optional
       }
       
       // If friend not found in cache, extract from first message
@@ -215,23 +221,21 @@ const MessagesPage = () => {
       });
       const updatedMessages = [...messages, res.data.message];
       setMessages(updatedMessages);
-      // Update cache immediately - only keep last 50 messages to avoid quota issues
-      const messagesToCache = updatedMessages.slice(-50);
+      // Update cache - strip large data and keep only last 20 messages
       try {
+        const messagesToCache = updatedMessages.slice(-20).map(m => ({
+          _id: m._id,
+          message: m.message,
+          createdAt: m.createdAt,
+          sender: { _id: m.sender?._id },
+          recipient: { _id: m.recipient?._id }
+        }));
         sessionStorage.setItem(`messages_${selectedFriend._id}`, JSON.stringify(messagesToCache));
       } catch (e) {
-        // If storage is full, clear old message caches and try again
-        console.warn('Storage quota exceeded, clearing old caches');
+        // If storage is full, clear all message caches
         Object.keys(sessionStorage).forEach(key => {
-          if (key.startsWith('messages_')) {
-            sessionStorage.removeItem(key);
-          }
+          if (key.startsWith('messages_')) sessionStorage.removeItem(key);
         });
-        try {
-          sessionStorage.setItem(`messages_${selectedFriend._id}`, JSON.stringify(messagesToCache));
-        } catch (e2) {
-          console.error('Failed to cache messages even after clearing:', e2);
-        }
       }
       scrollToBottom();
       // Don't refresh conversations on send - it's too slow

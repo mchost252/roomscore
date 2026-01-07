@@ -135,6 +135,7 @@ router.get('/:friendId', protect, async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Not friends with this user' });
     }
 
+    // Limit to last 100 messages for performance, sorted newest first then reversed
     const messages = await DirectMessage.find({
       $or: [
         { sender: userId, recipient: friendId },
@@ -143,7 +144,12 @@ router.get('/:friendId', protect, async (req, res, next) => {
     })
       .populate('sender', 'username avatar')
       .populate('recipient', 'username avatar')
-      .sort({ createdAt: 1 });
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .lean();
+    
+    // Reverse to get chronological order (oldest first)
+    messages.reverse();
 
     // Mark messages from friend as read
     await DirectMessage.updateMany(
