@@ -57,7 +57,7 @@ const ChatDrawer = ({
   };
 
   const isMyMessage = (msg) => {
-    return msg.sender?._id === currentUser?._id || msg.sender?._id === currentUser?.id;
+    return msg.userId?._id === currentUser?._id || msg.userId?._id === currentUser?.id || msg.userId === currentUser?._id || msg.userId === currentUser?.id;
   };
 
   const formatTime = (date) => {
@@ -166,7 +166,7 @@ const ChatDrawer = ({
               const isMine = isMyMessage(msg);
               const showAvatar = !isMine && (
                 index === 0 || 
-                messages[index - 1]?.sender?._id !== msg.sender?._id
+                messages[index - 1]?.userId?._id !== msg.userId?._id
               );
 
               return (
@@ -187,11 +187,11 @@ const ChatDrawer = ({
                     {/* Avatar */}
                     {showAvatar && !isMine && (
                       <Avatar
-                        src={msg.sender?.avatar}
-                        alt={msg.sender?.username}
+                        src={msg.userId?.avatar}
+                        alt={msg.userId?.username}
                         sx={{ width: 32, height: 32 }}
                       >
-                        {msg.sender?.username?.[0]?.toUpperCase()}
+                        {msg.userId?.username?.[0]?.toUpperCase()}
                       </Avatar>
                     )}
                     {!showAvatar && !isMine && <Box sx={{ width: 32 }} />}
@@ -212,7 +212,7 @@ const ChatDrawer = ({
                           color="text.secondary"
                           sx={{ ml: 1, mb: 0.5 }}
                         >
-                          {msg.sender?.username || 'Unknown'}
+                          {msg.userId?.username || 'Unknown'}
                         </Typography>
                       )}
 
