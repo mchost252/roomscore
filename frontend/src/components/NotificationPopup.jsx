@@ -61,7 +61,8 @@ const NotificationPopup = () => {
 
       // Navigate to related page
       if (notification.relatedRoom) {
-        navigate(`/rooms/${notification.relatedRoom}`);
+        const roomId = notification.relatedRoom._id || notification.relatedRoom;
+        navigate(`/rooms/${roomId}`);
       }
     } catch (error) {
       console.error('Error marking notification as read:', error);
