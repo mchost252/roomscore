@@ -285,8 +285,7 @@ const MessagesPage = () => {
           onClose={() => setProfileDialogOpen(false)}
           userId={selectedFriend?._id}
         />
-      </>
-      <Container maxWidth="md" sx={{ mt: isMobile ? 2 : 4, mb: isMobile ? 10 : 4, px: isMobile ? 1 : 3 }}>
+        <Container maxWidth="md" sx={{ mt: isMobile ? 2 : 4, mb: isMobile ? 10 : 4, px: isMobile ? 1 : 3 }}>
         <Paper>
           <Box sx={{ p: 2 }}>
             <Typography variant="h5" fontWeight="bold">
@@ -335,6 +334,7 @@ const MessagesPage = () => {
             </List>
           )}
         </Paper>
+      </Container>
       </>
     );
   }
@@ -347,7 +347,7 @@ const MessagesPage = () => {
         onClose={() => setProfileDialogOpen(false)}
         userId={selectedFriend?._id}
       />
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+      <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Paper sx={{ height: '70vh', display: 'flex' }}>
         {/* Conversations List */}
         <Box sx={{ width: 320, borderRight: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column' }}>
@@ -497,7 +497,7 @@ const MessagesPage = () => {
           )}
         </Box>
       </Paper>
-    </Container>
+      </Container>
     </>
   );
 };
