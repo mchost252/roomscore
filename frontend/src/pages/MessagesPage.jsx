@@ -37,7 +37,6 @@ const MessagesPage = () => {
   const [selectedFriend, setSelectedFriend] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
-  const [sending, setSending] = useState(false);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [emojiAnchor, setEmojiAnchor] = useState(null);
   const [conversationsLoaded, setConversationsLoaded] = useState(false);
@@ -211,9 +210,27 @@ const MessagesPage = () => {
     }
   };
 
+  // Validate MongoDB ObjectId format (24 hex characters)
+  const isValidObjectId = (id) => /^[a-fA-F0-9]{24}$/.test(id);
+
+  // Get the reliable friend ID - prefer URL param over cached selectedFriend
+  const getReliableFriendId = () => {
+    // URL param is always reliable
+    if (friendId && isValidObjectId(friendId)) return friendId;
+    // Fall back to selectedFriend._id only if valid
+    if (selectedFriend?._id && isValidObjectId(selectedFriend._id)) return selectedFriend._id;
+    return null;
+  };
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim() || !selectedFriend || sending) return;
+    if (!newMessage.trim()) return;
+
+    const reliableFriendId = getReliableFriendId();
+    if (!reliableFriendId) {
+      console.error('Invalid friend ID');
+      return;
+    }
 
     const messageText = newMessage.trim();
     setNewMessage(''); // Clear input immediately for better UX
@@ -225,7 +242,7 @@ const MessagesPage = () => {
       message: messageText,
       createdAt: new Date().toISOString(),
       sender: { _id: user._id || user.id },
-      recipient: { _id: selectedFriend._id }
+      recipient: { _id: reliableFriendId }
     };
     
     // Show message immediately
@@ -233,8 +250,7 @@ const MessagesPage = () => {
     scrollToBottom();
     
     try {
-      setSending(true);
-      const res = await api.post(`/direct-messages/${selectedFriend._id}`, {
+      const res = await api.post(`/direct-messages/${reliableFriendId}`, {
         message: messageText
       });
       // Replace optimistic message with real one
@@ -244,8 +260,6 @@ const MessagesPage = () => {
       // Remove optimistic message on error
       setMessages(prev => prev.filter(m => m._id !== tempId));
       setNewMessage(messageText); // Restore message on error
-    } finally {
-      setSending(false);
     }
   };
 
@@ -370,7 +384,6 @@ const MessagesPage = () => {
               placeholder="Type a message..."
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              disabled={sending}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
@@ -381,8 +394,8 @@ const MessagesPage = () => {
                 ),
                 endAdornment: (
                   <InputAdornment position="end">
-                    <IconButton type="submit" disabled={!newMessage.trim() || sending}>
-                      {sending ? <CircularProgress size={20} /> : <Send />}
+                    <IconButton type="submit" disabled={!newMessage.trim()}>
+                      <Send />
                     </IconButton>
                   </InputAdornment>
                 )
@@ -637,7 +650,6 @@ const MessagesPage = () => {
                   placeholder="Type a message..."
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
-                  disabled={sending}
                   InputProps={{
                     startAdornment: (
                       <InputAdornment position="start">
@@ -648,8 +660,8 @@ const MessagesPage = () => {
                     ),
                     endAdornment: (
                       <InputAdornment position="end">
-                        <IconButton type="submit" disabled={!newMessage.trim() || sending}>
-                          {sending ? <CircularProgress size={20} /> : <Send />}
+                        <IconButton type="submit" disabled={!newMessage.trim()}>
+                          <Send />
                         </IconButton>
                       </InputAdornment>
                     )
