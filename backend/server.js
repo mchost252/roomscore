@@ -78,6 +78,10 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/roomscore
   useNewUrlParser: true,
   useUnifiedTopology: true,
   serverSelectionTimeoutMS: 10000, // Timeout after 10 seconds instead of hanging forever
+  maxPoolSize: 10, // Maintain up to 10 socket connections
+  minPoolSize: 2, // Keep at least 2 connections ready
+  socketTimeoutMS: 20000, // Close sockets after 20 seconds of inactivity
+  family: 4 // Use IPv4, skip trying IPv6
 })
 .then(() => {
   console.log('✅ MongoDB connected successfully');

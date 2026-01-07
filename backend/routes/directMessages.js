@@ -13,14 +13,15 @@ router.get('/conversations', protect, async (req, res, next) => {
   try {
     const userId = new mongoose.Types.ObjectId(req.user.id);
 
-    // Get all friends - single query
+    // Get all friends - single query, don't populate avatar (too large)
     const friendships = await Friend.find({
       $or: [{ requester: userId }, { recipient: userId }],
       status: 'accepted'
     })
-      .populate('requester', 'username avatar')
-      .populate('recipient', 'username avatar')
-      .lean();
+      .populate('requester', 'username _id')
+      .populate('recipient', 'username _id')
+      .lean()
+      .maxTimeMS(10000);
 
     if (friendships.length === 0) {
       return res.json({ success: true, conversations: [] });
@@ -144,17 +145,19 @@ router.get('/:friendId', protect, async (req, res, next) => {
     }
 
     // Limit to last 100 messages for performance, sorted newest first then reversed
+    // Don't populate avatar - it's too large and slows queries significantly
     const messages = await DirectMessage.find({
       $or: [
         { sender: userId, recipient: friendId },
         { sender: friendId, recipient: userId }
       ]
     })
-      .populate('sender', 'username avatar')
-      .populate('recipient', 'username avatar')
+      .populate('sender', 'username _id')
+      .populate('recipient', 'username _id')
       .sort({ createdAt: -1 })
       .limit(100)
-      .lean();
+      .lean()
+      .maxTimeMS(15000); // Timeout query after 15 seconds
     
     // Reverse to get chronological order (oldest first)
     messages.reverse();
@@ -211,8 +214,9 @@ router.post('/:friendId', protect, async (req, res, next) => {
       message: message.trim()
     });
 
-    await dm.populate('sender', 'username avatar');
-    await dm.populate('recipient', 'username avatar');
+    // Don't populate avatar - too large, frontend can get it from user data
+    await dm.populate('sender', 'username _id');
+    await dm.populate('recipient', 'username _id');
 
     // Emit socket event for real-time delivery
     const io = req.app.get('io');

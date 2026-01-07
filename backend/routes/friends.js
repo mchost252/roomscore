@@ -133,12 +133,30 @@ router.get('/', protect, async (req, res, next) => {
   try {
     const userId = req.user.id;
 
+    // Don't populate avatar in initial query - too large and slow
     const friendships = await Friend.find({
       $or: [{ requester: userId }, { recipient: userId }],
       status: 'accepted'
     })
-      .populate('requester', 'username email avatar totalPoints currentStreak')
-      .populate('recipient', 'username email avatar totalPoints currentStreak');
+      .populate('requester', 'username email totalPoints currentStreak')
+      .populate('recipient', 'username email totalPoints currentStreak')
+      .lean()
+      .maxTimeMS(10000);
+
+    // Get friend IDs
+    const friendIds = friendships.map(f => 
+      f.requester._id.toString() === userId ? f.recipient._id : f.requester._id
+    );
+
+    // Fetch avatars separately only for found friends
+    const avatarMap = new Map();
+    if (friendIds.length > 0) {
+      const usersWithAvatars = await User.find({ _id: { $in: friendIds } })
+        .select('_id avatar')
+        .lean()
+        .maxTimeMS(10000);
+      usersWithAvatars.forEach(u => avatarMap.set(u._id.toString(), u.avatar));
+    }
 
     // Extract friend data (the other person in the friendship)
     const friends = friendships.map(f => {
@@ -147,7 +165,7 @@ router.get('/', protect, async (req, res, next) => {
         _id: friend._id,
         username: friend.username,
         email: friend.email,
-        avatar: friend.avatar,
+        avatar: avatarMap.get(friend._id.toString()) || null,
         totalPoints: friend.totalPoints,
         currentStreak: friend.currentStreak,
         friendsSince: f.createdAt
@@ -168,7 +186,10 @@ router.get('/requests', protect, async (req, res, next) => {
     const requests = await Friend.find({
       recipient: req.user.id,
       status: 'pending'
-    }).populate('requester', 'username email avatar');
+    })
+      .populate('requester', 'username email')
+      .lean()
+      .maxTimeMS(10000);
 
     res.json({ success: true, requests });
   } catch (error) {
@@ -219,8 +240,10 @@ router.get('/search', protect, async (req, res, next) => {
       _id: { $ne: req.user.id }, // Exclude self
       username: { $regex: query, $options: 'i' }
     })
-      .select('username avatar totalPoints currentStreak')
-      .limit(10);
+      .select('username totalPoints currentStreak')
+      .limit(10)
+      .lean()
+      .maxTimeMS(10000);
 
     res.json({ success: true, users });
   } catch (error) {
