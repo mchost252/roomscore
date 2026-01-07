@@ -114,6 +114,70 @@ const DashboardPage = () => {
         </Alert>
       )}
 
+      {/* Today's Focus Section */}
+      <Paper sx={{ p: 3, mb: 3, borderLeft: 4, borderColor: 'primary.main' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Typography variant="h5" fontWeight="bold">
+            Today's Focus
+          </Typography>
+          <Button variant="text" onClick={() => navigate('/rooms')}>View all</Button>
+        </Box>
+
+        {(() => {
+          // Build a simple list of active tasks from rooms (best-effort without extra API calls)
+          const focusTasks = (rooms || [])
+            .flatMap(room => (room?.tasks || []).filter(t => t.isActive).map(t => ({
+              id: t._id,
+              title: t.title,
+              points: t.points,
+              roomId: room._id,
+              roomName: room.name
+            })))
+            .slice(0, 5);
+
+          if (focusTasks.length === 0) {
+            return (
+              <Box sx={{ textAlign: 'center', py: 3 }}>
+                <Typography variant="body1" color="text.secondary" gutterBottom>
+                  No tasks for today yet. Start with one small task.
+                </Typography>
+                <Button variant="contained" onClick={() => navigate('/rooms')}>
+                  Add a Task
+                </Button>
+              </Box>
+            );
+          }
+
+          return (
+            <Grid container spacing={2}>
+              {focusTasks.map(task => (
+                <Grid item xs={12} md={6} key={task.id}>
+                  <Card sx={{ p: 1.5 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Box>
+                        <Typography variant="subtitle1" fontWeight="bold">
+                          {task.title}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Room: {task.roomName}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Chip size="small" color="secondary" label="Room" variant="outlined" />
+                        <Chip size="small" color="success" label={`+${task.points} pts`} />
+                        <Button size="small" variant="outlined" onClick={() => navigate(`/rooms/${task.roomId}`)}>
+                          Go
+                        </Button>
+                      </Box>
+                    </Box>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          );
+        })()}
+      </Paper>
+
       {/* Stats Cards */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
         {/* Total Points */}

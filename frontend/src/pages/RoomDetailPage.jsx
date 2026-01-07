@@ -51,6 +51,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import api, { invalidateCache } from '../utils/api';
 import ChatDrawer from '../components/ChatDrawer';
+import TaskTypeSelector from '../components/TaskTypeSelector';
 
 const RoomDetailPage = () => {
   const { roomId } = useParams();
@@ -65,6 +66,7 @@ const RoomDetailPage = () => {
   const [tabValue, setTabValue] = useState(0);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
   const [manageTasksOpen, setManageTasksOpen] = useState(false);
+  const [taskTypeOpen, setTaskTypeOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [disbandDialogOpen, setDisbandDialogOpen] = useState(false);
   const [roomSettings, setRoomSettings] = useState({
@@ -782,7 +784,7 @@ const RoomDetailPage = () => {
                     variant="outlined" 
                     size="small" 
                     startIcon={<Edit />}
-                    onClick={() => setManageTasksOpen(true)}
+                    onClick={() => setTaskTypeOpen(true)}
                   >
                     Manage Tasks
                   </Button>
@@ -834,7 +836,8 @@ const RoomDetailPage = () => {
                                   variant="body1" 
                                   sx={{ 
                                     textDecoration: completed ? 'line-through' : 'none',
-                                    fontWeight: completed ? 'normal' : 'bold'
+                                    fontWeight: completed ? 'normal' : 'bold',
+                                    color: 'text.primary'
                                   }}
                                 >
                                   {task.title}
@@ -898,6 +901,12 @@ const RoomDetailPage = () => {
                                     label={`${task.points} points`} 
                                     size="small" 
                                     color="primary"
+                                    variant="outlined"
+                                  />
+                                  <Chip 
+                                    label="Room Task" 
+                                    size="small" 
+                                    color="secondary"
                                     variant="outlined"
                                   />
                                   {task.frequency && (
@@ -1576,6 +1585,23 @@ const RoomDetailPage = () => {
           </Box>
         </Tooltip>
       </Box>
+
+      {/* Task Type Selector */}
+      <TaskTypeSelector
+        open={taskTypeOpen}
+        onClose={() => setTaskTypeOpen(false)}
+        isOwner={isOwner}
+        onSelect={(type) => {
+          if (type === 'room') {
+            setTaskTypeOpen(false);
+            setManageTasksOpen(true);
+          } else {
+            setTaskTypeOpen(false);
+            setSuccess('Personal tasks coming soon');
+            setTimeout(() => setSuccess(null), 2500);
+          }
+        }}
+      />
 
       {/* Chat Drawer */}
       <ChatDrawer
