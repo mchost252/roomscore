@@ -12,12 +12,16 @@ import {
   Badge,
   Slide,
   useTheme,
-  useMediaQuery
+  useMediaQuery,
+  Popover,
+  Tooltip,
+  InputAdornment
 } from '@mui/material';
 import {
   Send as SendIcon,
   Close as CloseIcon,
-  Chat as ChatIcon
+  Chat as ChatIcon,
+  EmojiEmotions
 } from '@mui/icons-material';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -32,8 +36,11 @@ const ChatDrawer = ({
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [message, setMessage] = useState('');
+  const [emojiAnchor, setEmojiAnchor] = useState(null);
   const messagesEndRef = useRef(null);
   const chatContainerRef = useRef(null);
+  
+  const quickEmojis = ['👍', '❤️', '😂', '🔥', '🎉'];
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -47,6 +54,11 @@ const ChatDrawer = ({
       onSendMessage(message.trim());
       setMessage('');
     }
+  };
+
+  const handleEmojiClick = (emoji) => {
+    setMessage(prev => prev + emoji);
+    setEmojiAnchor(null);
   };
 
   const handleKeyPress = (e) => {
@@ -284,6 +296,15 @@ const ChatDrawer = ({
             placeholder="Type a message..."
             variant="outlined"
             size="small"
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <IconButton size="small" onClick={(e) => setEmojiAnchor(e.currentTarget)}>
+                    <EmojiEmotions />
+                  </IconButton>
+                </InputAdornment>
+              )
+            }}
             sx={{
               '& .MuiOutlinedInput-root': {
                 borderRadius: 3,
@@ -309,6 +330,31 @@ const ChatDrawer = ({
             <SendIcon />
           </IconButton>
         </Paper>
+
+        {/* Emoji Picker Popover */}
+        <Popover
+          open={Boolean(emojiAnchor)}
+          anchorEl={emojiAnchor}
+          onClose={() => setEmojiAnchor(null)}
+          anchorOrigin={{
+            vertical: 'top',
+            horizontal: 'left',
+          }}
+          transformOrigin={{
+            vertical: 'bottom',
+            horizontal: 'left',
+          }}
+        >
+          <Box sx={{ p: 1, display: 'flex', gap: 1 }}>
+            {quickEmojis.map((emoji) => (
+              <Tooltip key={emoji} title={emoji}>
+                <IconButton onClick={() => handleEmojiClick(emoji)} sx={{ fontSize: '1.5rem' }}>
+                  {emoji}
+                </IconButton>
+              </Tooltip>
+            ))}
+          </Box>
+        </Popover>
       </Box>
     </Drawer>
   );

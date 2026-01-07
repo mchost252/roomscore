@@ -14,9 +14,11 @@ import {
   Badge,
   Divider,
   InputAdornment,
-  CircularProgress
+  CircularProgress,
+  Popover,
+  Tooltip
 } from '@mui/material';
-import { Send, ArrowBack } from '@mui/icons-material';
+import { Send, ArrowBack, EmojiEmotions } from '@mui/icons-material';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
@@ -34,10 +36,12 @@ const MessagesPage = () => {
   const [selectedFriend, setSelectedFriend] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
-  const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  const [emojiAnchor, setEmojiAnchor] = useState(null);
   const messagesEndRef = useRef(null);
+
+  const quickEmojis = ['👍', '❤️', '😂', '🔥', '🎉'];
 
   useEffect(() => {
     // Load from cache first for instant display
@@ -87,6 +91,11 @@ const MessagesPage = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  const handleEmojiClick = (emoji) => {
+    setNewMessage(prev => prev + emoji);
+    setEmojiAnchor(null);
+  };
+
   const loadConversations = async () => {
     try {
       const res = await api.get('/direct-messages/conversations');
@@ -107,35 +116,37 @@ const MessagesPage = () => {
         try {
           setMessages(JSON.parse(cachedMessages));
         } catch (e) {}
-      } else {
-        setLoading(true);
       }
       
+      // Find friend info from conversations or fetch it immediately
+      const conv = conversations.find(c => c.friend._id === fId);
+      if (conv) {
+        setSelectedFriend(conv.friend);
+      } else {
+        // If not in conversations yet, fetch friend info from cache first
+        const cachedFriends = sessionStorage.getItem('friends_cache');
+        if (cachedFriends) {
+          try {
+            const friends = JSON.parse(cachedFriends);
+            const friend = friends.find(f => f._id === fId);
+            if (friend) {
+              setSelectedFriend(friend);
+            }
+          } catch (e) {}
+        }
+      }
+      
+      // Fetch fresh data in background
       const res = await api.get(`/direct-messages/${fId}`);
       const messagesData = res.data.messages || [];
       setMessages(messagesData);
       // Cache messages
       sessionStorage.setItem(`messages_${fId}`, JSON.stringify(messagesData));
       
-      // Find friend info from conversations or fetch it
-      const conv = conversations.find(c => c.friend._id === fId);
-      if (conv) {
-        setSelectedFriend(conv.friend);
-      } else {
-        // If not in conversations yet, fetch friend info
-        const friendRes = await api.get(`/friends`);
-        const friend = friendRes.data.friends.find(f => f._id === fId);
-        if (friend) {
-          setSelectedFriend(friend);
-        }
-      }
-      
       // Refresh conversations to update unread count
       loadConversations();
     } catch (err) {
       console.error('Error loading messages:', err);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -190,9 +201,15 @@ const MessagesPage = () => {
   if (isMobile) {
     if (friendId && selectedFriend) {
       return (
-        <Container maxWidth="md" sx={{ height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column', p: 0, mb: 8 }}>
-          {/* Chat Header */}
-          <Paper sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+        <>
+          <UserProfileDialog 
+            open={profileDialogOpen}
+            onClose={() => setProfileDialogOpen(false)}
+            userId={selectedFriend?._id}
+          />
+          <Container maxWidth="md" sx={{ height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column', p: 0, mb: 8 }}>
+            {/* Chat Header */}
+            <Paper sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
             <IconButton onClick={() => navigate('/messages')}>
               <ArrowBack />
             </IconButton>
@@ -209,11 +226,7 @@ const MessagesPage = () => {
 
           {/* Messages */}
           <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
-            {loading ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-                <CircularProgress />
-              </Box>
-            ) : messages.length === 0 ? (
+            {messages.length === 0 ? (
               <Box sx={{ textAlign: 'center', py: 4 }}>
                 <Typography variant="body2" color="text.secondary">
                   No messages yet. Start the conversation!
@@ -221,7 +234,7 @@ const MessagesPage = () => {
               </Box>
             ) : (
               messages.map((msg, idx) => {
-                const isOwn = msg.sender._id === user?._id;
+                const isOwn = msg.sender._id.toString() === user?._id.toString();
                 return (
                   <Box
                     key={msg._id || idx}
@@ -263,6 +276,13 @@ const MessagesPage = () => {
               onChange={(e) => setNewMessage(e.target.value)}
               disabled={sending}
               InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <IconButton size="small" onClick={(e) => setEmojiAnchor(e.currentTarget)}>
+                      <EmojiEmotions />
+                    </IconButton>
+                  </InputAdornment>
+                ),
                 endAdornment: (
                   <InputAdornment position="end">
                     <IconButton type="submit" disabled={!newMessage.trim() || sending}>
@@ -273,7 +293,33 @@ const MessagesPage = () => {
               }}
             />
           </Paper>
-        </Container>
+          
+          {/* Emoji Picker Popover */}
+          <Popover
+            open={Boolean(emojiAnchor)}
+            anchorEl={emojiAnchor}
+            onClose={() => setEmojiAnchor(null)}
+            anchorOrigin={{
+              vertical: 'top',
+              horizontal: 'left',
+            }}
+            transformOrigin={{
+              vertical: 'bottom',
+              horizontal: 'left',
+            }}
+          >
+            <Box sx={{ p: 1, display: 'flex', gap: 1 }}>
+              {quickEmojis.map((emoji) => (
+                <Tooltip key={emoji} title={emoji}>
+                  <IconButton onClick={() => handleEmojiClick(emoji)} sx={{ fontSize: '1.5rem' }}>
+                    {emoji}
+                  </IconButton>
+                </Tooltip>
+              ))}
+            </Box>
+          </Popover>
+          </Container>
+        </>
       );
     }
 
@@ -423,11 +469,7 @@ const MessagesPage = () => {
 
               {/* Messages */}
               <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
-                {loading ? (
-                  <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-                    <CircularProgress />
-                  </Box>
-                ) : messages.length === 0 ? (
+                {messages.length === 0 ? (
                   <Box sx={{ textAlign: 'center', py: 4 }}>
                     <Typography variant="body2" color="text.secondary">
                       No messages yet. Start the conversation!
@@ -435,7 +477,7 @@ const MessagesPage = () => {
                   </Box>
                 ) : (
                   messages.map((msg, idx) => {
-                    const isOwn = msg.sender._id === user?._id;
+                    const isOwn = msg.sender._id.toString() === user?._id.toString();
                     return (
                       <Box
                         key={msg._id || idx}
@@ -477,6 +519,13 @@ const MessagesPage = () => {
                   onChange={(e) => setNewMessage(e.target.value)}
                   disabled={sending}
                   InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <IconButton size="small" onClick={(e) => setEmojiAnchor(e.currentTarget)}>
+                          <EmojiEmotions />
+                        </IconButton>
+                      </InputAdornment>
+                    ),
                     endAdornment: (
                       <InputAdornment position="end">
                         <IconButton type="submit" disabled={!newMessage.trim() || sending}>

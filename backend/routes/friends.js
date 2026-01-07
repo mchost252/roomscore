@@ -219,7 +219,7 @@ router.get('/search', protect, async (req, res, next) => {
       _id: { $ne: req.user.id }, // Exclude self
       username: { $regex: query, $options: 'i' }
     })
-      .select('username email avatar totalPoints currentStreak')
+      .select('username avatar totalPoints currentStreak')
       .limit(10);
 
     res.json({ success: true, users });
