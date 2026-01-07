@@ -78,6 +78,7 @@ const RoomDetailPage = () => {
   const [chatMessage, setChatMessage] = useState('');
   const [chatMessages, setChatMessages] = useState([]);
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
+  const [showRoomIntro, setShowRoomIntro] = useState(false);
   const [newTask, setNewTask] = useState({
     title: '',
     description: '',
@@ -109,6 +110,16 @@ const RoomDetailPage = () => {
       // Listen for task completions
       socket.on('task:completed', (data) => {
         if (data.roomId === roomId) {
+          // Add a system message for everyone
+          setChatMessages(prev => ([
+            ...prev,
+            {
+              _id: `sys-${Date.now()}`,
+              message: `${data.username || 'A member'} completed a task (+${data.points || 0})`,
+              messageType: 'system',
+              createdAt: new Date().toISOString()
+            }
+          ]));
           console.log('Socket task:completed event received:', data);
           // Don't update if this user just completed it (already updated locally)
           if (data.userId === user?.id) {
@@ -369,8 +380,9 @@ const RoomDetailPage = () => {
         )
       }));
       
-      // Show success immediately
-      setSuccess('Task completed! Points awarded.');
+      // Show success immediately with points and note
+      const pts = task.points || 0;
+      setSuccess(`+${pts} points added • Room notified`);
       setTimeout(() => setSuccess(null), 3000);
       
       console.log('Completing task:', taskId);
@@ -644,6 +656,32 @@ const RoomDetailPage = () => {
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+      {/* Room Intro Card (first-time) */}
+      {showRoomIntro && (
+        <Paper sx={{ p: 2, mb: 2, borderLeft: 4, borderColor: 'info.main' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Box>
+              <Typography variant="subtitle1" fontWeight="bold">
+                Welcome to this room 👋
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Complete tasks here to earn points. Your progress is visible to everyone.
+              </Typography>
+            </Box>
+            <Button
+              variant="outlined"
+              onClick={() => {
+                const seenKey = `room_intro_seen_${roomId}`;
+                localStorage.setItem(seenKey, 'true');
+                setShowRoomIntro(false);
+              }}
+            >
+              Got it
+            </Button>
+          </Box>
+        </Paper>
+      )}
+
       {/* Show loading state inline */}
       {isLoading && (
         <Box sx={{ mt: 4 }}>
@@ -1005,6 +1043,17 @@ const RoomDetailPage = () => {
                   </Box>
                 ) : (
                   chatMessages.map((msg, index) => {
+                    // System messages
+                    if (msg.messageType === 'system' || msg.type === 'system') {
+                      return (
+                        <Box key={index} sx={{ textAlign: 'center', my: 0.5 }}>
+                          <Typography variant="caption" color="text.secondary">
+                            {msg.message}
+                          </Typography>
+                        </Box>
+                      );
+                    }
+
                     const isOwnMessage = msg.userId?._id === user?.id || msg.userId === user?.id;
                     return (
                       <Box 
@@ -1106,6 +1155,10 @@ const RoomDetailPage = () => {
                   Send
                 </Button>
               </Box>
+              {/* Chat input hint */}
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+                Encourage your teammates or discuss tasks
+              </Typography>
             </Paper>
           )}
         </Grid>

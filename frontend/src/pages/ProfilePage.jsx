@@ -68,6 +68,7 @@ const ProfilePage = () => {
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushSupported, setPushSupported] = useState(false);
+  const [showNotifHint, setShowNotifHint] = useState(false);
 
   const [editData, setEditData] = useState({
     username: user?.username || '',
