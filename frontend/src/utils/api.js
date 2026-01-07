@@ -6,7 +6,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 15000, // 15 second timeout
+  timeout: 30000, // 30 second timeout for slow connections
 });
 
 // Cache configuration for different endpoints - use exact match or regex

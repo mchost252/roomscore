@@ -41,6 +41,7 @@ const MessagesPage = () => {
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [emojiAnchor, setEmojiAnchor] = useState(null);
   const [conversationsLoaded, setConversationsLoaded] = useState(false);
+  const [messagesLoading, setMessagesLoading] = useState(false);
   const messagesEndRef = useRef(null);
 
   const quickEmojis = ['👍', '❤️', '😂', '🔥', '🎉'];
@@ -123,6 +124,7 @@ const MessagesPage = () => {
   };
 
   const loadMessages = async (fId) => {
+    setMessagesLoading(true);
     try {
       // Load from cache first for instant display
       const cachedMessages = sessionStorage.getItem(`messages_${fId}`);
@@ -204,6 +206,8 @@ const MessagesPage = () => {
       }
     } catch (err) {
       console.error('Error loading messages:', err);
+    } finally {
+      setMessagesLoading(false);
     }
   };
 
@@ -308,7 +312,11 @@ const MessagesPage = () => {
 
           {/* Messages */}
           <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
-            {messages.length === 0 ? (
+            {messagesLoading && messages.length === 0 ? (
+              <Box sx={{ textAlign: 'center', py: 4 }}>
+                <CircularProgress size={24} />
+              </Box>
+            ) : messages.length === 0 ? (
               <Box sx={{ textAlign: 'center', py: 4 }}>
                 <Typography variant="body2" color="text.secondary">
                   No messages yet. Start the conversation!
@@ -571,7 +579,11 @@ const MessagesPage = () => {
 
               {/* Messages */}
               <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
-                {messages.length === 0 ? (
+                {messagesLoading && messages.length === 0 ? (
+                  <Box sx={{ textAlign: 'center', py: 4 }}>
+                    <CircularProgress size={24} />
+                  </Box>
+                ) : messages.length === 0 ? (
                   <Box sx={{ textAlign: 'center', py: 4 }}>
                     <Typography variant="body2" color="text.secondary">
                       No messages yet. Start the conversation!
