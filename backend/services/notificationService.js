@@ -48,18 +48,23 @@ class NotificationService {
   // Schedule a notification
   static async scheduleNotification({ userId, type, title, message, scheduledFor, relatedRoom, relatedTask, data }) {
     try {
+      // Ensure userId, relatedRoom, and relatedTask are strings (same as createNotification)
+      const userIdString = userId._id ? userId._id.toString() : userId.toString();
+      const relatedRoomString = relatedRoom ? (relatedRoom._id ? relatedRoom._id.toString() : relatedRoom.toString()) : null;
+      const relatedTaskString = relatedTask ? (relatedTask._id ? relatedTask._id.toString() : relatedTask.toString()) : null;
+      
       const notification = await Notification.create({
-        userId,
+        userId: userIdString,
         type,
         title,
         message,
         scheduledFor,
-        relatedRoom,
-        relatedTask,
+        relatedRoom: relatedRoomString,
+        relatedTask: relatedTaskString,
         data
       });
 
-      logger.info(`Notification scheduled for user ${userId} at ${scheduledFor}`);
+      logger.info(`Notification scheduled for user ${userIdString} at ${scheduledFor}`);
       return notification;
     } catch (error) {
       logger.error('Error scheduling notification:', error);

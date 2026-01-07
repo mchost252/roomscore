@@ -1599,13 +1599,13 @@ const RoomDetailPage = () => {
           }}>Close</Button>
         </DialogActions>
       </Dialog>
-      {/* Floating Chat Button */}
+      {/* Floating Chat Button - Positioned higher to avoid theme toggle */}
       <Box
         sx={{
           position: 'fixed',
-          bottom: 24,
+          bottom: 90,
           right: 24,
-          zIndex: 1000
+          zIndex: 999
         }}
       >
         <Tooltip title="Open Chat" placement="left">
@@ -1613,8 +1613,8 @@ const RoomDetailPage = () => {
             component="button"
             onClick={() => setChatDrawerOpen(true)}
             sx={{
-              width: 64,
-              height: 64,
+              width: 56,
+              height: 56,
               borderRadius: '50%',
               border: 'none',
               background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -1634,7 +1634,7 @@ const RoomDetailPage = () => {
               }
             }}
           >
-            <Chat sx={{ fontSize: 32 }} />
+            <Chat sx={{ fontSize: 28 }} />
           </Box>
         </Tooltip>
       </Box>
