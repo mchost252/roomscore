@@ -22,16 +22,19 @@ router.get('/', protect, async (req, res, next) => {
     
     if (type === 'public') {
       // Get public rooms that user is NOT a member of
+      // Don't populate avatar - too slow
       const rooms = await Room.find({
         isPublic: true,
         isActive: true,
         owner: { $ne: req.user.id },
         'members.userId': { $ne: req.user.id }
       })
-      .populate('owner', 'username avatar')
-      .populate('members.userId', 'username avatar')
+      .populate('owner', 'username _id')
+      .populate('members.userId', 'username _id')
       .sort({ createdAt: -1 })
-      .limit(50);
+      .limit(50)
+      .lean()
+      .maxTimeMS(15000);
       
       return res.json({
         success: true,
@@ -41,6 +44,7 @@ router.get('/', protect, async (req, res, next) => {
     }
     
     // Get user's rooms (owned or member)
+    // Don't populate avatar - too slow
     const rooms = await Room.find({
       $or: [
         { owner: req.user.id },
@@ -48,9 +52,11 @@ router.get('/', protect, async (req, res, next) => {
       ],
       isActive: true
     })
-    .populate('owner', 'username avatar')
-    .populate('members.userId', 'username avatar')
-    .sort({ updatedAt: -1 });
+    .populate('owner', 'username _id')
+    .populate('members.userId', 'username _id')
+    .sort({ updatedAt: -1 })
+    .lean()
+    .maxTimeMS(15000);
 
     res.json({
       success: true,
@@ -83,8 +89,8 @@ router.post('/', protect, validate(createRoomSchema), async (req, res, next) => 
       }]
     });
 
-    await room.populate('owner', 'username avatar');
-    await room.populate('members.userId', 'username avatar');
+    await room.populate('owner', 'username _id');
+    await room.populate('members.userId', 'username _id');
 
     // Emit socket event
     const io = req.app.get('io');
@@ -105,8 +111,8 @@ router.post('/', protect, validate(createRoomSchema), async (req, res, next) => 
 // @access  Private (must be member)
 router.get('/:id', protect, isRoomMember, async (req, res, next) => {
   try {
-    await req.room.populate('owner', 'username avatar');
-    await req.room.populate('members.userId', 'username avatar');
+    await req.room.populate('owner', 'username _id');
+    await req.room.populate('members.userId', 'username _id');
 
     res.json({
       success: true,
@@ -135,8 +141,8 @@ router.put('/:id', protect, isRoomOwner, validate(updateRoomSchema), async (req,
       req.params.id,
       updateFields,
       { new: true, runValidators: true }
-    ).populate('owner', 'username avatar')
-     .populate('members.userId', 'username avatar');
+    ).populate('owner', 'username _id')
+     .populate('members.userId', 'username _id');
 
     // Emit socket event
     const io = req.app.get('io');
@@ -227,8 +233,8 @@ router.post('/join', protect, validate(joinRoomSchema), async (req, res, next) =
 
     // Add member
     await room.addMember(req.user.id);
-    await room.populate('owner', 'username avatar');
-    await room.populate('members.userId', 'username avatar');
+    await room.populate('owner', 'username _id');
+    await room.populate('members.userId', 'username _id');
 
     // Create system message
     await ChatMessage.create({
@@ -476,7 +482,7 @@ router.post('/:id/chat', protect, isRoomMember, validate(sendMessageSchema), asy
       messageType: 'text'
     });
 
-    await chatMessage.populate('userId', 'username avatar');
+    await chatMessage.populate('userId', 'username _id');
 
     // Get room members (exclude sender)
     const roomMembers = req.room.members
@@ -552,7 +558,7 @@ router.get('/:id/chat', protect, isRoomMember, async (req, res, next) => {
     }
 
     const messages = await ChatMessage.find(query)
-      .populate('userId', 'username avatar')
+      .populate('userId', 'username _id')
       .sort({ createdAt: -1 })
       .limit(parseInt(limit));
 

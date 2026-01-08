@@ -84,7 +84,7 @@ router.get('/:roomId/tasks', protect, isRoomMember, async (req, res, next) => {
         $gte: today,
         $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000)
       }
-    }).populate('userId', 'username email avatar');
+    }).populate('userId', 'username email _id');
 
     const completedTaskIds = userCompletions.map(c => c.taskId.toString());
 

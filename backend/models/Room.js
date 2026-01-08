@@ -174,7 +174,7 @@ roomSchema.methods.updateMemberPoints = function(userId, pointsToAdd) {
 
 // Method to get leaderboard
 roomSchema.methods.getLeaderboard = async function() {
-  await this.populate('members.userId', 'username avatar');
+  await this.populate('members.userId', 'username _id');
   
   return this.members
     .map(member => ({
