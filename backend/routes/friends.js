@@ -133,44 +133,37 @@ router.get('/', protect, async (req, res, next) => {
   try {
     const userId = req.user.id;
 
-    // Don't populate avatar in initial query - too large and slow
-    const friendships = await Friend.find({
-      $or: [{ requester: userId }, { recipient: userId }],
-      status: 'accepted'
-    })
-      .populate('requester', 'username email totalPoints currentStreak')
-      .populate('recipient', 'username email totalPoints currentStreak')
-      .lean()
-      .maxTimeMS(10000);
-
-    // Get friend IDs
-    const friendIds = friendships.map(f => 
-      f.requester._id.toString() === userId ? f.recipient._id : f.requester._id
-    );
-
-    // Fetch avatars separately only for found friends
-    const avatarMap = new Map();
-    if (friendIds.length > 0) {
-      const usersWithAvatars = await User.find({ _id: { $in: friendIds } })
-        .select('_id avatar')
+    // Run two parallel queries instead of $or - often faster
+    const [asRequester, asRecipient] = await Promise.all([
+      Friend.find({ requester: userId, status: 'accepted' })
+        .populate('recipient', 'username _id totalPoints currentStreak')
+        .select('recipient createdAt')
         .lean()
-        .maxTimeMS(10000);
-      usersWithAvatars.forEach(u => avatarMap.set(u._id.toString(), u.avatar));
-    }
+        .maxTimeMS(5000),
+      Friend.find({ recipient: userId, status: 'accepted' })
+        .populate('requester', 'username _id totalPoints currentStreak')
+        .select('requester createdAt')
+        .lean()
+        .maxTimeMS(5000)
+    ]);
 
-    // Extract friend data (the other person in the friendship)
-    const friends = friendships.map(f => {
-      const friend = f.requester._id.toString() === userId ? f.recipient : f.requester;
-      return {
-        _id: friend._id,
-        username: friend.username,
-        email: friend.email,
-        avatar: avatarMap.get(friend._id.toString()) || null,
-        totalPoints: friend.totalPoints,
-        currentStreak: friend.currentStreak,
+    // Extract friend data
+    const friends = [
+      ...asRequester.map(f => ({
+        _id: f.recipient._id,
+        username: f.recipient.username,
+        totalPoints: f.recipient.totalPoints || 0,
+        currentStreak: f.recipient.currentStreak || 0,
         friendsSince: f.createdAt
-      };
-    });
+      })),
+      ...asRecipient.map(f => ({
+        _id: f.requester._id,
+        username: f.requester.username,
+        totalPoints: f.requester.totalPoints || 0,
+        currentStreak: f.requester.currentStreak || 0,
+        friendsSince: f.createdAt
+      }))
+    ];
 
     res.json({ success: true, friends });
   } catch (error) {
