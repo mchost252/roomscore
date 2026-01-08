@@ -70,6 +70,22 @@ const Navbar = () => {
   if (isMobile) {
     return (
       <>
+        {/* Mobile Top App Bar */}
+        <AppBar position="sticky" elevation={1}>
+          <Toolbar sx={{ minHeight: 56 }}>
+            <Typography
+              variant="h6"
+              component="div"
+              sx={{ flexGrow: 1, fontWeight: 'bold', cursor: 'pointer' }}
+              onClick={() => navigate('/dashboard')}
+            >
+              RoomScore
+            </Typography>
+            <NotificationPopup />
+          </Toolbar>
+        </AppBar>
+
+        {/* Mobile Bottom Navigation */}
         <Paper
           sx={{
             position: 'fixed',

@@ -451,7 +451,8 @@ const MessagesPage = () => {
             userId={selectedFriend?._id}
           />
           <Box sx={{ 
-            height: '100vh', 
+            height: '100dvh', // Use dynamic viewport height for mobile keyboard support
+            minHeight: '-webkit-fill-available', // iOS Safari fix
             display: 'flex', 
             flexDirection: 'column', 
             position: 'fixed',
@@ -460,7 +461,8 @@ const MessagesPage = () => {
             right: 0,
             bottom: 0,
             bgcolor: 'background.paper',
-            zIndex: 1100
+            zIndex: 1100,
+            overflow: 'hidden'
           }}>
             {/* Chat Header */}
             <Paper elevation={2} sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2, borderRadius: 0 }}>
@@ -581,7 +583,9 @@ const MessagesPage = () => {
                 p: 1.5, 
                 borderRadius: 0,
                 borderTop: '1px solid',
-                borderColor: 'divider'
+                borderColor: 'divider',
+                flexShrink: 0, // Prevent shrinking
+                pb: 'env(safe-area-inset-bottom, 12px)' // Account for iOS safe area
               }}
             >
               <TextField
