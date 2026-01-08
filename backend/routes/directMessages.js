@@ -174,6 +174,41 @@ router.get('/:friendId', protect, async (req, res, next) => {
   }
 });
 
+// @route   PUT /api/direct-messages/read/:friendId
+// @desc    Mark all messages from friend as read
+// @access  Private
+router.put('/read/:friendId', protect, async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const friendId = req.params.friendId;
+
+    // Validate friendId
+    if (!friendId || !/^[a-fA-F0-9]{24}$/.test(friendId)) {
+      return res.status(400).json({ success: false, message: 'Invalid friend ID' });
+    }
+
+    // Mark all unread messages from this friend as read
+    const result = await DirectMessage.updateMany(
+      { sender: friendId, recipient: userId, isRead: false },
+      { isRead: true, readAt: new Date() }
+    );
+
+    // Notify sender via socket that messages were read
+    const io = req.app.get('io');
+    if (io && result.modifiedCount > 0) {
+      io.to(`user:${friendId}`).emit('dm:read', {
+        readBy: userId,
+        messageIds: [], // Empty means all messages
+        readAt: new Date().toISOString()
+      });
+    }
+
+    res.json({ success: true, markedRead: result.modifiedCount });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // @route   POST /api/direct-messages/:friendId
 // @desc    Send message to friend
 // @access  Private

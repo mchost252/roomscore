@@ -95,22 +95,54 @@ const MessagesPage = () => {
     if (!socket) return;
 
     const handleNewDirectMessage = (message) => {
-      // If we're viewing this conversation, add the message
+      const senderId = message.sender._id;
+      const recipientId = message.recipient._id;
+      const currentUserId = user?._id || user?.id;
+      
+      // Confirm delivery to sender (we received it)
+      if (senderId !== currentUserId) {
+        socket.emit('dm:confirm_delivery', { 
+          senderId: senderId, 
+          messageIds: [message._id] 
+        });
+      }
+      
+      // If we're viewing this conversation, add the message and mark as read
       if (selectedFriend && 
-          (message.sender._id === selectedFriend._id || message.recipient._id === selectedFriend._id)) {
+          (senderId === selectedFriend._id || recipientId === selectedFriend._id)) {
         setMessages(prev => [...prev, message]);
         scrollToBottom();
         
-        // Mark message as read and notify sender
-        if (message.sender._id === selectedFriend._id) {
+        // Mark message as read immediately if from friend and notify sender
+        if (senderId === selectedFriend._id) {
           socket.emit('dm:read', { 
-            senderId: message.sender._id, 
+            senderId: senderId, 
             messageIds: [message._id] 
           });
+          // Also call API to persist read status
+          api.put(`/direct-messages/read/${senderId}`).catch(() => {});
         }
       }
-      // Update conversations in cache only - don't refetch
-      // This prevents slow API calls on every message
+      
+      // Update conversations list in real-time
+      setConversations(prev => {
+        const friendId = senderId === currentUserId ? recipientId : senderId;
+        const existingIdx = prev.findIndex(c => c.friend._id === friendId);
+        
+        if (existingIdx >= 0) {
+          const updated = [...prev];
+          const conv = { ...updated[existingIdx] };
+          conv.lastMessage = message;
+          // Only increment unread if message is from friend and we're not viewing that chat
+          if (senderId !== currentUserId && selectedFriend?._id !== friendId) {
+            conv.unreadCount = (conv.unreadCount || 0) + 1;
+          }
+          updated.splice(existingIdx, 1);
+          updated.unshift(conv); // Move to top
+          return updated;
+        }
+        return prev;
+      });
     };
 
     // Handle online status updates
@@ -131,11 +163,21 @@ const MessagesPage = () => {
       setOnlineUsers(new Set(userIds));
     };
 
-    // Handle read receipts
+    // Handle read receipts - update message status
     const handleDmRead = ({ readBy, messageIds, readAt }) => {
       setMessages(prev => prev.map(msg => {
-        if (messageIds.includes(msg._id)) {
+        if (messageIds.includes(msg._id) || (msg.recipient?._id === readBy && !msg.isRead)) {
           return { ...msg, isRead: true, readAt };
+        }
+        return msg;
+      }));
+    };
+
+    // Handle message delivered confirmation
+    const handleDmDelivered = ({ messageIds }) => {
+      setMessages(prev => prev.map(msg => {
+        if (messageIds.includes(msg._id)) {
+          return { ...msg, isDelivered: true };
         }
         return msg;
       }));
@@ -145,14 +187,16 @@ const MessagesPage = () => {
     socket.on('user:status', handleUserStatus);
     socket.on('users:online', handleOnlineUsers);
     socket.on('dm:read', handleDmRead);
+    socket.on('dm:delivered', handleDmDelivered);
 
     return () => {
       socket.off('new_direct_message', handleNewDirectMessage);
       socket.off('user:status', handleUserStatus);
       socket.off('users:online', handleOnlineUsers);
       socket.off('dm:read', handleDmRead);
+      socket.off('dm:delivered', handleDmDelivered);
     };
-  }, [socket, selectedFriend]);
+  }, [socket, selectedFriend, user]);
 
   useEffect(() => {
     scrollToBottom();
@@ -348,6 +392,14 @@ const MessagesPage = () => {
   };
 
   const handleSelectConversation = (friend) => {
+    // Clear unread count immediately in UI
+    setConversations(prev => prev.map(c => 
+      c.friend._id === friend._id ? { ...c, unreadCount: 0 } : c
+    ));
+    
+    // Mark messages as read on server
+    api.put(`/direct-messages/read/${friend._id}`).catch(() => {});
+    
     if (isMobile) {
       navigate(`/messages/${friend._id}`);
     } else {
@@ -503,9 +555,11 @@ const MessagesPage = () => {
                             </Typography>
                             {isOwn && (
                               msg.isRead ? (
-                                <DoneAll sx={{ fontSize: 14, color: 'inherit', opacity: 0.9 }} />
+                                <DoneAll sx={{ fontSize: 14, color: '#53bdeb' }} /> // Blue = seen
+                              ) : msg.isDelivered || !msg._id?.startsWith?.('temp_') ? (
+                                <DoneAll sx={{ fontSize: 14, color: 'inherit', opacity: 0.7 }} /> // Gray double = delivered
                               ) : (
-                                <Done sx={{ fontSize: 14, color: 'inherit', opacity: 0.7 }} />
+                                <Done sx={{ fontSize: 14, color: 'inherit', opacity: 0.5 }} /> // Single = sent/sending
                               )
                             )}
                           </Box>
@@ -844,9 +898,11 @@ const MessagesPage = () => {
                               </Typography>
                               {isOwn && (
                                 msg.isRead ? (
-                                  <DoneAll sx={{ fontSize: 14, color: 'inherit', opacity: 0.9 }} />
+                                  <DoneAll sx={{ fontSize: 14, color: '#53bdeb' }} /> // Blue = seen
+                                ) : msg.isDelivered || !msg._id?.startsWith?.('temp_') ? (
+                                  <DoneAll sx={{ fontSize: 14, color: 'inherit', opacity: 0.7 }} /> // Gray double = delivered
                                 ) : (
-                                  <Done sx={{ fontSize: 14, color: 'inherit', opacity: 0.7 }} />
+                                  <Done sx={{ fontSize: 14, color: 'inherit', opacity: 0.5 }} /> // Single = sent/sending
                                 )
                               )}
                             </Box>

@@ -102,6 +102,14 @@ module.exports = (io) => {
       });
     });
 
+    // Confirm message delivery when recipient is online
+    socket.on('dm:confirm_delivery', ({ senderId, messageIds }) => {
+      socket.to(`user:${senderId}`).emit('dm:delivered', {
+        messageIds,
+        deliveredAt: new Date().toISOString()
+      });
+    });
+
     // Handle disconnect
     socket.on('disconnect', () => {
       logger.info(`User disconnected: ${socket.username} (${socket.userId})`);

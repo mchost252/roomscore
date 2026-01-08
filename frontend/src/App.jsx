@@ -7,6 +7,7 @@ import { useTheme as useCustomTheme } from './context/ThemeContext';
 // Components (loaded immediately)
 import Navbar from './components/Navbar';
 import LoadingScreen from './components/LoadingScreen';
+import PushNotificationPrompt from './components/PushNotificationPrompt';
 
 // Pages (lazy loaded for code splitting)
 const LoginPage = lazy(() => import('./pages/LoginPage'));
@@ -44,10 +45,13 @@ const PublicRoute = ({ children }) => {
 
 function App() {
   const { mode } = useCustomTheme();
+  const { user } = useAuth();
 
   return (
     <>
       <CssBaseline />
+      {/* Show push notification prompt for logged-in users */}
+      {user && <PushNotificationPrompt />}
       <Box sx={{ 
         minHeight: '100vh',
         bgcolor: 'background.default',
