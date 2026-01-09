@@ -136,25 +136,40 @@ const DashboardPage = () => {
       {/* Today's Focus Section */}
       <Paper sx={{ p: 3, mb: 3, borderLeft: 4, borderColor: 'primary.main' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h5" fontWeight="bold">
-            Today's Focus
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Typography variant="h5" fontWeight="bold">
+              Today's Focus
+            </Typography>
+            {(() => {
+              const allTasks = (rooms || []).flatMap(room => (room?.tasks || []).filter(t => t.isActive));
+              const completedCount = allTasks.filter(t => t.isCompleted).length;
+              const totalCount = allTasks.length;
+              if (totalCount > 0) {
+                return (
+                  <Chip 
+                    size="small" 
+                    color={completedCount === totalCount ? 'success' : 'default'}
+                    label={`${completedCount}/${totalCount} done`}
+                  />
+                );
+              }
+              return null;
+            })()}
+          </Box>
           <Button variant="text" onClick={() => navigate('/rooms')}>View all</Button>
         </Box>
 
         {(() => {
-          // Build a simple list of active tasks from rooms (best-effort without extra API calls)
-          const focusTasks = (rooms || [])
-            .flatMap(room => (room?.tasks || []).filter(t => t.isActive).map(t => ({
-              id: t._id,
-              title: t.title,
-              points: t.points,
-              roomId: room._id,
-              roomName: room.name
-            })))
-            .slice(0, 5);
+          // Build task list grouped by room, showing completion status
+          const roomsWithTasks = (rooms || [])
+            .map(room => ({
+              ...room,
+              activeTasks: (room?.tasks || []).filter(t => t.isActive)
+            }))
+            .filter(room => room.activeTasks.length > 0)
+            .slice(0, 3); // Limit to 3 rooms max
 
-          if (focusTasks.length === 0) {
+          if (roomsWithTasks.length === 0) {
             return (
               <Box sx={{ textAlign: 'center', py: 3 }}>
                 <Typography variant="body1" color="text.secondary" gutterBottom>
@@ -168,31 +183,93 @@ const DashboardPage = () => {
           }
 
           return (
-            <Grid container spacing={2}>
-              {focusTasks.map(task => (
-                <Grid item xs={12} md={6} key={task.id}>
-                  <Card sx={{ p: 1.5 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Box>
-                        <Typography variant="subtitle1" fontWeight="bold">
-                          {task.title}
-                        </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {roomsWithTasks.map(room => {
+                const completedTasks = room.activeTasks.filter(t => t.isCompleted).length;
+                const totalTasks = room.activeTasks.length;
+                const progress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+                
+                return (
+                  <Card 
+                    key={room._id} 
+                    sx={{ 
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      '&:hover': { boxShadow: 3, transform: 'translateY(-2px)' }
+                    }}
+                    onClick={() => navigate(`/rooms/${room._id}`)}
+                  >
+                    <Box sx={{ p: 2 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Typography variant="subtitle1" fontWeight="bold">
+                            {room.name}
+                          </Typography>
+                          <Chip 
+                            size="small" 
+                            label={`${completedTasks}/${totalTasks}`}
+                            color={completedTasks === totalTasks ? 'success' : 'default'}
+                            variant={completedTasks === totalTasks ? 'filled' : 'outlined'}
+                          />
+                        </Box>
                         <Typography variant="caption" color="text.secondary">
-                          Room: {task.roomName}
+                          {room.activeTasks.reduce((sum, t) => sum + (t.isCompleted ? 0 : t.points), 0)} pts remaining
                         </Typography>
                       </Box>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Chip size="small" color="secondary" label="Room" variant="outlined" />
-                        <Chip size="small" color="success" label={`+${task.points} pts`} />
-                        <Button size="small" variant="outlined" onClick={() => navigate(`/rooms/${task.roomId}`)}>
-                          Go
-                        </Button>
+                      
+                      {/* Progress bar */}
+                      <LinearProgress 
+                        variant="determinate" 
+                        value={progress} 
+                        sx={{ 
+                          height: 6, 
+                          borderRadius: 3,
+                          bgcolor: 'action.hover',
+                          '& .MuiLinearProgress-bar': {
+                            bgcolor: completedTasks === totalTasks ? 'success.main' : 'primary.main'
+                          }
+                        }} 
+                      />
+                      
+                      {/* Task list - compact */}
+                      <Box sx={{ mt: 1.5, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {room.activeTasks.slice(0, 4).map(task => (
+                          <Chip
+                            key={task._id}
+                            size="small"
+                            icon={task.isCompleted ? <CheckCircle sx={{ fontSize: 14 }} /> : undefined}
+                            label={task.title.length > 20 ? task.title.substring(0, 20) + '...' : task.title}
+                            variant={task.isCompleted ? 'filled' : 'outlined'}
+                            color={task.isCompleted ? 'success' : 'default'}
+                            sx={{ 
+                              textDecoration: task.isCompleted ? 'line-through' : 'none',
+                              opacity: task.isCompleted ? 0.7 : 1
+                            }}
+                          />
+                        ))}
+                        {room.activeTasks.length > 4 && (
+                          <Chip
+                            size="small"
+                            label={`+${room.activeTasks.length - 4} more`}
+                            variant="outlined"
+                          />
+                        )}
                       </Box>
                     </Box>
                   </Card>
-                </Grid>
-              ))}
-            </Grid>
+                );
+              })}
+              
+              {rooms.length > 3 && (
+                <Button 
+                  variant="text" 
+                  onClick={() => navigate('/rooms')}
+                  sx={{ alignSelf: 'center' }}
+                >
+                  View {rooms.length - 3} more rooms
+                </Button>
+              )}
+            </Box>
           );
         })()}
       </Paper>

@@ -31,11 +31,13 @@ import {
   PersonAdd
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 
 const RoomListPage = () => {
   const { user } = useAuth();
+  const { socket } = useSocket();
   const navigate = useNavigate();
   const [myRooms, setMyRooms] = useState([]);
   const [publicRooms, setPublicRooms] = useState([]);
@@ -51,6 +53,49 @@ const RoomListPage = () => {
   useEffect(() => {
     loadRooms();
   }, []);
+
+  // Listen for real-time room updates
+  useEffect(() => {
+    if (!socket) return;
+
+    // When current user leaves a room, remove it from list
+    const handleMemberLeft = (data) => {
+      if (data.userId === user?.id) {
+        setMyRooms(prev => prev.filter(room => room._id !== data.roomId));
+      }
+    };
+
+    // When current user is kicked from a room
+    const handleMemberKicked = (data) => {
+      if (data.userId === user?.id) {
+        setMyRooms(prev => prev.filter(room => room._id !== data.roomId));
+      }
+    };
+
+    // When a room is deleted/disbanded
+    const handleRoomDeleted = (data) => {
+      setMyRooms(prev => prev.filter(room => room._id !== data.roomId));
+    };
+
+    // When current user joins a room (via approval)
+    const handleJoinApproved = (data) => {
+      if (data.room) {
+        setMyRooms(prev => [data.room, ...prev]);
+      }
+    };
+
+    socket.on('member:left', handleMemberLeft);
+    socket.on('member:kicked', handleMemberKicked);
+    socket.on('room:deleted', handleRoomDeleted);
+    socket.on('room:joinApproved', handleJoinApproved);
+
+    return () => {
+      socket.off('member:left', handleMemberLeft);
+      socket.off('member:kicked', handleMemberKicked);
+      socket.off('room:deleted', handleRoomDeleted);
+      socket.off('room:joinApproved', handleJoinApproved);
+    };
+  }, [socket, user?.id]);
 
   const loadRooms = async () => {
     try {
@@ -86,9 +131,17 @@ const RoomListPage = () => {
         joinCode: joinCode.trim().toUpperCase()
       });
 
-      setSuccess('Successfully joined room!');
       setJoinDialogOpen(false);
       setJoinCode('');
+      
+      // Check if join request is pending approval
+      if (response.data.pending) {
+        setSuccess(response.data.message || 'Request sent! Waiting for owner approval.');
+        // Don't navigate - user is not a member yet
+        return;
+      }
+
+      setSuccess('Successfully joined room!');
       
       // Navigate to the newly joined room
       setTimeout(() => {

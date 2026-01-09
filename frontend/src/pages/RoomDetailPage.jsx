@@ -1273,7 +1273,10 @@ const RoomDetailPage = () => {
                           <IconButton 
                             size="small" 
                             color="success"
-                            onClick={() => handleApproveMember(pending.userId?._id || pending.userId)}
+                            onClick={() => {
+                              const odId = typeof pending.userId === 'object' ? pending.userId._id : pending.userId;
+                              handleApproveMember(odId);
+                            }}
                           >
                             <CheckCircle fontSize="small" />
                           </IconButton>
@@ -1282,7 +1285,10 @@ const RoomDetailPage = () => {
                           <IconButton 
                             size="small" 
                             color="error"
-                            onClick={() => handleRejectMember(pending.userId?._id || pending.userId)}
+                            onClick={() => {
+                              const odId = typeof pending.userId === 'object' ? pending.userId._id : pending.userId;
+                              handleRejectMember(odId);
+                            }}
                           >
                             <Delete fontSize="small" />
                           </IconButton>
