@@ -32,6 +32,16 @@ const NotificationPopup = () => {
   const handleClick = (event) => {
     setAnchorEl(event.currentTarget);
     loadNotifications();
+    // Mark all notifications as read when popup is opened
+    markAllAsRead();
+  };
+
+  const markAllAsRead = async () => {
+    try {
+      await api.put('/notifications/read-all');
+    } catch (error) {
+      console.error('Error marking notifications as read:', error);
+    }
   };
 
   const handleClose = () => {

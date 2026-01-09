@@ -282,6 +282,22 @@ const ProfilePage = () => {
 
   const unreadNotifications = notifications.filter(n => !n.isRead).length;
 
+  // Auto-mark all notifications as read when viewing the Notifications tab
+  useEffect(() => {
+    if (tabValue === 2 && unreadNotifications > 0) {
+      const markAllAsRead = async () => {
+        try {
+          await api.put('/notifications/read-all');
+          // Update local state to reflect read status
+          setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+        } catch (err) {
+          console.error('Error marking notifications as read:', err);
+        }
+      };
+      markAllAsRead();
+    }
+  }, [tabValue]);
+
   // Infinite scroll observer
   useEffect(() => {
     const sentinel = document.getElementById('notif-sentinel');

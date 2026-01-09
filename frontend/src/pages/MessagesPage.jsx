@@ -356,6 +356,26 @@ const MessagesPage = () => {
         const friendData = firstMsg.sender._id === user?._id ? firstMsg.recipient : firstMsg.sender;
         setSelectedFriend(friendData);
       }
+      
+      // Mark messages as read AFTER they've been loaded and displayed
+      // Check if there are any unread messages from the friend
+      const currentUserId = user?._id || user?.id;
+      const hasUnreadFromFriend = messagesData.some(m => 
+        m.sender?._id === fId && m.recipient?._id === currentUserId && !m.isRead
+      );
+      
+      if (hasUnreadFromFriend) {
+        // Notify sender via socket that messages were read
+        if (socket) {
+          const unreadMessageIds = messagesData
+            .filter(m => m.sender?._id === fId && !m.isRead)
+            .map(m => m._id);
+          socket.emit('dm:read', { senderId: fId, messageIds: unreadMessageIds });
+        }
+        // Persist read status to server (the GET already marked them as read in DB,
+        // but we need to emit the socket event to notify the sender)
+        api.put(`/direct-messages/read/${fId}`).catch(() => {});
+      }
     } catch (err) {
       console.error('Error loading messages:', err);
     } finally {
@@ -422,8 +442,8 @@ const MessagesPage = () => {
       c.friend._id === friend._id ? { ...c, unreadCount: 0 } : c
     ));
     
-    // Mark messages as read on server
-    api.put(`/direct-messages/read/${friend._id}`).catch(() => {});
+    // NOTE: Don't mark messages as read here - let loadMessages handle it
+    // after messages are actually loaded and displayed to the user
     
     if (isMobile) {
       navigate(`/messages/${friend._id}`);

@@ -93,6 +93,9 @@ const RoomDetailPage = () => {
   const [loadingPending, setLoadingPending] = useState(false);
   const chatContainerRef = React.useRef(null);
 
+  // Determine if current user is the room owner
+  const isOwner = room?.owner?._id === user?.id || room?.owner === user?.id;
+
   useEffect(() => {
     loadRoomDetails();
   }, [roomId]);
@@ -706,7 +709,6 @@ const RoomDetailPage = () => {
     }
   };
 
-  const isOwner = room?.owner._id === user?.id || room?.owner === user?.id;
   const myMember = room?.members?.find(m => 
     m.userId._id === user?.id || m.userId === user?.id
   );

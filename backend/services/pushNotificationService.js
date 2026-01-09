@@ -254,6 +254,24 @@ class PushNotificationService {
 
     return await this.sendToUser(requesterId, payload);
   }
+
+  // Notify task reminder
+  static async notifyTaskReminder(userId, taskTitle, roomName, roomId) {
+    const payload = {
+      title: `Task Reminder`,
+      body: `Don't forget to complete "${taskTitle}" in ${roomName}`,
+      icon: '/icon-192x192.png',
+      badge: '/badge-72x72.png',
+      tag: `task-reminder-${roomId}`,
+      data: {
+        type: 'task_reminder',
+        roomId: roomId,
+        url: `/rooms/${roomId}`
+      }
+    };
+
+    return await this.sendToUser(userId, payload);
+  }
 }
 
 module.exports = PushNotificationService;

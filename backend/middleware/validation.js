@@ -51,6 +51,8 @@ exports.createRoomSchema = Joi.object({
   description: Joi.string().max(500).allow(''),
   isPublic: Joi.boolean(),
   maxMembers: Joi.number().min(2).max(100),
+  duration: Joi.string().valid('1_week', '2_weeks', '1_month'),
+  requireApproval: Joi.boolean(),
   settings: Joi.object({
     timezone: Joi.string(),
     allowMemberTaskCreation: Joi.boolean(),

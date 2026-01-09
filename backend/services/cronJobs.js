@@ -1,5 +1,6 @@
 const cron = require('node-cron');
 const NotificationService = require('./notificationService');
+const PushNotificationService = require('./pushNotificationService');
 const ChatMessage = require('../models/ChatMessage');
 const Room = require('../models/Room');
 const logger = require('../utils/logger');
@@ -76,11 +77,25 @@ cron.schedule('0 8 * * *', async () => {
       for (const member of room.members) {
         if (member.userId && member.userId.notificationSettings?.taskReminders) {
           for (const task of todayTasks) {
+            // Create in-app notification
             await NotificationService.notifyTaskReminder(
               member.userId._id,
               task,
               room
             );
+            
+            // Send push notification
+            try {
+              await PushNotificationService.notifyTaskReminder(
+                member.userId._id,
+                task.title,
+                room.name,
+                room._id.toString()
+              );
+            } catch (pushErr) {
+              logger.error('Push notification error for task reminder:', pushErr);
+            }
+            
             reminderCount++;
           }
         }
