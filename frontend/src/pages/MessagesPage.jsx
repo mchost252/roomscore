@@ -25,6 +25,7 @@ import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import { useDeviceType } from '../hooks/useDeviceType';
+import { fetchAvatars } from '../hooks/useAvatar';
 import UserProfileDialog from '../components/UserProfileDialog';
 
 const MessagesPage = () => {
@@ -42,6 +43,7 @@ const MessagesPage = () => {
   const [conversationsLoaded, setConversationsLoaded] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState(new Set());
+  const [avatars, setAvatars] = useState({});
   const messagesEndRef = useRef(null);
 
   const quickEmojis = ['👍', '❤️', '😂', '🔥', '🎉'];
@@ -246,7 +248,7 @@ const MessagesPage = () => {
       try {
         const cacheData = conversationsData.map(c => ({
           friend: {
-            _id: c.friend._id,
+            _id: String(c.friend._id), // Ensure ID is string for proper serialization
             username: c.friend.username
             // avatar excluded - too large
           },
@@ -259,6 +261,17 @@ const MessagesPage = () => {
         sessionStorage.setItem('conversations_cache', JSON.stringify(cacheData));
       } catch (e) {
         sessionStorage.removeItem('conversations_cache');
+      }
+      
+      // Load avatars on-demand after conversations are loaded
+      if (conversationsData.length > 0) {
+        const userIds = conversationsData.map(c => String(c.friend._id));
+        const avatarMap = await fetchAvatars(userIds);
+        const avatarObj = {};
+        avatarMap.forEach((avatar, id) => {
+          avatarObj[id] = avatar;
+        });
+        setAvatars(prev => ({ ...prev, ...avatarObj }));
       }
     } catch (err) {
       console.error('Error loading conversations:', err);
@@ -519,7 +532,7 @@ const MessagesPage = () => {
                 onClick={() => setProfileDialogOpen(true)}
               >
                 <Box sx={{ position: 'relative' }}>
-                  <Avatar src={selectedFriend.avatar} sx={{ width: 44, height: 44 }}>{selectedFriend.username[0]}</Avatar>
+                  <Avatar src={avatars[selectedFriend._id] || selectedFriend.avatar} sx={{ width: 44, height: 44 }}>{selectedFriend.username[0]}</Avatar>
                   <OnlineIndicator isOnline={onlineUsers.has(selectedFriend._id)} size={14} />
                 </Box>
                 <Box>
@@ -747,7 +760,7 @@ const MessagesPage = () => {
                     <ListItemAvatar>
                       <Badge badgeContent={conv.unreadCount} color="error">
                         <Box sx={{ position: 'relative' }}>
-                          <Avatar src={conv.friend.avatar}>{conv.friend.username[0]}</Avatar>
+                          <Avatar src={avatars[conv.friend._id] || conv.friend.avatar}>{conv.friend.username[0]}</Avatar>
                           <OnlineIndicator isOnline={onlineUsers.has(conv.friend._id)} />
                         </Box>
                       </Badge>
@@ -824,7 +837,7 @@ const MessagesPage = () => {
                     <ListItemAvatar>
                       <Badge badgeContent={conv.unreadCount} color="error">
                         <Box sx={{ position: 'relative' }}>
-                          <Avatar src={conv.friend.avatar}>{conv.friend.username[0]}</Avatar>
+                          <Avatar src={avatars[conv.friend._id] || conv.friend.avatar}>{conv.friend.username[0]}</Avatar>
                           <OnlineIndicator isOnline={onlineUsers.has(conv.friend._id)} />
                         </Box>
                       </Badge>
@@ -865,7 +878,7 @@ const MessagesPage = () => {
                 onClick={() => setProfileDialogOpen(true)}
               >
                 <Box sx={{ position: 'relative' }}>
-                  <Avatar src={selectedFriend.avatar}>{selectedFriend.username[0]}</Avatar>
+                  <Avatar src={avatars[selectedFriend._id] || selectedFriend.avatar}>{selectedFriend.username[0]}</Avatar>
                   <OnlineIndicator isOnline={onlineUsers.has(selectedFriend._id)} />
                 </Box>
                 <Box>

@@ -28,6 +28,7 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useDeviceType } from '../hooks/useDeviceType';
+import { fetchAvatars, getCachedAvatar } from '../hooks/useAvatar';
 import api from '../utils/api';
 
 const FriendsPage = () => {
@@ -41,6 +42,7 @@ const FriendsPage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [avatars, setAvatars] = useState({});
 
   useEffect(() => {
     // Load from cache first for instant display
@@ -83,7 +85,7 @@ const FriendsPage = () => {
       // Cache for instant loading - strip large avatar data to prevent quota errors
       try {
         const cacheData = friendsData.map(f => ({
-          _id: f._id,
+          _id: String(f._id), // Ensure ID is string for proper serialization
           username: f.username,
           email: f.email,
           totalPoints: f.totalPoints,
@@ -95,6 +97,17 @@ const FriendsPage = () => {
       } catch (e) {
         // Clear old caches if storage is full
         sessionStorage.removeItem('friends_cache');
+      }
+      
+      // Load avatars on-demand after friends are loaded
+      if (friendsData.length > 0) {
+        const userIds = friendsData.map(f => String(f._id));
+        const avatarMap = await fetchAvatars(userIds);
+        const avatarObj = {};
+        avatarMap.forEach((avatar, id) => {
+          avatarObj[id] = avatar;
+        });
+        setAvatars(prev => ({ ...prev, ...avatarObj }));
       }
     } catch (err) {
       console.error('Error loading friends:', err);
@@ -111,7 +124,7 @@ const FriendsPage = () => {
         const cacheData = requestsData.map(r => ({
           _id: r._id,
           requester: r.requester ? {
-            _id: r.requester._id,
+            _id: String(r.requester._id),
             username: r.requester.username,
             email: r.requester.email
           } : null,
@@ -121,6 +134,21 @@ const FriendsPage = () => {
         sessionStorage.setItem('friend_requests_cache', JSON.stringify(cacheData));
       } catch (e) {
         sessionStorage.removeItem('friend_requests_cache');
+      }
+      
+      // Load avatars for requesters
+      if (requestsData.length > 0) {
+        const userIds = requestsData
+          .filter(r => r.requester?._id)
+          .map(r => String(r.requester._id));
+        if (userIds.length > 0) {
+          const avatarMap = await fetchAvatars(userIds);
+          const avatarObj = {};
+          avatarMap.forEach((avatar, id) => {
+            avatarObj[id] = avatar;
+          });
+          setAvatars(prev => ({ ...prev, ...avatarObj }));
+        }
       }
     } catch (err) {
       console.error('Error loading requests:', err);
@@ -136,7 +164,19 @@ const FriendsPage = () => {
     try {
       setLoading(true);
       const res = await api.get(`/friends/search?query=${encodeURIComponent(searchQuery)}`);
-      setSearchResults(res.data.users || []);
+      const users = res.data.users || [];
+      setSearchResults(users);
+      
+      // Load avatars for search results
+      if (users.length > 0) {
+        const userIds = users.map(u => String(u._id));
+        const avatarMap = await fetchAvatars(userIds);
+        const avatarObj = {};
+        avatarMap.forEach((avatar, id) => {
+          avatarObj[id] = avatar;
+        });
+        setAvatars(prev => ({ ...prev, ...avatarObj }));
+      }
     } catch (err) {
       console.error('Error searching users:', err);
       setError('Failed to search users');
@@ -244,7 +284,7 @@ const FriendsPage = () => {
                   >
                     <Box sx={{ display: 'flex', alignItems: 'center', width: isMobile ? '100%' : 'auto', flex: 1 }}>
                       <ListItemAvatar>
-                        <Avatar src={friend.avatar}>{friend.username[0]}</Avatar>
+                        <Avatar src={avatars[friend._id] || friend.avatar}>{friend.username[0]}</Avatar>
                       </ListItemAvatar>
                       <ListItemText
                         primary={friend.username}
@@ -315,7 +355,7 @@ const FriendsPage = () => {
                     }
                   >
                     <ListItemAvatar>
-                      <Avatar src={req.requester.avatar}>{req.requester.username[0]}</Avatar>
+                      <Avatar src={avatars[req.requester._id] || req.requester.avatar}>{req.requester.username[0]}</Avatar>
                     </ListItemAvatar>
                     <ListItemText
                       primary={req.requester.username}
@@ -373,7 +413,7 @@ const FriendsPage = () => {
                     }
                   >
                     <ListItemAvatar>
-                      <Avatar src={user.avatar}>{user.username[0]}</Avatar>
+                      <Avatar src={avatars[user._id] || user.avatar}>{user.username[0]}</Avatar>
                     </ListItemAvatar>
                     <ListItemText
                       primary={user.username}

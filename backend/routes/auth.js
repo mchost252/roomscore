@@ -231,4 +231,21 @@ router.delete('/account', protect, async (req, res, next) => {
   }
 });
 
+// @route   GET /api/auth/avatar/:userId
+// @desc    Get user's avatar by ID (lightweight endpoint for on-demand avatar loading)
+// @access  Private
+router.get('/avatar/:userId', protect, async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.userId).select('avatar').lean();
+    
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    res.json({ success: true, avatar: user.avatar || null });
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;
