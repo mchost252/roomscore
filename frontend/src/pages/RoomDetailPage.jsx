@@ -680,8 +680,13 @@ const RoomDetailPage = () => {
       setSuccess('Member approved!');
       setTimeout(() => setSuccess(null), 3000);
       
-      // Remove from pending list
-      setPendingMembers(prev => prev.filter(m => m.userId._id !== userId));
+      // Remove from pending list (handle both _id and id formats)
+      setPendingMembers(prev => prev.filter(m => {
+        const memberId = typeof m.userId === 'object' 
+          ? (m.userId._id || m.userId.id) 
+          : m.userId;
+        return memberId !== userId;
+      }));
       
       // Reload room to get updated members
       loadRoomDetails();
@@ -700,8 +705,13 @@ const RoomDetailPage = () => {
       setSuccess('Request declined');
       setTimeout(() => setSuccess(null), 3000);
       
-      // Remove from pending list
-      setPendingMembers(prev => prev.filter(m => m.userId._id !== userId));
+      // Remove from pending list (handle both _id and id formats)
+      setPendingMembers(prev => prev.filter(m => {
+        const memberId = typeof m.userId === 'object' 
+          ? (m.userId._id || m.userId.id) 
+          : m.userId;
+        return memberId !== userId;
+      }));
     } catch (err) {
       console.error('Error rejecting member:', err);
       setError(err.response?.data?.message || 'Failed to reject request');
@@ -1274,8 +1284,11 @@ const RoomDetailPage = () => {
                             size="small" 
                             color="success"
                             onClick={() => {
-                              const odId = typeof pending.userId === 'object' ? pending.userId._id : pending.userId;
-                              handleApproveMember(odId);
+                              // userId can be object with _id (from API) or id (from socket) or a string
+                              const uid = typeof pending.userId === 'object' 
+                                ? (pending.userId._id || pending.userId.id) 
+                                : pending.userId;
+                              handleApproveMember(uid);
                             }}
                           >
                             <CheckCircle fontSize="small" />
@@ -1286,8 +1299,11 @@ const RoomDetailPage = () => {
                             size="small" 
                             color="error"
                             onClick={() => {
-                              const odId = typeof pending.userId === 'object' ? pending.userId._id : pending.userId;
-                              handleRejectMember(odId);
+                              // userId can be object with _id (from API) or id (from socket) or a string
+                              const uid = typeof pending.userId === 'object' 
+                                ? (pending.userId._id || pending.userId.id) 
+                                : pending.userId;
+                              handleRejectMember(uid);
                             }}
                           >
                             <Delete fontSize="small" />

@@ -16,13 +16,14 @@ router.get('/conversations', protect, async (req, res, next) => {
   try {
     const userId = new mongoose.Types.ObjectId(req.user.id);
 
-    // Get all friends with avatars for profile pictures
+    // Get all friends - don't populate avatar here (too slow/large)
+    // Frontend should fetch avatars separately or use cached user data
     const friendships = await Friend.find({
       $or: [{ requester: userId }, { recipient: userId }],
       status: 'accepted'
     })
-      .populate('requester', 'username _id avatar')
-      .populate('recipient', 'username _id avatar')
+      .populate('requester', 'username _id')
+      .populate('recipient', 'username _id')
       .lean()
       .maxTimeMS(10000);
 
@@ -148,15 +149,15 @@ router.get('/:friendId', protect, async (req, res, next) => {
     }
 
     // Limit to last 100 messages for performance, sorted newest first then reversed
-    // Include avatar for profile pictures
+    // Don't populate avatar - it's too large and causes timeouts
     const messages = await DirectMessage.find({
       $or: [
         { sender: userId, recipient: friendId },
         { sender: friendId, recipient: userId }
       ]
     })
-      .populate('sender', 'username _id avatar')
-      .populate('recipient', 'username _id avatar')
+      .populate('sender', 'username _id')
+      .populate('recipient', 'username _id')
       .sort({ createdAt: -1 })
       .limit(100)
       .lean()
@@ -252,9 +253,9 @@ router.post('/:friendId', protect, async (req, res, next) => {
       message: message.trim()
     });
 
-    // Include avatar for profile pictures
-    await dm.populate('sender', 'username _id avatar');
-    await dm.populate('recipient', 'username _id avatar');
+    // Don't populate avatar - it's too large and causes timeouts
+    await dm.populate('sender', 'username _id');
+    await dm.populate('recipient', 'username _id');
 
     // Emit socket event for real-time delivery
     const io = req.app.get('io');

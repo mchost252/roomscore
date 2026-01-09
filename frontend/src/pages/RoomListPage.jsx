@@ -183,7 +183,15 @@ const RoomListPage = () => {
       if (room.isPublic) {
         try {
           setLoading(true);
-          await api.post('/rooms/join', { joinCode: room.joinCode });
+          const response = await api.post('/rooms/join', { joinCode: room.joinCode });
+          
+          // Check if join request is pending approval
+          if (response.data.pending) {
+            setSuccess(response.data.message || 'Request sent! Waiting for owner approval.');
+            // Don't navigate - user is not a member yet
+            return;
+          }
+          
           setSuccess(`Joined ${room.name}!`);
           setTimeout(() => {
             navigate(`/rooms/${room._id}`);

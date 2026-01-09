@@ -188,14 +188,15 @@ router.get('/', protect, async (req, res, next) => {
     const userId = req.user.id;
 
     // Run two parallel queries instead of $or - often faster
+    // Don't populate avatar - it's too large and causes slow queries
     const [asRequester, asRecipient] = await Promise.all([
       Friend.find({ requester: userId, status: 'accepted' })
-        .populate('recipient', 'username _id totalPoints currentStreak avatar')
+        .populate('recipient', 'username _id totalPoints currentStreak')
         .select('recipient createdAt')
         .lean()
         .maxTimeMS(5000),
       Friend.find({ recipient: userId, status: 'accepted' })
-        .populate('requester', 'username _id totalPoints currentStreak avatar')
+        .populate('requester', 'username _id totalPoints currentStreak')
         .select('requester createdAt')
         .lean()
         .maxTimeMS(5000)
@@ -206,7 +207,6 @@ router.get('/', protect, async (req, res, next) => {
       ...asRequester.map(f => ({
         _id: f.recipient._id,
         username: f.recipient.username,
-        avatar: f.recipient.avatar || null,
         totalPoints: f.recipient.totalPoints || 0,
         currentStreak: f.recipient.currentStreak || 0,
         friendsSince: f.createdAt
@@ -214,7 +214,6 @@ router.get('/', protect, async (req, res, next) => {
       ...asRecipient.map(f => ({
         _id: f.requester._id,
         username: f.requester.username,
-        avatar: f.requester.avatar || null,
         totalPoints: f.requester.totalPoints || 0,
         currentStreak: f.requester.currentStreak || 0,
         friendsSince: f.createdAt
