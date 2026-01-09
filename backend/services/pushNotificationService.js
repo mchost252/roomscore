@@ -202,6 +202,58 @@ class PushNotificationService {
 
     return await this.sendToUsers(roomMembers, payload);
   }
+
+  // Notify new direct message
+  static async notifyDirectMessage(recipientId, senderUsername, messagePreview) {
+    const payload = {
+      title: `Message from ${senderUsername}`,
+      body: messagePreview.length > 100 ? messagePreview.substring(0, 100) + '...' : messagePreview,
+      icon: '/icon-192x192.png',
+      badge: '/badge-72x72.png',
+      tag: `dm-${senderUsername}`,
+      renotify: true,
+      data: {
+        type: 'direct_message',
+        url: '/messages'
+      }
+    };
+
+    return await this.sendToUser(recipientId, payload);
+  }
+
+  // Notify friend request received
+  static async notifyFriendRequest(recipientId, senderUsername) {
+    const payload = {
+      title: 'New Friend Request',
+      body: `${senderUsername} sent you a friend request`,
+      icon: '/icon-192x192.png',
+      badge: '/badge-72x72.png',
+      tag: 'friend-request',
+      data: {
+        type: 'friend_request',
+        url: '/friends'
+      }
+    };
+
+    return await this.sendToUser(recipientId, payload);
+  }
+
+  // Notify friend request accepted
+  static async notifyFriendAccepted(requesterId, accepterUsername) {
+    const payload = {
+      title: 'Friend Request Accepted',
+      body: `${accepterUsername} accepted your friend request`,
+      icon: '/icon-192x192.png',
+      badge: '/badge-72x72.png',
+      tag: 'friend-accepted',
+      data: {
+        type: 'friend_accepted',
+        url: '/friends'
+      }
+    };
+
+    return await this.sendToUser(requesterId, payload);
+  }
 }
 
 module.exports = PushNotificationService;

@@ -73,7 +73,10 @@ router.get('/', protect, async (req, res, next) => {
 // @access  Private
 router.post('/', protect, validate(createRoomSchema), async (req, res, next) => {
   try {
-    const { name, description, isPublic, maxMembers, settings } = req.body;
+    const { name, description, isPublic, maxMembers, settings, duration, requireApproval } = req.body;
+
+    // Calculate expiry date based on duration (max 1 month)
+    const expiresAt = Room.calculateExpiryDate(duration || '1_month');
 
     const room = await Room.create({
       name,
@@ -81,7 +84,12 @@ router.post('/', protect, validate(createRoomSchema), async (req, res, next) => 
       owner: req.user.id,
       isPublic: isPublic || false,
       maxMembers: maxMembers || 50,
-      settings: settings || {},
+      duration: duration || '1_month',
+      expiresAt,
+      settings: {
+        ...settings,
+        requireApproval: requireApproval || false
+      },
       members: [{
         userId: req.user.id,
         role: 'owner',
@@ -96,7 +104,7 @@ router.post('/', protect, validate(createRoomSchema), async (req, res, next) => 
     const io = req.app.get('io');
     io.emit('room:created', { room });
 
-    logger.info(`Room created: ${room.name} by ${req.user.email}`);
+    logger.info(`Room created: ${room.name} by ${req.user.email}, expires: ${expiresAt}`);
     res.status(201).json({
       success: true,
       room
@@ -215,6 +223,14 @@ router.post('/join', protect, validate(joinRoomSchema), async (req, res, next) =
       });
     }
 
+    // Check if room has expired
+    if (room.expiresAt && new Date() > room.expiresAt) {
+      return res.status(400).json({
+        success: false,
+        message: 'This room has expired and is no longer accepting members'
+      });
+    }
+
     // Check if already a member
     const isMember = room.members.some(m => m.userId.toString() === req.user.id);
     const isOwner = room.owner.toString() === req.user.id;
@@ -226,12 +242,62 @@ router.post('/join', protect, validate(joinRoomSchema), async (req, res, next) =
       });
     }
 
+    // Check if already in pending list
+    const isPending = room.pendingMembers?.some(m => m.userId.toString() === req.user.id);
+    if (isPending) {
+      return res.status(400).json({
+        success: false,
+        message: 'Your request to join is pending approval'
+      });
+    }
+
+    // If room requires approval, add to pending list instead
+    if (room.settings?.requireApproval) {
+      await room.addPendingMember(req.user.id);
+      
+      // Notify room owner about the join request
+      try {
+        await NotificationService.createNotification({
+          userId: room.owner,
+          type: 'join_request',
+          title: `Join Request for ${room.name}`,
+          message: `${req.user.username} wants to join your room`,
+          relatedRoom: room._id,
+          data: { requesterId: req.user.id }
+        });
+      } catch (err) {
+        logger.error('Error creating join request notification:', err);
+      }
+
+      // Emit socket event to owner
+      const io = req.app.get('io');
+      io.to(`user:${room.owner}`).emit('notification', {
+        type: 'join_request',
+        title: `Join Request for ${room.name}`,
+        message: `${req.user.username} wants to join your room`,
+        roomId: room._id.toString(),
+        requesterId: req.user.id
+      });
+
+      io.to(`user:${room.owner}`).emit('room:joinRequest', {
+        roomId: room._id,
+        user: req.user.toPublicProfile()
+      });
+
+      logger.info(`User ${req.user.email} requested to join room: ${room.name}`);
+      return res.json({
+        success: true,
+        pending: true,
+        message: 'Your request to join has been sent to the room owner for approval'
+      });
+    }
+
     // Get existing members before adding new one (for notifications)
     const existingMembers = room.members
       .map(m => m.userId.toString())
       .filter(userId => userId !== req.user.id);
 
-    // Add member
+    // Add member directly (no approval required)
     await room.addMember(req.user.id);
     await room.populate('owner', 'username _id');
     await room.populate('members.userId', 'username _id');
@@ -296,6 +362,9 @@ router.post('/join', protect, validate(joinRoomSchema), async (req, res, next) =
       return res.status(400).json({ success: false, message: error.message });
     }
     if (error.message.includes('maximum capacity')) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    if (error.message.includes('Already requested')) {
       return res.status(400).json({ success: false, message: error.message });
     }
     next(error);
@@ -566,6 +635,185 @@ router.get('/:id/chat', protect, isRoomMember, async (req, res, next) => {
       success: true,
       count: messages.length,
       messages: messages.reverse()
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /api/rooms/:id/pending-members
+// @desc    Get pending member requests (owner only)
+// @access  Private (owner only)
+router.get('/:id/pending-members', protect, isRoomOwner, async (req, res, next) => {
+  try {
+    await req.room.populate('pendingMembers.userId', 'username email _id avatar');
+    
+    res.json({
+      success: true,
+      pendingMembers: req.room.pendingMembers || []
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   PUT /api/rooms/:id/approve-member/:userId
+// @desc    Approve a pending member
+// @access  Private (owner only)
+router.put('/:id/approve-member/:userId', protect, isRoomOwner, async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    
+    await req.room.approvePendingMember(userId);
+    await req.room.populate('owner', 'username _id');
+    await req.room.populate('members.userId', 'username _id');
+
+    const approvedUser = await User.findById(userId);
+    
+    // Create system message
+    if (approvedUser) {
+      await ChatMessage.create({
+        roomId: req.room._id,
+        userId: userId,
+        message: `${approvedUser.username} joined the room`,
+        messageType: 'system'
+      });
+    }
+
+    // Notify the approved user
+    try {
+      await NotificationService.createNotification({
+        userId: userId,
+        type: 'join_approved',
+        title: `Welcome to ${req.room.name}!`,
+        message: `Your request to join ${req.room.name} has been approved`,
+        relatedRoom: req.room._id
+      });
+    } catch (err) {
+      logger.error('Error creating approval notification:', err);
+    }
+
+    // Emit socket events
+    const io = req.app.get('io');
+    
+    // Notify approved user
+    io.to(`user:${userId}`).emit('notification', {
+      type: 'join_approved',
+      title: `Welcome to ${req.room.name}!`,
+      message: `Your request to join ${req.room.name} has been approved`,
+      roomId: req.room._id.toString()
+    });
+
+    io.to(`user:${userId}`).emit('room:joinApproved', {
+      room: req.room
+    });
+
+    // Notify room members
+    if (approvedUser) {
+      io.to(req.room._id.toString()).emit('member:joined', {
+        roomId: req.room._id,
+        user: approvedUser.toPublicProfile()
+      });
+    }
+
+    logger.info(`User ${userId} approved to join room: ${req.room.name}`);
+    res.json({
+      success: true,
+      message: 'Member approved successfully',
+      room: req.room
+    });
+  } catch (error) {
+    if (error.message.includes('not found in pending')) {
+      return res.status(404).json({ success: false, message: error.message });
+    }
+    if (error.message.includes('maximum capacity')) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    next(error);
+  }
+});
+
+// @route   PUT /api/rooms/:id/reject-member/:userId
+// @desc    Reject a pending member
+// @access  Private (owner only)
+router.put('/:id/reject-member/:userId', protect, isRoomOwner, async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    
+    await req.room.rejectPendingMember(userId);
+
+    // Notify the rejected user
+    try {
+      await NotificationService.createNotification({
+        userId: userId,
+        type: 'join_rejected',
+        title: `Request Declined`,
+        message: `Your request to join ${req.room.name} was not approved`,
+        relatedRoom: req.room._id
+      });
+    } catch (err) {
+      logger.error('Error creating rejection notification:', err);
+    }
+
+    // Emit socket event
+    const io = req.app.get('io');
+    io.to(`user:${userId}`).emit('notification', {
+      type: 'join_rejected',
+      title: `Request Declined`,
+      message: `Your request to join ${req.room.name} was not approved`,
+      roomId: req.room._id.toString()
+    });
+
+    io.to(`user:${userId}`).emit('room:joinRejected', {
+      roomId: req.room._id
+    });
+
+    logger.info(`User ${userId} rejected from room: ${req.room.name}`);
+    res.json({
+      success: true,
+      message: 'Member request rejected'
+    });
+  } catch (error) {
+    if (error.message.includes('not found in pending')) {
+      return res.status(404).json({ success: false, message: error.message });
+    }
+    next(error);
+  }
+});
+
+// @route   PUT /api/rooms/:id/settings
+// @desc    Update room settings (including requireApproval)
+// @access  Private (owner only)
+router.put('/:id/settings', protect, isRoomOwner, async (req, res, next) => {
+  try {
+    const { requireApproval, allowMemberTaskCreation, timezone } = req.body;
+
+    const updateFields = {};
+    if (typeof requireApproval === 'boolean') {
+      updateFields['settings.requireApproval'] = requireApproval;
+    }
+    if (typeof allowMemberTaskCreation === 'boolean') {
+      updateFields['settings.allowMemberTaskCreation'] = allowMemberTaskCreation;
+    }
+    if (timezone) {
+      updateFields['settings.timezone'] = timezone;
+    }
+
+    const room = await Room.findByIdAndUpdate(
+      req.params.id,
+      { $set: updateFields },
+      { new: true, runValidators: true }
+    ).populate('owner', 'username _id')
+     .populate('members.userId', 'username _id');
+
+    // Emit socket event
+    const io = req.app.get('io');
+    io.to(room._id.toString()).emit('room:updated', { room });
+
+    logger.info(`Room settings updated: ${room.name}`);
+    res.json({
+      success: true,
+      room
     });
   } catch (error) {
     next(error);

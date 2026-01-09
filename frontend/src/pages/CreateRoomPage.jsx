@@ -44,7 +44,9 @@ const CreateRoomPage = () => {
     name: '',
     description: '',
     isPublic: false,
-    maxMembers: 20
+    maxMembers: 20,
+    duration: '1_month',
+    requireApproval: false
   });
 
   // Tasks
@@ -122,7 +124,9 @@ const CreateRoomPage = () => {
         name: roomData.name.trim(),
         description: roomData.description.trim(),
         isPublic: roomData.isPublic,
-        maxMembers: roomData.maxMembers
+        maxMembers: roomData.maxMembers,
+        duration: roomData.duration,
+        requireApproval: roomData.requireApproval
       };
 
       const roomResponse = await api.post('/rooms', roomPayload);
@@ -217,6 +221,55 @@ const CreateRoomPage = () => {
                     {roomData.isPublic 
                       ? 'Anyone can discover and join this room' 
                       : 'Users need a join code to access this room'}
+                  </Typography>
+                </Box>
+              }
+              sx={{ mb: 2 }}
+            />
+
+            <Divider sx={{ my: 2 }} />
+
+            <Typography variant="subtitle2" gutterBottom fontWeight="bold">
+              Room Duration
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Set how long this room will be active (max 1 month)
+            </Typography>
+
+            <TextField
+              fullWidth
+              select
+              label="Duration"
+              value={roomData.duration}
+              onChange={(e) => handleRoomDataChange('duration', e.target.value)}
+              SelectProps={{ native: true }}
+              sx={{ mb: 3 }}
+            >
+              <option value="1_week">1 Week</option>
+              <option value="2_weeks">2 Weeks</option>
+              <option value="1_month">1 Month (Maximum)</option>
+            </TextField>
+
+            <Divider sx={{ my: 2 }} />
+
+            <Typography variant="subtitle2" gutterBottom fontWeight="bold">
+              Member Approval
+            </Typography>
+
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={roomData.requireApproval}
+                  onChange={(e) => handleRoomDataChange('requireApproval', e.target.checked)}
+                />
+              }
+              label={
+                <Box>
+                  <Typography variant="body1">Require Approval to Join</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {roomData.requireApproval 
+                      ? 'You will need to approve each member before they can join' 
+                      : 'Members can join automatically with the room code'}
                   </Typography>
                 </Box>
               }

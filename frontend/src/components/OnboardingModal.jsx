@@ -27,47 +27,50 @@ import {
 const onboardingSteps = [
   {
     title: 'Welcome to RoomScore! 👋',
-    subtitle: 'Navigation',
-    description: 'This is your home. Tasks, rooms, messages, and your progress live here.',
+    subtitle: 'Overview',
+    description: 'Build better habits with friends! Track tasks, earn points, and stay accountable together.',
     icon: DashboardIcon,
     features: [
-      { label: 'Dashboard', desc: 'Your daily overview' },
-      { label: 'Rooms', desc: 'Shared task spaces' },
-      { label: 'Messages', desc: 'Stay connected' },
-      { label: 'Profile', desc: 'Track your progress' }
+      { label: 'Dashboard', desc: 'Your daily overview & stats' },
+      { label: 'Rooms', desc: 'Collaborative habit spaces' },
+      { label: 'Friends', desc: 'Connect & message friends' },
+      { label: 'Notifications', desc: 'Real-time updates & alerts' }
     ]
   },
   {
-    title: 'Join Rooms 🏠',
+    title: 'Create & Join Rooms 🏠',
     subtitle: 'Rooms',
-    description: 'Join rooms to complete shared tasks and earn points together.',
+    description: 'Rooms are shared spaces where you and your friends complete tasks together.',
     icon: GroupIcon,
     features: [
-      { label: 'Create Rooms', desc: 'Start your own habit group' },
-      { label: 'Join Rooms', desc: 'Use invite codes' },
-      { label: 'Team Progress', desc: 'See everyone\'s achievements' }
+      { label: 'Create Rooms', desc: 'Set up habit groups (up to 1 month)' },
+      { label: 'Join via Code', desc: 'Use invite codes to join' },
+      { label: 'Leaderboards', desc: 'Compete with room members' },
+      { label: 'Room Chat', desc: 'Discuss progress together' }
     ]
   },
   {
-    title: 'Complete Tasks 📝',
+    title: 'Complete Tasks & Earn Points 📝',
     subtitle: 'Tasks',
-    description: 'Tasks earn you points and build your streak.',
+    description: 'Complete daily, weekly, or monthly tasks to earn points and build streaks.',
     icon: TaskIcon,
     features: [
-      { label: 'Personal Tasks', desc: 'Private to you' },
-      { label: 'Room Tasks', desc: 'Shared with your team' },
-      { label: 'Daily Streaks', desc: 'Build momentum' }
+      { label: 'Room Tasks', desc: 'Visible to all room members' },
+      { label: 'Points System', desc: 'Earn points for completions' },
+      { label: 'Daily Streaks', desc: 'Build consistency over time' },
+      { label: 'See Who Completed', desc: 'Track team progress' }
     ]
   },
   {
     title: 'Stay Connected 💬',
     subtitle: 'Social',
-    description: 'Chat in rooms or message friends to stay accountable.',
+    description: 'Add friends, send messages, and get instant notifications when things happen.',
     icon: ChatIcon,
     features: [
-      { label: 'Room Chat', desc: 'Discuss with teammates' },
-      { label: 'Private Messages', desc: 'Connect with friends' },
-      { label: 'Encouragement', desc: 'Support each other' }
+      { label: 'Add Friends', desc: 'Search & send friend requests' },
+      { label: 'Direct Messages', desc: 'Private chats with friends' },
+      { label: 'Push Notifications', desc: 'Never miss an update' },
+      { label: 'Online Status', desc: 'See who\'s active' }
     ]
   }
 ];
@@ -103,10 +106,15 @@ const OnboardingModal = ({ open, onClose }) => {
       maxWidth="sm"
       fullWidth
       fullScreen={isMobile}
+      disableEscapeKeyDown
       PaperProps={{
         sx: {
           borderRadius: isMobile ? 0 : 3,
-          minHeight: isMobile ? '100vh' : '500px'
+          minHeight: isMobile ? '100vh' : '500px',
+          maxHeight: isMobile ? '100vh' : '90vh',
+          // iOS safe area support
+          paddingBottom: isMobile ? 'env(safe-area-inset-bottom, 20px)' : 0,
+          paddingTop: isMobile ? 'env(safe-area-inset-top, 0px)' : 0
         }
       }}
     >
@@ -115,17 +123,28 @@ const OnboardingModal = ({ open, onClose }) => {
         sx={{
           position: 'absolute',
           right: 8,
-          top: 8,
+          top: isMobile ? 'calc(8px + env(safe-area-inset-top, 0px))' : 8,
           color: 'text.secondary',
-          zIndex: 1
+          zIndex: 1,
+          // Larger touch target for mobile
+          minWidth: 44,
+          minHeight: 44
         }}
       >
         <CloseIcon />
       </IconButton>
 
-      <DialogContent sx={{ p: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <DialogContent sx={{ 
+        p: 0, 
+        display: 'flex', 
+        flexDirection: 'column', 
+        height: '100%',
+        overflow: 'auto',
+        // Ensure content is scrollable on small screens
+        WebkitOverflowScrolling: 'touch'
+      }}>
         {/* Stepper */}
-        <Box sx={{ px: 3, pt: 3, pb: 2 }}>
+        <Box sx={{ px: 3, pt: isMobile ? 4 : 3, pb: 2 }}>
           <Stepper activeStep={activeStep} alternativeLabel>
             {onboardingSteps.map((step, index) => (
               <Step key={index}>
@@ -239,14 +258,28 @@ const OnboardingModal = ({ open, onClose }) => {
             alignItems: 'center',
             px: 3,
             py: 2,
+            // Extra padding for iOS safe area
+            pb: isMobile ? 'calc(16px + env(safe-area-inset-bottom, 20px))' : 2,
             borderTop: 1,
-            borderColor: 'divider'
+            borderColor: 'divider',
+            // Ensure buttons are always visible
+            flexShrink: 0,
+            backgroundColor: 'background.paper',
+            // Sticky at bottom
+            position: 'sticky',
+            bottom: 0,
+            mt: 'auto'
           }}
         >
           <Button
             onClick={activeStep === 0 ? handleSkip : handleBack}
             startIcon={activeStep > 0 && <ArrowBack />}
-            sx={{ minWidth: 100 }}
+            sx={{ 
+              minWidth: isMobile ? 90 : 100,
+              // Larger touch target for mobile
+              minHeight: 48,
+              fontSize: isMobile ? '0.9rem' : '0.875rem'
+            }}
           >
             {activeStep === 0 ? 'Skip' : 'Back'}
           </Button>
@@ -259,9 +292,16 @@ const OnboardingModal = ({ open, onClose }) => {
             variant="contained"
             onClick={handleNext}
             endIcon={activeStep < onboardingSteps.length - 1 && <ArrowForward />}
-            sx={{ minWidth: 100 }}
+            sx={{ 
+              minWidth: isMobile ? 90 : 100,
+              // Larger touch target for mobile
+              minHeight: 48,
+              fontSize: isMobile ? '0.9rem' : '0.875rem',
+              // Make Next/Start button more prominent
+              fontWeight: 'bold'
+            }}
           >
-            {activeStep === onboardingSteps.length - 1 ? 'Start' : 'Next'}
+            {activeStep === onboardingSteps.length - 1 ? "Let's Go!" : 'Next'}
           </Button>
         </Box>
       </DialogContent>

@@ -70,6 +70,23 @@ const taskSchema = new mongoose.Schema({
   }
 });
 
+const pendingMemberSchema = new mongoose.Schema({
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  requestedAt: {
+    type: Date,
+    default: Date.now
+  },
+  message: {
+    type: String,
+    trim: true,
+    maxlength: 200
+  }
+});
+
 const roomSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -86,6 +103,7 @@ const roomSchema = new mongoose.Schema({
     required: true
   },
   members: [memberSchema],
+  pendingMembers: [pendingMemberSchema],
   tasks: [taskSchema],
   joinCode: {
     type: String,
@@ -104,6 +122,20 @@ const roomSchema = new mongoose.Schema({
   maxMembers: {
     type: Number,
     default: 50
+  },
+  // Room duration - defaults to 1 month from creation
+  duration: {
+    type: String,
+    enum: ['1_week', '2_weeks', '1_month'],
+    default: '1_month'
+  },
+  expiresAt: {
+    type: Date,
+    default: function() {
+      const now = new Date();
+      // Default to 1 month from now
+      return new Date(now.setMonth(now.getMonth() + 1));
+    }
   },
   settings: {
     timezone: {
@@ -185,6 +217,64 @@ roomSchema.methods.getLeaderboard = async function() {
       joinedAt: member.joinedAt
     }))
     .sort((a, b) => b.points - a.points);
+};
+
+// Method to add pending member (for approval-required rooms)
+roomSchema.methods.addPendingMember = function(userId, message = '') {
+  const existingPending = this.pendingMembers.find(m => m.userId.toString() === userId.toString());
+  if (existingPending) {
+    throw new Error('Already requested to join this room');
+  }
+  
+  const existingMember = this.members.find(m => m.userId.toString() === userId.toString());
+  if (existingMember) {
+    throw new Error('Already a member of this room');
+  }
+  
+  this.pendingMembers.push({ userId, message });
+  return this.save();
+};
+
+// Method to approve pending member
+roomSchema.methods.approvePendingMember = async function(userId) {
+  const pendingIndex = this.pendingMembers.findIndex(m => m.userId.toString() === userId.toString());
+  if (pendingIndex === -1) {
+    throw new Error('User not found in pending members');
+  }
+  
+  if (this.members.length >= this.maxMembers) {
+    throw new Error('Room has reached maximum capacity');
+  }
+  
+  // Remove from pending and add to members
+  this.pendingMembers.splice(pendingIndex, 1);
+  this.members.push({ userId, role: 'member', points: 0 });
+  return this.save();
+};
+
+// Method to reject pending member
+roomSchema.methods.rejectPendingMember = function(userId) {
+  const pendingIndex = this.pendingMembers.findIndex(m => m.userId.toString() === userId.toString());
+  if (pendingIndex === -1) {
+    throw new Error('User not found in pending members');
+  }
+  
+  this.pendingMembers.splice(pendingIndex, 1);
+  return this.save();
+};
+
+// Static method to calculate expiry date from duration
+roomSchema.statics.calculateExpiryDate = function(duration) {
+  const now = new Date();
+  switch (duration) {
+    case '1_week':
+      return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    case '2_weeks':
+      return new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+    case '1_month':
+    default:
+      return new Date(now.setMonth(now.getMonth() + 1));
+  }
 };
 
 module.exports = mongoose.model('Room', roomSchema);

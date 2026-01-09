@@ -4,6 +4,8 @@ const { protect } = require('../middleware/auth');
 const Friend = require('../models/Friend');
 const User = require('../models/User');
 const NotificationService = require('../services/notificationService');
+const PushNotificationService = require('../services/pushNotificationService');
+const logger = require('../utils/logger');
 
 // @route   POST /api/friends/request
 // @desc    Send friend request
@@ -47,7 +49,7 @@ router.post('/request', protect, async (req, res, next) => {
       status: 'pending'
     });
 
-    // Send notification
+    // Send in-app notification
     await NotificationService.createNotification({
       userId: recipientId,
       type: 'friend_request',
@@ -56,6 +58,33 @@ router.post('/request', protect, async (req, res, next) => {
       relatedRoom: null,
       data: { requesterId }
     });
+
+    // Send push notification
+    PushNotificationService.notifyFriendRequest(
+      recipientId,
+      req.user.username
+    ).catch(err => logger.error('Push notification error for friend request:', err));
+
+    // Emit socket event for real-time notification
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user:${recipientId}`).emit('notification', {
+        type: 'friend_request',
+        title: 'New Friend Request',
+        message: `${req.user.username} sent you a friend request`,
+        requesterId,
+        requestId: friendRequest._id
+      });
+      
+      // Also emit specific friend request event for UI updates
+      io.to(`user:${recipientId}`).emit('friend:request', {
+        request: friendRequest,
+        requester: {
+          _id: requesterId,
+          username: req.user.username
+        }
+      });
+    }
 
     res.json({ success: true, friendRequest });
   } catch (error) {
@@ -86,7 +115,7 @@ router.put('/accept/:requestId', protect, async (req, res, next) => {
     friendRequest.status = 'accepted';
     await friendRequest.save();
 
-    // Notify requester
+    // Notify requester with in-app notification
     await NotificationService.createNotification({
       userId: friendRequest.requester,
       type: 'friend_accepted',
@@ -94,6 +123,31 @@ router.put('/accept/:requestId', protect, async (req, res, next) => {
       message: `${req.user.username} accepted your friend request`,
       relatedRoom: null
     });
+
+    // Send push notification
+    PushNotificationService.notifyFriendAccepted(
+      friendRequest.requester.toString(),
+      req.user.username
+    ).catch(err => logger.error('Push notification error for friend acceptance:', err));
+
+    // Emit socket event for real-time notification
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user:${friendRequest.requester}`).emit('notification', {
+        type: 'friend_accepted',
+        title: 'Friend Request Accepted',
+        message: `${req.user.username} accepted your friend request`,
+        friendId: req.user.id
+      });
+      
+      // Also emit specific friend accepted event for UI updates
+      io.to(`user:${friendRequest.requester}`).emit('friend:accepted', {
+        friend: {
+          _id: req.user.id,
+          username: req.user.username
+        }
+      });
+    }
 
     res.json({ success: true, friendRequest });
   } catch (error) {

@@ -5,6 +5,9 @@ const { protect } = require('../middleware/auth');
 const DirectMessage = require('../models/DirectMessage');
 const Friend = require('../models/Friend');
 const User = require('../models/User');
+const NotificationService = require('../services/notificationService');
+const PushNotificationService = require('../services/pushNotificationService');
+const logger = require('../utils/logger');
 
 // @route   GET /api/direct-messages/conversations
 // @desc    Get user's conversations (list of friends with last message)
@@ -257,7 +260,35 @@ router.post('/:friendId', protect, async (req, res, next) => {
     const io = req.app.get('io');
     if (io) {
       io.to(`user:${friendId}`).emit('new_direct_message', dm);
+      
+      // Also emit notification event for immediate UI update
+      io.to(`user:${friendId}`).emit('notification', {
+        type: 'direct_message',
+        title: `Message from ${req.user.username}`,
+        message: message.trim().length > 50 ? message.trim().substring(0, 50) + '...' : message.trim(),
+        senderId: userId
+      });
     }
+
+    // Create in-app notification for the recipient
+    try {
+      await NotificationService.createNotification({
+        userId: friendId,
+        type: 'direct_message',
+        title: `Message from ${req.user.username}`,
+        message: message.trim().length > 50 ? message.trim().substring(0, 50) + '...' : message.trim(),
+        data: { senderId: userId }
+      });
+    } catch (err) {
+      logger.error('Error creating DM notification:', err);
+    }
+
+    // Send push notification
+    PushNotificationService.notifyDirectMessage(
+      friendId,
+      req.user.username,
+      message.trim()
+    ).catch(err => logger.error('Push notification error for DM:', err));
 
     res.json({ success: true, message: dm });
   } catch (error) {

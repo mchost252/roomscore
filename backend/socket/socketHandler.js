@@ -51,6 +51,17 @@ module.exports = (io) => {
     // Send current online users to the newly connected user
     socket.emit('users:online', getOnlineUserIds());
 
+    // Handle explicit request for online users (useful for reconnection)
+    socket.on('users:getOnline', () => {
+      socket.emit('users:online', getOnlineUserIds());
+    });
+
+    // Handle request for specific user's online status
+    socket.on('user:checkStatus', (userId) => {
+      const isOnline = onlineUsers.has(userId);
+      socket.emit('user:status', { userId, isOnline });
+    });
+
     // Join room
     socket.on('room:join', (roomId) => {
       socket.join(roomId);

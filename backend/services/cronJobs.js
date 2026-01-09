@@ -93,6 +93,97 @@ cron.schedule('0 8 * * *', async () => {
   }
 });
 
+// Deactivate expired rooms daily at 1 AM
+cron.schedule('0 1 * * *', async () => {
+  try {
+    logger.info('Running expired rooms cleanup job...');
+    const now = new Date();
+    
+    // Find all active rooms that have expired
+    const expiredRooms = await Room.find({
+      isActive: true,
+      expiresAt: { $lte: now }
+    }).populate('members.userId', '_id');
+    
+    let deactivatedCount = 0;
+    for (const room of expiredRooms) {
+      // Get all member IDs for notifications
+      const memberIds = room.members
+        .map(m => m.userId?._id?.toString())
+        .filter(Boolean);
+      
+      // Deactivate the room
+      room.isActive = false;
+      room.deletedAt = now;
+      await room.save();
+      
+      // Notify all members that the room has expired
+      for (const memberId of memberIds) {
+        try {
+          await NotificationService.createNotification({
+            userId: memberId,
+            type: 'room_expired',
+            title: `Room Expired`,
+            message: `${room.name} has reached its end date and is now closed`,
+            relatedRoom: room._id
+          });
+        } catch (err) {
+          logger.error('Error creating room expired notification:', err);
+        }
+      }
+      
+      deactivatedCount++;
+      logger.info(`Deactivated expired room: ${room.name}`);
+    }
+    
+    logger.info(`Deactivated ${deactivatedCount} expired rooms`);
+  } catch (error) {
+    logger.error('Error in expired rooms cleanup job:', error);
+  }
+});
+
+// Warn rooms expiring soon (3 days before) - daily at 9 AM
+cron.schedule('0 9 * * *', async () => {
+  try {
+    logger.info('Running room expiry warning job...');
+    const now = new Date();
+    const threeDaysFromNow = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+    const twoDaysFromNow = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
+    
+    // Find rooms expiring in ~3 days (between 2-3 days from now to avoid duplicate warnings)
+    const expiringRooms = await Room.find({
+      isActive: true,
+      expiresAt: { 
+        $gte: twoDaysFromNow,
+        $lte: threeDaysFromNow 
+      }
+    }).populate('members.userId', '_id');
+    
+    let warnedCount = 0;
+    for (const room of expiringRooms) {
+      // Get owner ID for notification
+      const ownerId = room.owner.toString();
+      
+      try {
+        await NotificationService.createNotification({
+          userId: ownerId,
+          type: 'room_expiring_soon',
+          title: `Room Expiring Soon`,
+          message: `${room.name} will expire in 3 days`,
+          relatedRoom: room._id
+        });
+        warnedCount++;
+      } catch (err) {
+        logger.error('Error creating room expiry warning notification:', err);
+      }
+    }
+    
+    logger.info(`Sent ${warnedCount} room expiry warnings`);
+  } catch (error) {
+    logger.error('Error in room expiry warning job:', error);
+  }
+});
+
 logger.info('Cron jobs initialized');
 
 module.exports = {};

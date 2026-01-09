@@ -30,7 +30,7 @@ import UserProfileDialog from '../components/UserProfileDialog';
 const MessagesPage = () => {
   const navigate = useNavigate();
   const { friendId } = useParams();
-  const { socket } = useSocket();
+  const { socket, onlineUsers: contextOnlineUsers, isUserOnline, refreshOnlineUsers, connected } = useSocket();
   const { user } = useAuth();
   const { isMobile } = useDeviceType();
   const [conversations, setConversations] = useState([]);
@@ -45,6 +45,31 @@ const MessagesPage = () => {
   const messagesEndRef = useRef(null);
 
   const quickEmojis = ['👍', '❤️', '😂', '🔥', '🎉'];
+
+  // Sync online users from context
+  useEffect(() => {
+    if (contextOnlineUsers) {
+      setOnlineUsers(contextOnlineUsers);
+    }
+  }, [contextOnlineUsers]);
+
+  // Request online users on mount and when connected
+  useEffect(() => {
+    if (connected && refreshOnlineUsers) {
+      refreshOnlineUsers();
+    }
+  }, [connected, refreshOnlineUsers]);
+
+  // Periodically refresh online status (fallback for reliability)
+  useEffect(() => {
+    if (!refreshOnlineUsers) return;
+    
+    const interval = setInterval(() => {
+      refreshOnlineUsers();
+    }, 30000); // Every 30 seconds
+
+    return () => clearInterval(interval);
+  }, [refreshOnlineUsers]);
 
   // Online status indicator component
   const OnlineIndicator = ({ isOnline, size = 12 }) => (

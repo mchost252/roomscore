@@ -78,13 +78,14 @@ router.get('/:roomId/tasks', protect, isRoomMember, async (req, res, next) => {
     });
 
     // Get ALL completions for today (to show who completed what)
+    // Include avatar in population for profile pictures
     const allCompletions = await TaskCompletion.find({
       roomId: req.params.roomId,
       completionDate: {
         $gte: today,
         $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000)
       }
-    }).populate('userId', 'username email _id');
+    }).populate('userId', 'username email _id avatar profilePicture');
 
     const completedTaskIds = userCompletions.map(c => c.taskId.toString());
 
@@ -99,7 +100,7 @@ router.get('/:roomId/tasks', protect, isRoomMember, async (req, res, next) => {
         completedBy: taskCompletions.map(c => ({
           userId: c.userId._id,
           username: c.userId.username || c.userId.email,
-          avatar: c.userId.avatar,
+          avatar: c.userId.avatar || c.userId.profilePicture || null,
           completedAt: c.createdAt
         }))
       };
@@ -468,14 +469,17 @@ router.post('/:roomId/tasks/:taskId/complete', protect, isRoomMember, async (req
       ).catch(err => logger.error('Push notification error:', err));
     }
 
+    // Get full user data for avatar
+    const fullUser = await User.findById(req.user.id).select('username email avatar');
+    
     // Emit socket events
     const io = req.app.get('io');
     io.to(req.params.roomId).emit('task:completed', {
       roomId: req.params.roomId,
       taskId: req.params.taskId,
       userId: req.user.id,
-      username: req.user.username || req.user.email,
-      avatar: req.user.avatar,
+      username: fullUser?.username || req.user.username || req.user.email,
+      avatar: fullUser?.avatar || null,
       points: task.points,
       leaderboard
     });

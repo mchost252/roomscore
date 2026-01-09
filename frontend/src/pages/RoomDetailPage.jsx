@@ -89,11 +89,20 @@ const RoomDetailPage = () => {
   const [addingTask, setAddingTask] = useState(false);
   const [kickDialogOpen, setKickDialogOpen] = useState(false);
   const [memberToKick, setMemberToKick] = useState(null);
+  const [pendingMembers, setPendingMembers] = useState([]);
+  const [loadingPending, setLoadingPending] = useState(false);
   const chatContainerRef = React.useRef(null);
 
   useEffect(() => {
     loadRoomDetails();
   }, [roomId]);
+
+  // Load pending members when room data is available and user is owner
+  useEffect(() => {
+    if (room && isOwner && room.settings?.requireApproval) {
+      loadPendingMembers();
+    }
+  }, [room?._id, isOwner, room?.settings?.requireApproval]);
 
   // Auto-scroll to bottom when new messages arrive or tab changes
   useEffect(() => {
@@ -305,6 +314,13 @@ const RoomDetailPage = () => {
         }
       });
 
+      // Listen for join requests (for room owners)
+      socket.on('room:joinRequest', (data) => {
+        if (data.roomId?.toString() === roomId) {
+          setPendingMembers(prev => [...prev, { userId: data.user, requestedAt: new Date() }]);
+        }
+      });
+
       return () => {
         socket.emit('room:leave', roomId);
         socket.off('task:completed');
@@ -315,6 +331,7 @@ const RoomDetailPage = () => {
         socket.off('member:joined');
         socket.off('member:left');
         socket.off('member:kicked');
+        socket.off('room:joinRequest');
       };
     }
   }, [socket, roomId]);
@@ -634,6 +651,58 @@ const RoomDetailPage = () => {
     } catch (err) {
       console.error('Error leaving room:', err);
       // User already navigated away, so just log the error
+    }
+  };
+
+  // Load pending members (for room owner)
+  const loadPendingMembers = async () => {
+    if (!room?.settings?.requireApproval) return;
+    
+    try {
+      setLoadingPending(true);
+      const response = await api.get(`/rooms/${roomId}/pending-members`);
+      setPendingMembers(response.data.pendingMembers || []);
+    } catch (err) {
+      console.error('Error loading pending members:', err);
+    } finally {
+      setLoadingPending(false);
+    }
+  };
+
+  // Approve pending member
+  const handleApproveMember = async (userId) => {
+    try {
+      setError(null);
+      await api.put(`/rooms/${roomId}/approve-member/${userId}`);
+      setSuccess('Member approved!');
+      setTimeout(() => setSuccess(null), 3000);
+      
+      // Remove from pending list
+      setPendingMembers(prev => prev.filter(m => m.userId._id !== userId));
+      
+      // Reload room to get updated members
+      loadRoomDetails();
+    } catch (err) {
+      console.error('Error approving member:', err);
+      setError(err.response?.data?.message || 'Failed to approve member');
+      setTimeout(() => setError(null), 5000);
+    }
+  };
+
+  // Reject pending member
+  const handleRejectMember = async (userId) => {
+    try {
+      setError(null);
+      await api.put(`/rooms/${roomId}/reject-member/${userId}`);
+      setSuccess('Request declined');
+      setTimeout(() => setSuccess(null), 3000);
+      
+      // Remove from pending list
+      setPendingMembers(prev => prev.filter(m => m.userId._id !== userId));
+    } catch (err) {
+      console.error('Error rejecting member:', err);
+      setError(err.response?.data?.message || 'Failed to reject request');
+      setTimeout(() => setError(null), 5000);
     }
   };
 
@@ -1183,6 +1252,63 @@ const RoomDetailPage = () => {
 
         {/* Sidebar */}
         <Grid item xs={12} md={4}>
+          {/* Pending Members (Owner Only) */}
+          {isOwner && room?.settings?.requireApproval && pendingMembers.length > 0 && (
+            <Paper sx={{ p: 2, mb: 2, borderLeft: 4, borderColor: 'warning.main' }}>
+              <Typography variant="subtitle1" fontWeight="bold" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <People color="warning" />
+                Pending Requests
+                <Chip label={pendingMembers.length} size="small" color="warning" />
+              </Typography>
+              <List dense>
+                {pendingMembers.map((pending) => (
+                  <ListItem 
+                    key={pending.userId?._id || pending.userId}
+                    sx={{ px: 0 }}
+                    secondaryAction={
+                      <Box sx={{ display: 'flex', gap: 0.5 }}>
+                        <Tooltip title="Approve">
+                          <IconButton 
+                            size="small" 
+                            color="success"
+                            onClick={() => handleApproveMember(pending.userId?._id || pending.userId)}
+                          >
+                            <CheckCircle fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Reject">
+                          <IconButton 
+                            size="small" 
+                            color="error"
+                            onClick={() => handleRejectMember(pending.userId?._id || pending.userId)}
+                          >
+                            <Delete fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    }
+                  >
+                    <ListItemAvatar>
+                      <Avatar 
+                        src={pending.userId?.avatar || undefined}
+                        sx={{ width: 32, height: 32 }}
+                      >
+                        {!pending.userId?.avatar && (pending.userId?.username || 'U')[0]?.toUpperCase()}
+                      </Avatar>
+                    </ListItemAvatar>
+                    <ListItemText 
+                      primary={pending.userId?.username || pending.userId?.email || 'Unknown'}
+                      secondary={pending.requestedAt ? `Requested ${format(new Date(pending.requestedAt), 'MMM d')}` : 'Pending'}
+                      primaryTypographyProps={{ variant: 'body2', fontWeight: 'medium' }}
+                      secondaryTypographyProps={{ variant: 'caption' }}
+                    />
+                  </ListItem>
+                ))}
+              </List>
+              {loadingPending && <LinearProgress sx={{ mt: 1 }} />}
+            </Paper>
+          )}
+
           {/* Stats Card */}
           <Card sx={{ mb: 3 }}>
             <CardContent>
