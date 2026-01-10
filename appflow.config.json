@@ -1,7 +1,7 @@
 {
   "$schema": "https://ionic.io/schemas/appflow.config.json",
   "app_id": "20a7c5e1",
-  "root": ".",
+  "root": "frontend",
   "builds": {
     "web": {
       "build_type": "web",
