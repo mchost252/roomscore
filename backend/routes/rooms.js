@@ -58,10 +58,35 @@ router.get('/', protect, async (req, res, next) => {
     .lean()
     .maxTimeMS(15000);
 
+    // Get today's date for task completion status
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+
+    // Get all task completions for today for this user across all their rooms
+    const roomIds = rooms.map(r => r._id);
+    const userCompletions = await TaskCompletion.find({
+      userId: req.user.id,
+      roomId: { $in: roomIds },
+      completionDate: { $gte: today, $lt: tomorrow }
+    }).lean();
+
+    // Create a Set of completed task IDs for quick lookup
+    const completedTaskIds = new Set(userCompletions.map(c => c.taskId.toString()));
+
+    // Add isCompleted status to each task in each room
+    const roomsWithTaskStatus = rooms.map(room => ({
+      ...room,
+      tasks: (room.tasks || []).map(task => ({
+        ...task,
+        isCompleted: completedTaskIds.has(task._id.toString())
+      }))
+    }));
+
     res.json({
       success: true,
-      count: rooms.length,
-      rooms
+      count: roomsWithTaskStatus.length,
+      rooms: roomsWithTaskStatus
     });
   } catch (error) {
     next(error);

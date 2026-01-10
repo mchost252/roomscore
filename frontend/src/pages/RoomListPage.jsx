@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Container,
   Grid,
@@ -34,6 +34,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
+import cacheManager from '../utils/cache';
 
 const RoomListPage = () => {
   const { user } = useAuth();
@@ -49,9 +50,43 @@ const RoomListPage = () => {
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [joiningRoom, setJoiningRoom] = useState(false);
+  const hasMounted = useRef(false);
 
+  // Load from cache first for instant display
   useEffect(() => {
-    loadRooms();
+    if (!hasMounted.current) {
+      hasMounted.current = true;
+      loadFromCacheFirst();
+    }
+  }, []);
+
+  // Listen for app foreground event to refresh data (mobile)
+  useEffect(() => {
+    const handleForeground = () => {
+      console.log('App came to foreground, refreshing rooms...');
+      loadRooms(true); // silent refresh
+    };
+    
+    window.addEventListener('app:foreground', handleForeground);
+    return () => window.removeEventListener('app:foreground', handleForeground);
+  }, []);
+
+  // Load cached data first, then revalidate
+  const loadFromCacheFirst = useCallback(() => {
+    const cacheKey = cacheManager.generateKey('/rooms');
+    const cached = cacheManager.getWithStale(cacheKey);
+    
+    if (cached.data?.rooms) {
+      setMyRooms(cached.data.rooms);
+      setLoading(false);
+      
+      // If stale, revalidate in background
+      if (cached.isStale) {
+        loadRooms(true);
+      }
+    } else {
+      loadRooms();
+    }
   }, []);
 
   // Listen for real-time room updates
@@ -97,25 +132,30 @@ const RoomListPage = () => {
     };
   }, [socket, user?.id]);
 
-  const loadRooms = async () => {
+  const loadRooms = useCallback(async (silentRefresh = false) => {
     try {
-      setLoading(true);
-      setError(null);
+      if (!silentRefresh) {
+        setLoading(true);
+        setError(null);
+      }
       
-      // Fetch user's rooms
-      const myRoomsResponse = await api.get('/rooms');
+      // Fetch both in parallel for speed
+      const [myRoomsResponse, publicRoomsResponse] = await Promise.all([
+        api.get('/rooms'),
+        api.get('/rooms?type=public')
+      ]);
+      
       setMyRooms(myRoomsResponse.data.rooms || []);
-
-      // Fetch public rooms
-      const publicRoomsResponse = await api.get('/rooms?type=public');
       setPublicRooms(publicRoomsResponse.data.rooms || []);
     } catch (err) {
       console.error('Error loading rooms:', err);
-      setError(err.response?.data?.message || 'Failed to load rooms');
+      if (!silentRefresh && myRooms.length === 0) {
+        setError(err.response?.data?.message || 'Failed to load rooms');
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, [myRooms.length]);
 
   const handleJoinRoom = async () => {
     if (!joinCode.trim()) {

@@ -56,5 +56,10 @@ export default function useNotifications() {
     };
   }, [user, on, off, fetchUnread]);
 
-  return { unreadCount, loading, error, refreshUnread: fetchUnread };
+  // Function to clear count (called after viewing notifications)
+  const clearUnreadCount = useCallback(() => {
+    setUnreadCount(0);
+  }, []);
+
+  return { unreadCount, loading, error, refreshUnread: fetchUnread, clearUnreadCount };
 }

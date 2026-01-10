@@ -22,7 +22,7 @@ import api from '../utils/api';
 
 const NotificationPopup = () => {
   const navigate = useNavigate();
-  const { unreadCount } = useNotifications();
+  const { unreadCount, clearUnreadCount } = useNotifications();
   const [anchorEl, setAnchorEl] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -39,6 +39,8 @@ const NotificationPopup = () => {
   const markAllAsRead = async () => {
     try {
       await api.put('/notifications/read-all');
+      // Clear the unread count in the UI immediately
+      clearUnreadCount();
     } catch (error) {
       console.error('Error marking notifications as read:', error);
     }

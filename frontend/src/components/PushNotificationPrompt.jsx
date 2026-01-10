@@ -36,8 +36,8 @@ const PushNotificationPrompt = () => {
     // Check if push notifications are supported
     if (!pushNotificationManager.isSupported()) return;
 
-    // Check current permission status
-    const permission = pushNotificationManager.getPermissionStatus();
+    // Check current permission status (now async for native support)
+    const permission = await pushNotificationManager.getPermissionStatus();
     
     // Only show prompt if permission is 'default' (not yet decided)
     if (permission === 'default') {

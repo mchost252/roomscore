@@ -103,15 +103,19 @@ const OnboardingModal = ({ open, onClose }) => {
     <Dialog
       open={open}
       onClose={(event, reason) => {
-        // Only allow closing via buttons, not backdrop click or escape
-        if (reason !== 'backdropClick' && reason !== 'escapeKeyDown') {
-          handleSkip();
-        }
+        // Block all closing except via buttons - user must complete or skip onboarding
+        // Do nothing on backdrop click or escape key
       }}
       maxWidth="sm"
       fullWidth
       fullScreen={isMobile}
       disableEscapeKeyDown
+      sx={{ zIndex: 1400 }} // Higher than other modals
+      slotProps={{
+        backdrop: {
+          sx: { backgroundColor: 'rgba(0, 0, 0, 0.8)' } // Darker backdrop
+        }
+      }}
       PaperProps={{
         sx: {
           borderRadius: isMobile ? 0 : 3,

@@ -31,12 +31,13 @@ const api = axios.create({
 });
 
 // Cache configuration for different endpoints - use exact match or regex
+// Mobile-optimized with longer TTLs for persistent cache
 const CACHE_CONFIG = {
-  '/auth/profile': { ttl: 10 * 60 * 1000, cacheable: true, exact: true },
-  '/rooms': { ttl: 2 * 60 * 1000, cacheable: true, exact: true },
+  '/auth/profile': { ttl: 10 * 60 * 1000, cacheable: true, exact: true, persistent: true },
+  '/rooms': { ttl: 2 * 60 * 1000, cacheable: true, exact: true, persistent: true },
   '/notifications': { ttl: 30 * 1000, cacheable: true, exact: true },
   '/direct-messages/conversations': { ttl: 30 * 1000, cacheable: true, exact: true },
-  '/friends': { ttl: 60 * 1000, cacheable: true, exact: true },
+  '/friends': { ttl: 60 * 1000, cacheable: true, exact: true, persistent: true },
 };
 
 // Check if endpoint should be cached

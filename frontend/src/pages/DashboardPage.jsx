@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Container,
   Grid,
@@ -26,6 +26,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { useNavigate } from 'react-router-dom';
 import api, { invalidateCache } from '../utils/api';
+import cacheManager from '../utils/cache';
 import { format, startOfDay, differenceInDays } from 'date-fns';
 import OnboardingModal from '../components/OnboardingModal';
 import WhatsNewCard from '../components/WhatsNewCard';
@@ -39,6 +40,8 @@ const DashboardPage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [isStaleData, setIsStaleData] = useState(false);
+  const hasMounted = useRef(false);
 
   useEffect(() => {
     // Show onboarding if just signed up (flag set in SignupPage)
@@ -56,8 +59,8 @@ const DashboardPage = () => {
         roomsJoined: 0
       });
       
-      // Load rooms immediately - no delay
-      loadDashboardData();
+      // Try to load from cache first for instant display (mobile optimization)
+      loadFromCacheFirst();
     }
   }, [user]);
   
@@ -66,12 +69,48 @@ const DashboardPage = () => {
     localStorage.removeItem('isNewUser');
   };
 
-  // Preload rooms on mount for instant display
-  useEffect(() => {
-    if (user) {
+  // Load cached data first, then revalidate - stale-while-revalidate pattern
+  const loadFromCacheFirst = useCallback(() => {
+    const cacheKey = cacheManager.generateKey('/rooms');
+    const cached = cacheManager.getWithStale(cacheKey);
+    
+    if (cached.data?.rooms) {
+      // Show cached data immediately
+      setRooms(cached.data.rooms);
+      setStats(prev => ({
+        ...prev,
+        roomsJoined: cached.data.rooms.length || 0
+      }));
+      setIsStaleData(cached.isStale);
+      
+      // If stale, revalidate in background
+      if (cached.isStale) {
+        loadDashboardData(true); // silent refresh
+      }
+    } else {
+      // No cache, fetch fresh
       loadDashboardData();
     }
   }, []);
+
+  // Listen for app foreground event to refresh data (mobile)
+  useEffect(() => {
+    const handleForeground = () => {
+      console.log('App came to foreground, refreshing data...');
+      loadDashboardData(true); // silent refresh
+    };
+    
+    window.addEventListener('app:foreground', handleForeground);
+    return () => window.removeEventListener('app:foreground', handleForeground);
+  }, []);
+
+  // Preload rooms on mount for instant display
+  useEffect(() => {
+    if (user && !hasMounted.current) {
+      hasMounted.current = true;
+      loadFromCacheFirst();
+    }
+  }, [user, loadFromCacheFirst]);
 
   // Listen for real-time task completion updates
   useEffect(() => {
@@ -137,22 +176,30 @@ const DashboardPage = () => {
     };
   }, [socket, user?.id]);
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = async (silentRefresh = false) => {
     try {
-      setError(null);
+      if (!silentRefresh) {
+        setError(null);
+      }
       
       // Fetch user's rooms (single API call)
       const roomsResponse = await api.get('/rooms');
-      setRooms(roomsResponse.data.rooms || []);
+      const freshRooms = roomsResponse.data.rooms || [];
+      
+      setRooms(freshRooms);
+      setIsStaleData(false);
 
       // Update stats with room count
       setStats(prev => ({
         ...prev,
-        roomsJoined: roomsResponse.data.rooms?.length || 0
+        roomsJoined: freshRooms.length || 0
       }));
     } catch (err) {
       console.error('Error loading dashboard:', err);
-      setError(err.response?.data?.message || 'Failed to load dashboard data');
+      // Only show error if not a silent refresh and we don't have cached data
+      if (!silentRefresh && rooms.length === 0) {
+        setError(err.response?.data?.message || 'Failed to load dashboard data');
+      }
     }
   };
 

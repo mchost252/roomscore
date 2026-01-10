@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Container,
   Grid,
@@ -50,6 +50,7 @@ import { useSocket } from '../context/SocketContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import api, { invalidateCache } from '../utils/api';
+import { hapticFeedback, isNativePlatform } from '../utils/capacitor';
 import ChatDrawer from '../components/ChatDrawer';
 import TaskTypeSelector from '../components/TaskTypeSelector';
 
@@ -98,6 +99,17 @@ const RoomDetailPage = () => {
 
   useEffect(() => {
     loadRoomDetails();
+  }, [roomId]);
+
+  // Listen for app foreground event to refresh data (mobile sync)
+  useEffect(() => {
+    const handleForeground = () => {
+      console.log('App came to foreground, refreshing room data...');
+      loadRoomDetails(true); // silent refresh
+    };
+    
+    window.addEventListener('app:foreground', handleForeground);
+    return () => window.removeEventListener('app:foreground', handleForeground);
   }, [roomId]);
 
   // Load pending members when room data is available and user is owner
@@ -339,9 +351,11 @@ const RoomDetailPage = () => {
     }
   }, [socket, roomId]);
 
-  const loadRoomDetails = async () => {
+  const loadRoomDetails = useCallback(async (silentRefresh = false) => {
     try {
-      setError(null);
+      if (!silentRefresh) {
+        setError(null);
+      }
       
       // Load all data in parallel for faster page load
       const [roomResponse, tasksResponse, chatResponse] = await Promise.allSettled([
@@ -378,9 +392,11 @@ const RoomDetailPage = () => {
       }
     } catch (err) {
       console.error('Error loading room:', err);
-      setError(err.response?.data?.message || 'Failed to load room details');
+      if (!silentRefresh) {
+        setError(err.response?.data?.message || 'Failed to load room details');
+      }
     }
-  };
+  }, [roomId]);
 
   const handleCompleteTask = async (taskId) => {
     try {
@@ -390,63 +406,22 @@ const RoomDetailPage = () => {
       const task = room?.tasks?.find(t => t._id === taskId);
       if (!task) return;
       
-      // OPTIMISTIC UPDATE - Update UI immediately before API call
-      setRoom(prev => ({
-        ...prev,
-        tasks: prev.tasks.map(t => 
-          t._id === taskId 
-            ? { ...t, isCompleted: true, completedAt: new Date().toISOString() }
-            : t
-        )
-      }));
+      // Check if already completed to prevent double-clicks
+      if (task.isCompleted) {
+        console.log('Task already completed, skipping');
+        return;
+      }
       
-      // Show success immediately with points and note
       const pts = task.points || 0;
-      setSuccess(`+${pts} points added • Room notified`);
-      setTimeout(() => setSuccess(null), 3000);
       
-      console.log('Completing task:', taskId);
-      
-      // API call in background (no await - non-blocking)
-      api.post(`/rooms/${roomId}/tasks/${taskId}/complete`)
-        .then(() => {
-          // Invalidate cache for fresh data next time
-          invalidateCache(`/rooms/${roomId}`);
-          // Refresh room data to get updated leaderboard
-          loadRoomDetails();
-        })
-        .catch(err => {
-          // Rollback on error
-          console.error('Error completing task:', err);
-          setRoom(prev => ({
-            ...prev,
-            tasks: prev.tasks.map(t => 
-              t._id === taskId 
-                ? { ...t, isCompleted: false, completedAt: null }
-                : t
-            )
-          }));
-          setError('Failed to complete task. Please try again.');
-          setTimeout(() => setError(null), 5000);
-        });
-      
-      console.log('Task completed, updating local state');
-      // Update local state immediately without reload
+      // OPTIMISTIC UPDATE - Update UI immediately before API call
+      // Single consolidated state update to prevent visual glitches
       setRoom(prev => {
         if (!prev?.tasks) return prev;
         
-        // Check if user is already in completedBy to avoid duplicates
-        const task = prev.tasks.find(t => t._id === taskId);
-        const alreadyCompleted = task?.completedBy?.some(m => m.userId === user?.id);
-        
-        if (alreadyCompleted) {
-          console.log('User already in completedBy, skipping update');
-          return prev;
-        }
-        
-        // Mark task as completed and add to completedBy
         const updatedTasks = prev.tasks.map(t => {
           if (t._id === taskId) {
+            // Add user to completedBy array
             const newCompletedBy = [
               ...(t.completedBy || []),
               {
@@ -456,8 +431,12 @@ const RoomDetailPage = () => {
                 completedAt: new Date()
               }
             ];
-            console.log('Updating task with completedBy:', newCompletedBy);
-            return { ...t, isCompleted: true, completedBy: newCompletedBy };
+            return { 
+              ...t, 
+              isCompleted: true, 
+              completedAt: new Date().toISOString(),
+              completedBy: newCompletedBy
+            };
           }
           return t;
         });
@@ -466,7 +445,7 @@ const RoomDetailPage = () => {
         const updatedMembers = prev.members.map(member => {
           const memberId = member.userId._id || member.userId;
           if (memberId === user?.id) {
-            return { ...member, points: (member.points || 0) + task.points };
+            return { ...member, points: (member.points || 0) + pts };
           }
           return member;
         });
@@ -474,7 +453,50 @@ const RoomDetailPage = () => {
         return { ...prev, tasks: updatedTasks, members: updatedMembers };
       });
       
-      // Socket will notify other users automatically
+      // Show success immediately
+      setSuccess(`+${pts} points added • Room notified`);
+      setTimeout(() => setSuccess(null), 3000);
+      
+      // Haptic feedback on mobile for task completion
+      if (isNativePlatform()) {
+        hapticFeedback('medium');
+      }
+      
+      // API call in background (no await - non-blocking)
+      api.post(`/rooms/${roomId}/tasks/${taskId}/complete`)
+        .then(() => {
+          // Invalidate cache for fresh data next time
+          invalidateCache(`/rooms/${roomId}`);
+          invalidateCache('/rooms');
+          // Don't reload room details - socket events will sync the data
+        })
+        .catch(err => {
+          // Rollback on error
+          console.error('Error completing task:', err);
+          setRoom(prev => ({
+            ...prev,
+            tasks: prev.tasks.map(t => 
+              t._id === taskId 
+                ? { 
+                    ...t, 
+                    isCompleted: false, 
+                    completedAt: null,
+                    completedBy: (t.completedBy || []).filter(m => m.userId !== user?.id)
+                  }
+                : t
+            ),
+            members: prev.members.map(member => {
+              const memberId = member.userId._id || member.userId;
+              if (memberId === user?.id) {
+                return { ...member, points: Math.max(0, (member.points || 0) - pts) };
+              }
+              return member;
+            })
+          }));
+          setError('Failed to complete task. Please try again.');
+          setTimeout(() => setError(null), 5000);
+        });
+      
     } catch (err) {
       console.error('Error completing task:', err);
       setError(err.response?.data?.message || 'Failed to complete task');
@@ -490,21 +512,24 @@ const RoomDetailPage = () => {
       const task = room?.tasks?.find(t => t._id === taskId);
       if (!task) return;
       
-      await api.delete(`/rooms/${roomId}/tasks/${taskId}/complete`);
-      setSuccess('Task unmarked. Points deducted.');
-      setTimeout(() => setSuccess(null), 3000);
+      // Check if already uncompleted to prevent double-clicks
+      if (!task.isCompleted) {
+        console.log('Task already uncompleted, skipping');
+        return;
+      }
       
-      // Update local state immediately without reload
+      const pts = task.points || 0;
+      
+      // OPTIMISTIC UPDATE - Single consolidated state update
       setRoom(prev => {
         if (!prev?.tasks) return prev;
         
-        // Unmark the task and remove from completedBy
         const updatedTasks = prev.tasks.map(t => {
           if (t._id === taskId) {
             const newCompletedBy = (t.completedBy || []).filter(
               member => member.userId !== user?.id
             );
-            return { ...t, isCompleted: false, completedBy: newCompletedBy };
+            return { ...t, isCompleted: false, completedAt: null, completedBy: newCompletedBy };
           }
           return t;
         });
@@ -513,7 +538,7 @@ const RoomDetailPage = () => {
         const updatedMembers = prev.members.map(member => {
           const memberId = member.userId._id || member.userId;
           if (memberId === user?.id) {
-            return { ...member, points: Math.max(0, (member.points || 0) - task.points) };
+            return { ...member, points: Math.max(0, (member.points || 0) - pts) };
           }
           return member;
         });
@@ -521,7 +546,51 @@ const RoomDetailPage = () => {
         return { ...prev, tasks: updatedTasks, members: updatedMembers };
       });
       
-      // Socket will notify other users automatically
+      setSuccess('Task unmarked. Points deducted.');
+      setTimeout(() => setSuccess(null), 3000);
+      
+      // Haptic feedback on mobile
+      if (isNativePlatform()) {
+        hapticFeedback('light');
+      }
+      
+      // API call in background (non-blocking for faster UI)
+      api.delete(`/rooms/${roomId}/tasks/${taskId}/complete`)
+        .then(() => {
+          // Invalidate cache
+          invalidateCache(`/rooms/${roomId}`);
+          invalidateCache('/rooms');
+        })
+        .catch(err => {
+          // Rollback on error
+          console.error('Error uncompleting task:', err);
+          setRoom(prev => ({
+            ...prev,
+            tasks: prev.tasks.map(t => 
+              t._id === taskId 
+                ? { 
+                    ...t, 
+                    isCompleted: true, 
+                    completedAt: new Date().toISOString(),
+                    completedBy: [
+                      ...(t.completedBy || []),
+                      { userId: user?.id, username: user?.username || user?.email, avatar: user?.avatar, completedAt: new Date() }
+                    ]
+                  }
+                : t
+            ),
+            members: prev.members.map(member => {
+              const memberId = member.userId._id || member.userId;
+              if (memberId === user?.id) {
+                return { ...member, points: (member.points || 0) + pts };
+              }
+              return member;
+            })
+          }));
+          setError(err.response?.data?.message || 'Failed to uncomplete task');
+          setTimeout(() => setError(null), 5000);
+        });
+      
     } catch (err) {
       console.error('Error uncompleting task:', err);
       setError(err.response?.data?.message || 'Failed to uncomplete task');

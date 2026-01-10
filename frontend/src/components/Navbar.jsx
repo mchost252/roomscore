@@ -82,8 +82,15 @@ const Navbar = () => {
   if (isMobile) {
     return (
       <>
-        {/* Mobile Top App Bar */}
-        <AppBar position="sticky" elevation={1}>
+        {/* Mobile Top App Bar - matches theme */}
+        <AppBar 
+          position="sticky" 
+          elevation={1}
+          sx={{ 
+            bgcolor: 'background.paper',
+            color: 'text.primary'
+          }}
+        >
           <Toolbar sx={{ minHeight: 56 }}>
             <Typography
               variant="h6"
@@ -110,6 +117,8 @@ const Navbar = () => {
               transformOrigin={{ horizontal: 'right', vertical: 'top' }}
               anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
               disableScrollLock={true}
+              keepMounted={false}
+              disablePortal={false}
               PaperProps={{
                 sx: {
                   minWidth: 180,
