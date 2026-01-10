@@ -103,7 +103,10 @@ const Navbar = () => {
             <NotificationPopup />
             <IconButton
               color="inherit"
-              onClick={handleMobileMenuOpen}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleMobileMenuOpen(e);
+              }}
               sx={{ ml: 0.5 }}
             >
               <MoreVert />
@@ -113,12 +116,19 @@ const Navbar = () => {
             <Menu
               anchorEl={mobileMenuAnchor}
               open={Boolean(mobileMenuAnchor)}
-              onClose={handleMobileMenuClose}
+              onClose={() => {
+                handleMobileMenuClose();
+                // Blur active element to avoid focus re-opening the menu on mobile
+                if (document.activeElement && document.activeElement.blur) {
+                  document.activeElement.blur();
+                }
+              }}
               transformOrigin={{ horizontal: 'right', vertical: 'top' }}
               anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
               disableScrollLock={true}
-              keepMounted={false}
-              disablePortal={false}
+              keepMounted
+              disablePortal
+              MenuListProps={{ autoFocus: false }}
               PaperProps={{
                 sx: {
                   minWidth: 180,

@@ -97,8 +97,15 @@ const RoomDetailPage = () => {
   // Determine if current user is the room owner
   const isOwner = room?.owner?._id === user?.id || room?.owner === user?.id;
 
+  const { joinRoom, leaveRoom, isUserOnline } = useSocket();
+
   useEffect(() => {
     loadRoomDetails();
+    // Join socket room for real-time updates
+    try { joinRoom(roomId); } catch {}
+    return () => {
+      try { leaveRoom(roomId); } catch {}
+    };
   }, [roomId]);
 
   // Listen for app foreground event to refresh data (mobile sync)
@@ -359,9 +366,9 @@ const RoomDetailPage = () => {
       
       // Load all data in parallel for faster page load
       const [roomResponse, tasksResponse, chatResponse] = await Promise.allSettled([
-        api.get(`/rooms/${roomId}`),
-        api.get(`/rooms/${roomId}/tasks`),
-        api.get(`/rooms/${roomId}/chat`)
+        api.get(`/rooms/${roomId}`, { headers: { 'x-bypass-cache': true } }),
+        api.get(`/rooms/${roomId}/tasks`, { headers: { 'x-bypass-cache': true } }),
+        api.get(`/rooms/${roomId}/chat`, { headers: { 'x-bypass-cache': true } })
       ]);
       
       // Handle room data
@@ -598,7 +605,7 @@ const RoomDetailPage = () => {
     }
   };
 
-  const handleSendMessageFromDrawer = async (messageText) => {
+  const handleSendMessageFromDrawer = async (messageText, replyToId = null) => {
     if (!messageText.trim()) return;
     
     // OPTIMISTIC UPDATE - Add message to UI immediately with correct user data
@@ -1462,12 +1469,25 @@ const RoomDetailPage = () => {
                     }
                   >
                     <ListItemAvatar>
-                      <Avatar 
-                        src={member.userId.avatar || undefined}
-                        sx={{ bgcolor: isRoomOwner ? 'primary.main' : 'default' }}
-                      >
-                        {!member.userId.avatar && (member.userId.username?.[0]?.toUpperCase() || '?')}
-                      </Avatar>
+                      <Box sx={{ position: 'relative' }}>
+                        <Avatar 
+                          src={member.userId.avatar || undefined}
+                          sx={{ bgcolor: isRoomOwner ? 'primary.main' : 'default' }}
+                        >
+                          {!member.userId.avatar && (member.userId.username?.[0]?.toUpperCase() || '?')}
+                        </Avatar>
+                        <Box sx={{
+                          position: 'absolute',
+                          bottom: -1,
+                          right: -1,
+                          width: 10,
+                          height: 10,
+                          borderRadius: '50%',
+                          bgcolor: isUserOnline(memberId) ? '#44b700' : 'grey.400',
+                          border: '2px solid',
+                          borderColor: 'background.paper'
+                        }} />
+                      </Box>
                     </ListItemAvatar>
                     <ListItemText
                       primary={

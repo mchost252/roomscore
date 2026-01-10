@@ -158,6 +158,7 @@ router.get('/:friendId', protect, async (req, res, next) => {
     })
       .populate('sender', 'username _id')
       .populate('recipient', 'username _id')
+      .populate('replyTo', 'message sender createdAt')
       .sort({ createdAt: -1 })
       .limit(100)
       .lean()
@@ -218,7 +219,7 @@ router.put('/read/:friendId', protect, async (req, res, next) => {
 // @access  Private
 router.post('/:friendId', protect, async (req, res, next) => {
   try {
-    const { message } = req.body;
+    const { message, replyTo } = req.body;
     const userId = req.user.id;
     const friendId = req.params.friendId;
 
@@ -250,12 +251,16 @@ router.post('/:friendId', protect, async (req, res, next) => {
     const dm = await DirectMessage.create({
       sender: userId,
       recipient: friendId,
-      message: message.trim()
+      message: message.trim(),
+      replyTo: replyTo || null
     });
 
     // Don't populate avatar - it's too large and causes timeouts
     await dm.populate('sender', 'username _id');
     await dm.populate('recipient', 'username _id');
+    if (dm.replyTo) {
+      await dm.populate('replyTo', 'message sender createdAt');
+    }
 
     // Emit socket event for real-time delivery
     const io = req.app.get('io');

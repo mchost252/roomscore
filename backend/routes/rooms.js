@@ -567,16 +567,20 @@ router.get('/:id/leaderboard', protect, isRoomMember, async (req, res, next) => 
 // @access  Private (must be member)
 router.post('/:id/chat', protect, isRoomMember, validate(sendMessageSchema), async (req, res, next) => {
   try {
-    const { message } = req.body;
+    const { message, replyTo } = req.body;
 
     const chatMessage = await ChatMessage.create({
       roomId: req.params.id,
       userId: req.user.id,
       message,
-      messageType: 'text'
+      messageType: 'text',
+      replyTo: replyTo || null
     });
 
     await chatMessage.populate('userId', 'username _id');
+    if (chatMessage.replyTo) {
+      await chatMessage.populate('replyTo', 'message userId createdAt');
+    }
 
     // Get room members (exclude sender)
     const roomMembers = req.room.members
@@ -653,6 +657,7 @@ router.get('/:id/chat', protect, isRoomMember, async (req, res, next) => {
 
     const messages = await ChatMessage.find(query)
       .populate('userId', 'username _id')
+      .populate('replyTo', 'message userId createdAt')
       .sort({ createdAt: -1 })
       .limit(parseInt(limit));
 

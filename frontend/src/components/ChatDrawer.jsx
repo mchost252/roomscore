@@ -37,6 +37,7 @@ const ChatDrawer = ({
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [message, setMessage] = useState('');
   const [emojiAnchor, setEmojiAnchor] = useState(null);
+  const [replyTo, setReplyTo] = useState(null);
   const messagesEndRef = useRef(null);
   const chatContainerRef = useRef(null);
   
@@ -51,8 +52,9 @@ const ChatDrawer = ({
 
   const handleSend = () => {
     if (message.trim()) {
-      onSendMessage(message.trim());
+      onSendMessage(message.trim(), replyTo?.messageId || replyTo?._id || null);
       setMessage('');
+      setReplyTo(null);
     }
   };
 
@@ -229,8 +231,28 @@ const ChatDrawer = ({
                       )}
 
                       {/* Message Content */}
+                      {/* Reply preview */}
+                      {msg.replyTo && (
+                        <Box sx={{
+                          mb: 0.5,
+                          px: 1,
+                          py: 0.5,
+                          borderLeft: 3,
+                          borderColor: 'primary.light',
+                          bgcolor: isMine ? 'rgba(255,255,255,0.1)' : 'action.hover',
+                          borderRadius: 1
+                        }}>
+                          <Typography variant="caption" color="text.secondary">
+                            Replying to {msg.replyTo?.sender?.username || msg.replyTo?.userId?.username || 'message'}:
+                          </Typography>
+                          <Typography variant="caption" sx={{ display: 'block' }} noWrap>
+                            {msg.replyTo?.message}
+                          </Typography>
+                        </Box>
+                      )}
                       <Paper
                         elevation={0}
+                        onClick={() => setReplyTo({ _id: msg._id, messageId: msg._id, message: msg.message, sender: msg.userId })}
                         sx={{
                           p: 1.5,
                           bgcolor: isMine 
@@ -242,7 +264,8 @@ const ChatDrawer = ({
                           borderRadius: 2,
                           borderTopRightRadius: isMine ? 4 : 16,
                           borderTopLeftRadius: isMine ? 16 : 4,
-                          wordBreak: 'break-word'
+                          wordBreak: 'break-word',
+                          cursor: 'pointer'
                         }}
                       >
                         <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
@@ -332,6 +355,18 @@ const ChatDrawer = ({
         </Paper>
 
         {/* Emoji Picker Popover */}
+        {/* Reply banner */}
+        {replyTo && (
+          <Paper elevation={0} sx={{ px: 2, py: 1, borderTop: 1, borderColor: 'divider', bgcolor: 'action.hover', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="caption" sx={{ flex: 1 }}>
+              Replying to {replyTo?.sender?.username || 'message'}: {replyTo?.message?.slice(0, 60)}{replyTo?.message?.length > 60 ? '...' : ''}
+            </Typography>
+            <IconButton size="small" onClick={() => setReplyTo(null)}>
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Paper>
+        )}
+
         <Popover
           open={Boolean(emojiAnchor)}
           anchorEl={emojiAnchor}

@@ -45,7 +45,8 @@ const DashboardPage = () => {
 
   useEffect(() => {
     // Show onboarding if just signed up (flag set in SignupPage)
-    if (localStorage.getItem('isNewUser') === 'true') {
+    // Show onboarding modal if not completed yet
+    if (localStorage.getItem('onboardingCompleted') !== 'true') {
       setShowOnboarding(true);
     }
 
@@ -66,7 +67,7 @@ const DashboardPage = () => {
   
   const handleOnboardingClose = () => {
     setShowOnboarding(false);
-    localStorage.removeItem('isNewUser');
+    localStorage.setItem('onboardingCompleted', 'true');
   };
 
   // Load cached data first, then revalidate - stale-while-revalidate pattern

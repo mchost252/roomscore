@@ -65,11 +65,14 @@ api.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
 
-    // Check cache for GET requests
-    const cacheConfig = shouldCache(config.url, config.method);
+    // Allow bypassing cache per-request
+    const bypassCache = config.headers && (config.headers['x-bypass-cache'] || config.headers['X-Bypass-Cache']);
+
+    // Check cache for GET requests if not bypassed
+    const cacheConfig = !bypassCache ? shouldCache(config.url, config.method) : null;
     if (cacheConfig) {
       const cacheKey = cacheManager.generateKey(config.url, config.params);
-      const cachedData = cacheManager.get(cacheKey);
+      const cachedData = cacheManager.get(cacheKey, true);
       
       if (cachedData) {
         // Silently use cache (no console spam)

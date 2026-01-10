@@ -22,6 +22,12 @@ const chatMessageSchema = new mongoose.Schema({
     enum: ['text', 'system'],
     default: 'text'
   },
+  // Optional reply reference
+  replyTo: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ChatMessage',
+    default: null
+  },
   isDeleted: {
     type: Boolean,
     default: false

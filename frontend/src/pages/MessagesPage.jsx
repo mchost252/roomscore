@@ -38,6 +38,7 @@ const MessagesPage = () => {
   const [selectedFriend, setSelectedFriend] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
+  const [replyTo, setReplyTo] = useState(null);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [emojiAnchor, setEmojiAnchor] = useState(null);
   const [conversationsLoaded, setConversationsLoaded] = useState(false);
@@ -420,6 +421,7 @@ const MessagesPage = () => {
 
     const messageText = newMessage.trim();
     setNewMessage(''); // Clear input immediately for better UX
+    const replyToId = replyTo?._id || null;
     
     // Create optimistic message for instant UI feedback
     const tempId = `temp_${Date.now()}`;
@@ -427,8 +429,9 @@ const MessagesPage = () => {
       _id: tempId,
       message: messageText,
       createdAt: new Date().toISOString(),
-      sender: { _id: user._id || user.id },
-      recipient: { _id: reliableFriendId }
+      sender: { _id: user._id || user.id, username: user.username },
+      recipient: { _id: reliableFriendId },
+      replyTo: replyToId ? { _id: replyToId } : null
     };
     
     // Show message immediately
@@ -437,10 +440,12 @@ const MessagesPage = () => {
     
     try {
       const res = await api.post(`/direct-messages/${reliableFriendId}`, {
-        message: messageText
+        message: messageText,
+        replyTo: replyToId || undefined
       });
       // Replace optimistic message with real one
       setMessages(prev => prev.map(m => m._id === tempId ? res.data.message : m));
+      setReplyTo(null);
     } catch (err) {
       console.error('Error sending message:', err);
       // Remove optimistic message on error
@@ -574,6 +579,8 @@ const MessagesPage = () => {
                     const senderId = String(msg.sender._id);
                     const currentUserId = String(user?._id || user?.id || '');
                     const isOwn = senderId === currentUserId;
+                    // Enable tap-to-reply
+                    const handleReply = () => setReplyTo({ _id: msg._id, message: msg.message, sender: msg.sender });
                     return (
                       <Box
                         key={msg._id || idx}

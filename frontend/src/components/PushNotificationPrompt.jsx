@@ -14,6 +14,7 @@ import pushNotificationManager from '../utils/pushNotifications';
 const PushNotificationPrompt = () => {
   const [open, setOpen] = useState(false);
   const [postponed, setPostponed] = useState(false);
+  const [denied, setDenied] = useState(false);
 
   useEffect(() => {
     checkAndShowPrompt();
@@ -39,15 +40,32 @@ const PushNotificationPrompt = () => {
     // Check current permission status (now async for native support)
     const permission = await pushNotificationManager.getPermissionStatus();
     
-    // Only show prompt if permission is 'default' (not yet decided)
     if (permission === 'default') {
-      // Small delay before showing prompt
-      setTimeout(() => setOpen(true), 2000);
+      setDenied(false);
+      setTimeout(() => setOpen(true), 1200);
+    } else if (permission === 'denied') {
+      // Show guidance dialog to enable notifications in settings
+      setDenied(true);
+      setTimeout(() => setOpen(true), 1200);
     }
   };
 
   const handleEnable = async () => {
     try {
+      if (denied) {
+        // Open system settings for the app to enable notifications
+        const { isNativePlatform } = await import('../utils/capacitor');
+        if (isNativePlatform()) {
+          const { App } = await import('@capacitor/app');
+          try {
+            await App.openUrl({ url: 'app-settings:' });
+          } catch (e) {
+            console.warn('Unable to open settings automatically. Please enable notifications in system settings.');
+          }
+        }
+        setOpen(false);
+        return;
+      }
       await pushNotificationManager.enable();
       setOpen(false);
     } catch (error) {
@@ -75,14 +93,19 @@ const PushNotificationPrompt = () => {
     >
       <DialogTitle sx={{ textAlign: 'center', pb: 1 }}>
         <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1 }}>
-          <Notifications sx={{ fontSize: 48, color: 'primary.main' }} />
+          {denied ? (
+            <NotificationsOff sx={{ fontSize: 48, color: 'warning.main' }} />
+          ) : (
+            <Notifications sx={{ fontSize: 48, color: 'primary.main' }} />
+          )}
         </Box>
-        Enable Notifications?
+        {denied ? 'Notifications Blocked' : 'Enable Notifications?'}
       </DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" textAlign="center">
-          Get notified when you receive new messages, friend requests, or task reminders. 
-          You can change this anytime in settings.
+          {denied
+            ? 'Notifications are currently disabled for this app in your device settings. Tap "Open Settings" to enable notifications, then return to the app.'
+            : 'Get notified when you receive new messages, friend requests, or task reminders. You can change this anytime in settings.'}
         </Typography>
       </DialogContent>
       <DialogActions sx={{ flexDirection: 'column', gap: 1, px: 3, pb: 3 }}>
@@ -90,9 +113,9 @@ const PushNotificationPrompt = () => {
           variant="contained" 
           fullWidth 
           onClick={handleEnable}
-          startIcon={<Notifications />}
+          startIcon={denied ? <NotificationsOff /> : <Notifications />}
         >
-          Enable Notifications
+          {denied ? 'Open Settings' : 'Enable Notifications'}
         </Button>
         <Button 
           variant="outlined" 

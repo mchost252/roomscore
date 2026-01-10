@@ -8,6 +8,7 @@ import { useTheme as useCustomTheme } from './context/ThemeContext';
 import Navbar from './components/Navbar';
 import LoadingScreen from './components/LoadingScreen';
 import PushNotificationPrompt from './components/PushNotificationPrompt';
+import { initializeCapacitor } from './utils/capacitor';
 
 // Pages (lazy loaded for code splitting)
 const LoginPage = lazy(() => import('./pages/LoginPage'));
@@ -44,6 +45,10 @@ const PublicRoute = ({ children }) => {
 };
 
 function App() {
+  // Initialize Capacitor native features on mount
+  useEffect(() => {
+    initializeCapacitor();
+  }, []);
   const { mode } = useCustomTheme();
   const { user } = useAuth();
   const [backToastOpen, setBackToastOpen] = useState(false);
