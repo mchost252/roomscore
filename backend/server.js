@@ -28,7 +28,11 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: function(origin, callback) {
+      // Allow requests with no origin (mobile apps)
+      if (!origin) return callback(null, true);
+      callback(null, true); // Allow all origins for mobile app support
+    },
     methods: ['GET', 'POST'],
     credentials: true
   }
@@ -39,8 +43,29 @@ app.set('trust proxy', 1);
 
 // Middleware
 app.use(helmet());
+
+// CORS configuration - allow web and mobile apps
+const allowedOrigins = [
+  process.env.FRONTEND_URL || 'http://localhost:3000',
+  'http://localhost',
+  'https://localhost',
+  'capacitor://localhost',
+  'ionic://localhost',
+  'http://localhost:5173', // Vite dev server
+  'http://localhost:3000'
+];
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: function(origin, callback) {
+    // Allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+      callback(null, true);
+    } else {
+      callback(null, true); // Allow all origins for now to support mobile apps
+    }
+  },
   credentials: true
 }));
 app.use(express.json({ limit: '10mb' }));
