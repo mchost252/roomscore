@@ -1,0 +1,13 @@
+{
+  "name": "krios",
+  "version": "1.0.0",
+  "description": "Krios - Social Habit Tracking Platform",
+  "private": true,
+  "scripts": {
+    "install": "cd frontend && npm install --legacy-peer-deps",
+    "build": "cd frontend && npm run build",
+    "dev": "cd frontend && npm run dev",
+    "cap:sync": "cd frontend && npm run cap:sync",
+    "cap:build": "cd frontend && npm run cap:build"
+  }
+}
