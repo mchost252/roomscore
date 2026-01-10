@@ -34,7 +34,7 @@
       "sound": "beep.wav"
     },
     "LiveUpdates": {
-      "appId": "20a7c5e1",
+      "appId": "22858e1a",
       "channel": "Production",
       "autoUpdateMethod": "background",
       "maxVersions": 2

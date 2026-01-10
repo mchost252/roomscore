@@ -41,7 +41,7 @@ const config: CapacitorConfig = {
     // Appflow Live Updates configuration
     // Replace YOUR_APPFLOW_APP_ID with your actual Appflow App ID after setup
     LiveUpdates: {
-      appId: '20a7c5e1',
+      appId: '22858e1a',
       channel: 'Production',
       autoUpdateMethod: 'background',
       maxVersions: 2
