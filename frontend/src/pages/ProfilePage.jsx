@@ -55,7 +55,7 @@ import api from '../utils/api';
 const ProfilePage = () => {
   const { user, logout, enablePushNotifications, disablePushNotifications } = useAuth();
   const { socket } = useSocket();
-  const { mode, toggleTheme } = useCustomTheme();
+  const { mode, themePreference, setThemeMode } = useCustomTheme();
   const navigate = useNavigate();
   const [tabValue, setTabValue] = useState(0);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -826,17 +826,37 @@ const ProfilePage = () => {
                         Theme
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        {mode === 'dark' ? 'Dark Mode' : 'Light Mode'}
+                        {themePreference === 'system' 
+                          ? `System (${mode === 'dark' ? 'Dark' : 'Light'})` 
+                          : mode === 'dark' ? 'Dark Mode' : 'Light Mode'}
                       </Typography>
                     </Box>
                   </Box>
-                  <Button
-                    variant="outlined"
-                    onClick={toggleTheme}
-                    startIcon={mode === 'dark' ? <Brightness7 /> : <Brightness4 />}
-                  >
-                    Switch to {mode === 'dark' ? 'Light' : 'Dark'}
-                  </Button>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                      variant={themePreference === 'light' ? 'contained' : 'outlined'}
+                      size="small"
+                      onClick={() => setThemeMode('light')}
+                      startIcon={<Brightness7 />}
+                    >
+                      Light
+                    </Button>
+                    <Button
+                      variant={themePreference === 'dark' ? 'contained' : 'outlined'}
+                      size="small"
+                      onClick={() => setThemeMode('dark')}
+                      startIcon={<Brightness4 />}
+                    >
+                      Dark
+                    </Button>
+                    <Button
+                      variant={themePreference === 'system' ? 'contained' : 'outlined'}
+                      size="small"
+                      onClick={() => setThemeMode('system')}
+                    >
+                      System
+                    </Button>
+                  </Box>
                 </Box>
               </Box>
 

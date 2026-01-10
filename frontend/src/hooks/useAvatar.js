@@ -50,7 +50,9 @@ export const useAvatar = (userId) => {
  * @returns {Promise<Map<string, string|null>>} Map of userId to avatar
  */
 export const fetchAvatars = async (userIds) => {
-  const uncachedIds = userIds.filter(id => !avatarCache.has(id));
+  // Normalize IDs to strings
+  const normalizedIds = userIds.map(id => String(id));
+  const uncachedIds = normalizedIds.filter(id => !avatarCache.has(id));
   
   // Fetch uncached avatars in parallel (limit to 5 concurrent requests)
   const batchSize = 5;
@@ -60,9 +62,9 @@ export const fetchAvatars = async (userIds) => {
       batch.map(async (userId) => {
         try {
           const res = await api.get(`/auth/avatar/${userId}`);
-          avatarCache.set(userId, res.data.avatar || null);
+          avatarCache.set(String(userId), res.data.avatar || null);
         } catch {
-          avatarCache.set(userId, null);
+          avatarCache.set(String(userId), null);
         }
       })
     );
@@ -70,8 +72,8 @@ export const fetchAvatars = async (userIds) => {
 
   // Return all requested avatars from cache
   const result = new Map();
-  userIds.forEach(id => {
-    result.set(id, avatarCache.get(id) || null);
+  normalizedIds.forEach(id => {
+    result.set(String(id), avatarCache.get(String(id)) || null);
   });
   return result;
 };

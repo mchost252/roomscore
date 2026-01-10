@@ -114,12 +114,31 @@ export const setupAppStateListeners = () => {
     window.dispatchEvent(new CustomEvent('app:deeplink', { detail: data }));
   });
 
-  // Handle back button on Android
+  // Handle back button on Android with double-tap to exit on dashboard
+  let lastBackPress = 0;
+  
   App.addListener('backButton', ({ canGoBack }) => {
-    if (canGoBack) {
+    const currentPath = window.location.pathname;
+    const isDashboard = currentPath === '/dashboard' || currentPath === '/';
+    
+    if (isDashboard) {
+      const now = Date.now();
+      if (now - lastBackPress < 2000) {
+        // Double tap within 2 seconds - exit app
+        App.exitApp();
+      } else {
+        // First tap - show toast and wait for second tap
+        lastBackPress = now;
+        // Dispatch event for toast notification
+        window.dispatchEvent(new CustomEvent('app:backToExit', { 
+          detail: { message: 'Press back again to exit' } 
+        }));
+      }
+    } else if (canGoBack) {
       window.history.back();
     } else {
-      App.exitApp();
+      // Navigate to dashboard instead of exiting
+      window.location.href = '/dashboard';
     }
   });
 };

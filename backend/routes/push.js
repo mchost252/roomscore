@@ -69,6 +69,61 @@ router.post('/subscribe', protect, async (req, res, next) => {
   }
 });
 
+// @route   POST /api/push/subscribe-native
+// @desc    Subscribe to push notifications (native apps - FCM/APNS)
+// @access  Private
+router.post('/subscribe-native', protect, async (req, res, next) => {
+  try {
+    const { token, platform } = req.body;
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        message: 'Push token is required'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+
+    // Check if token already exists
+    const existingIndex = user.pushSubscriptions.findIndex(
+      sub => sub.nativeToken === token
+    );
+
+    if (existingIndex !== -1) {
+      // Update existing subscription
+      user.pushSubscriptions[existingIndex] = {
+        nativeToken: token,
+        platform: platform || 'unknown',
+        userAgent: req.headers['user-agent'] || 'Native App',
+        subscribedAt: new Date()
+      };
+    } else {
+      // Add new subscription
+      user.pushSubscriptions.push({
+        nativeToken: token,
+        platform: platform || 'unknown',
+        userAgent: req.headers['user-agent'] || 'Native App',
+        subscribedAt: new Date()
+      });
+    }
+
+    // Enable push notifications
+    user.notificationSettings.pushEnabled = true;
+    await user.save();
+
+    logger.info(`User ${user.email} subscribed to native push notifications (${platform})`);
+    
+    res.json({
+      success: true,
+      message: 'Successfully subscribed to push notifications'
+    });
+  } catch (error) {
+    logger.error('Error subscribing to native push notifications:', error);
+    next(error);
+  }
+});
+
 // @route   POST /api/push/unsubscribe
 // @desc    Unsubscribe from push notifications
 // @access  Private

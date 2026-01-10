@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useMemo } from 'react';
+import React, { createContext, useState, useContext, useMemo, useEffect } from 'react';
 import { ThemeProvider as MUIThemeProvider, createTheme } from '@mui/material/styles';
 
 const ThemeContext = createContext();
@@ -11,18 +11,63 @@ export const useTheme = () => {
   return context;
 };
 
+// Helper to get system preference
+const getSystemTheme = () => {
+  if (typeof window !== 'undefined' && window.matchMedia) {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  return 'light';
+};
+
 export const ThemeProvider = ({ children }) => {
-  const [mode, setMode] = useState(() => {
-    return localStorage.getItem('themeMode') || 'dark';
+  // themePreference can be 'light', 'dark', or 'system'
+  const [themePreference, setThemePreference] = useState(() => {
+    return localStorage.getItem('themeMode') || 'system';
+  });
+  
+  // actualMode is always 'light' or 'dark' (resolved from preference)
+  const [actualMode, setActualMode] = useState(() => {
+    const saved = localStorage.getItem('themeMode') || 'system';
+    return saved === 'system' ? getSystemTheme() : saved;
   });
 
-  const toggleTheme = () => {
-    setMode((prevMode) => {
-      const newMode = prevMode === 'light' ? 'dark' : 'light';
-      localStorage.setItem('themeMode', newMode);
-      return newMode;
-    });
+  // Listen for system theme changes
+  useEffect(() => {
+    if (themePreference !== 'system') return;
+    
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = (e) => {
+      setActualMode(e.matches ? 'dark' : 'light');
+    };
+    
+    // Set initial value
+    setActualMode(mediaQuery.matches ? 'dark' : 'light');
+    
+    // Listen for changes
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, [themePreference]);
+
+  // Set theme mode (light, dark, or system)
+  const setThemeMode = (newMode) => {
+    setThemePreference(newMode);
+    localStorage.setItem('themeMode', newMode);
+    
+    if (newMode === 'system') {
+      setActualMode(getSystemTheme());
+    } else {
+      setActualMode(newMode);
+    }
   };
+
+  // Legacy toggle function (cycles through light -> dark -> system)
+  const toggleTheme = () => {
+    const nextMode = themePreference === 'light' ? 'dark' : themePreference === 'dark' ? 'system' : 'light';
+    setThemeMode(nextMode);
+  };
+
+  // For backward compatibility, mode returns the actual resolved mode
+  const mode = actualMode;
 
   const theme = useMemo(
     () =>
@@ -176,7 +221,9 @@ export const ThemeProvider = ({ children }) => {
 
   const value = {
     mode,
+    themePreference,
     toggleTheme,
+    setThemeMode,
   };
 
   return (

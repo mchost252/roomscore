@@ -1,13 +1,20 @@
 import api from './api';
+import { Capacitor } from '@capacitor/core';
 
 class PushNotificationManager {
   constructor() {
     this.registration = null;
     this.subscription = null;
+    this.isNative = Capacitor.isNativePlatform();
   }
 
   // Check if push notifications are supported
   isSupported() {
+    // Native apps use Capacitor push notifications
+    if (this.isNative) {
+      return true;
+    }
+    // Web uses service worker + PushManager
     return 'serviceWorker' in navigator && 'PushManager' in window;
   }
 
@@ -30,9 +37,22 @@ class PushNotificationManager {
   // Request notification permission
   async requestPermission() {
     if (!this.isSupported()) {
-      throw new Error('Push notifications are not supported in this browser');
+      throw new Error('Push notifications are not supported');
     }
 
+    // Native app permission handling
+    if (this.isNative) {
+      try {
+        const { PushNotifications } = await import('@capacitor/push-notifications');
+        const result = await PushNotifications.requestPermissions();
+        return result.receive === 'granted';
+      } catch (error) {
+        console.error('Native push permission error:', error);
+        return false;
+      }
+    }
+
+    // Web permission handling
     const permission = await Notification.requestPermission();
     return permission === 'granted';
   }
@@ -75,6 +95,37 @@ class PushNotificationManager {
   // Subscribe to push notifications
   async subscribe() {
     try {
+      // Native app subscription
+      if (this.isNative) {
+        const { PushNotifications } = await import('@capacitor/push-notifications');
+        
+        // Register for push notifications
+        await PushNotifications.register();
+        
+        // Set up listeners for registration
+        return new Promise((resolve, reject) => {
+          PushNotifications.addListener('registration', async (token) => {
+            console.log('Native push token:', token.value);
+            try {
+              // Send token to server
+              await api.post('/push/subscribe-native', {
+                token: token.value,
+                platform: Capacitor.getPlatform()
+              });
+              resolve(token);
+            } catch (err) {
+              reject(err);
+            }
+          });
+
+          PushNotifications.addListener('registrationError', (error) => {
+            console.error('Native push registration error:', error);
+            reject(error);
+          });
+        });
+      }
+
+      // Web subscription
       // Get VAPID public key from server
       const { data } = await api.get('/push/vapid-public-key');
       const publicKey = data.publicKey;
@@ -141,7 +192,19 @@ class PushNotificationManager {
         return null;
       }
 
-      // Use getRegistration instead of ready to avoid blocking
+      // Native app - check permission status as proxy for subscription
+      if (this.isNative) {
+        try {
+          const { PushNotifications } = await import('@capacitor/push-notifications');
+          const permStatus = await PushNotifications.checkPermissions();
+          // If permission is granted, assume subscribed
+          return permStatus.receive === 'granted' ? { native: true } : null;
+        } catch (error) {
+          return null;
+        }
+      }
+
+      // Web - use getRegistration instead of ready to avoid blocking
       const registration = await navigator.serviceWorker.getRegistration();
       if (!registration) {
         return null;
@@ -218,10 +281,24 @@ class PushNotificationManager {
   }
 
   // Check notification permission status
-  getPermissionStatus() {
+  async getPermissionStatus() {
     if (!this.isSupported()) {
       return 'unsupported';
     }
+    
+    // Native app permission check
+    if (this.isNative) {
+      try {
+        const { PushNotifications } = await import('@capacitor/push-notifications');
+        const permStatus = await PushNotifications.checkPermissions();
+        if (permStatus.receive === 'granted') return 'granted';
+        if (permStatus.receive === 'denied') return 'denied';
+        return 'default';
+      } catch (error) {
+        return 'unsupported';
+      }
+    }
+    
     return Notification.permission;
   }
 }

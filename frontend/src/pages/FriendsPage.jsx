@@ -284,7 +284,9 @@ const FriendsPage = () => {
                   >
                     <Box sx={{ display: 'flex', alignItems: 'center', width: isMobile ? '100%' : 'auto', flex: 1 }}>
                       <ListItemAvatar>
-                        <Avatar src={avatars[friend._id] || friend.avatar}>{friend.username[0]}</Avatar>
+                        <Avatar src={avatars[String(friend._id)] || friend.avatar}>
+                          {friend.username?.[0]?.toUpperCase()}
+                        </Avatar>
                       </ListItemAvatar>
                       <ListItemText
                         primary={friend.username}
@@ -355,7 +357,9 @@ const FriendsPage = () => {
                     }
                   >
                     <ListItemAvatar>
-                      <Avatar src={avatars[req.requester._id] || req.requester.avatar}>{req.requester.username[0]}</Avatar>
+                      <Avatar src={avatars[String(req.requester?._id)] || req.requester?.avatar}>
+                        {req.requester?.username?.[0]?.toUpperCase()}
+                      </Avatar>
                     </ListItemAvatar>
                     <ListItemText
                       primary={req.requester.username}
@@ -413,7 +417,9 @@ const FriendsPage = () => {
                     }
                   >
                     <ListItemAvatar>
-                      <Avatar src={avatars[user._id] || user.avatar}>{user.username[0]}</Avatar>
+                      <Avatar src={avatars[String(user._id)] || user.avatar}>
+                        {user.username?.[0]?.toUpperCase()}
+                      </Avatar>
                     </ListItemAvatar>
                     <ListItemText
                       primary={user.username}

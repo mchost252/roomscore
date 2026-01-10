@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, memo, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   AppBar,
@@ -31,6 +31,7 @@ import {
   Settings,
   People,
   Message,
+  MoreVert,
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { useDeviceType } from '../hooks/useDeviceType';
@@ -42,6 +43,7 @@ const Navbar = () => {
   const { user, logout } = useAuth();
   const { isMobile } = useDeviceType();
   const [anchorEl, setAnchorEl] = useState(null);
+  const [mobileMenuAnchor, setMobileMenuAnchor] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const handleMenuOpen = (event) => {
@@ -52,7 +54,17 @@ const Navbar = () => {
     setAnchorEl(null);
   };
 
+  const handleMobileMenuOpen = (event) => {
+    setMobileMenuAnchor(event.currentTarget);
+  };
+
+  const handleMobileMenuClose = () => {
+    setMobileMenuAnchor(null);
+  };
+
   const handleLogout = async () => {
+    handleMobileMenuClose();
+    handleMenuClose();
     await logout();
     navigate('/login');
   };
@@ -62,8 +74,8 @@ const Navbar = () => {
     if (location.pathname.startsWith('/rooms')) return 1;
     if (location.pathname === '/friends') return 2;
     if (location.pathname.startsWith('/messages')) return 3;
-    if (location.pathname === '/profile') return 4;
-    return 0;
+    // Profile is no longer in bottom nav
+    return -1;
   };
 
   // Mobile bottom navigation
@@ -82,10 +94,72 @@ const Navbar = () => {
               Krios
             </Typography>
             <NotificationPopup />
+            <IconButton
+              color="inherit"
+              onClick={handleMobileMenuOpen}
+              sx={{ ml: 0.5 }}
+            >
+              <MoreVert />
+            </IconButton>
+            
+            {/* Mobile 3-dot Menu */}
+            <Menu
+              anchorEl={mobileMenuAnchor}
+              open={Boolean(mobileMenuAnchor)}
+              onClose={handleMobileMenuClose}
+              transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+              anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+              disableScrollLock={true}
+              PaperProps={{
+                sx: {
+                  minWidth: 180,
+                  mt: 1
+                }
+              }}
+            >
+              <Box sx={{ px: 2, py: 1 }}>
+                <Typography variant="subtitle1" fontWeight={600}>
+                  {user?.username}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" noWrap>
+                  {user?.email}
+                </Typography>
+              </Box>
+              <Divider />
+              <MenuItem
+                onClick={() => {
+                  navigate('/profile');
+                  handleMobileMenuClose();
+                }}
+              >
+                <ListItemIcon>
+                  <AccountCircle fontSize="small" />
+                </ListItemIcon>
+                Profile
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  navigate('/profile');
+                  handleMobileMenuClose();
+                }}
+              >
+                <ListItemIcon>
+                  <Settings fontSize="small" />
+                </ListItemIcon>
+                Settings
+              </MenuItem>
+              <Divider />
+              <MenuItem onClick={handleLogout}>
+                <ListItemIcon>
+                  <Logout fontSize="small" />
+                </ListItemIcon>
+                Logout
+              </MenuItem>
+            </Menu>
           </Toolbar>
         </AppBar>
 
-        {/* Mobile Bottom Navigation */}
+        {/* Mobile Bottom Navigation - 4 tabs only */}
         <Paper
           sx={{
             position: 'fixed',
@@ -103,7 +177,6 @@ const Navbar = () => {
               if (newValue === 1) navigate('/rooms');
               if (newValue === 2) navigate('/friends');
               if (newValue === 3) navigate('/messages');
-              if (newValue === 4) navigate('/profile');
             }}
             showLabels
           >
@@ -111,7 +184,6 @@ const Navbar = () => {
             <BottomNavigationAction label="Rooms" icon={<Groups />} />
             <BottomNavigationAction label="Friends" icon={<People />} />
             <BottomNavigationAction label="Messages" icon={<Message />} />
-            <BottomNavigationAction label="Profile" icon={<AccountCircle />} />
           </BottomNavigation>
         </Paper>
       </>
@@ -230,4 +302,4 @@ const Navbar = () => {
   );
 };
 
-export default Navbar;
+export default memo(Navbar);

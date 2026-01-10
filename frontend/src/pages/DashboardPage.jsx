@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Container,
   Grid,
@@ -23,6 +23,7 @@ import {
   LocalFireDepartment
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import { useNavigate } from 'react-router-dom';
 import api, { invalidateCache } from '../utils/api';
 import { format, startOfDay, differenceInDays } from 'date-fns';
@@ -31,6 +32,7 @@ import WhatsNewCard from '../components/WhatsNewCard';
 
 const DashboardPage = () => {
   const { user } = useAuth();
+  const { socket } = useSocket();
   const navigate = useNavigate();
   const [rooms, setRooms] = useState([]);
   const [stats, setStats] = useState(null);
@@ -70,6 +72,70 @@ const DashboardPage = () => {
       loadDashboardData();
     }
   }, []);
+
+  // Listen for real-time task completion updates
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleTaskCompleted = (data) => {
+      // Update the specific task in the rooms state
+      setRooms(prevRooms => 
+        prevRooms.map(room => {
+          if (room._id === data.roomId) {
+            return {
+              ...room,
+              tasks: room.tasks.map(task => {
+                if (task._id === data.taskId) {
+                  // If current user completed it, mark as completed
+                  if (data.userId === user?.id) {
+                    return { ...task, isCompleted: true };
+                  }
+                }
+                return task;
+              })
+            };
+          }
+          return room;
+        })
+      );
+      
+      // Update points if it was the current user
+      if (data.userId === user?.id && data.points) {
+        setStats(prev => ({
+          ...prev,
+          totalPoints: (prev?.totalPoints || 0) + data.points
+        }));
+      }
+    };
+
+    const handleTaskUncompleted = (data) => {
+      // Update the specific task in the rooms state
+      setRooms(prevRooms => 
+        prevRooms.map(room => {
+          if (room._id === data.roomId) {
+            return {
+              ...room,
+              tasks: room.tasks.map(task => {
+                if (task._id === data.taskId && data.userId === user?.id) {
+                  return { ...task, isCompleted: false };
+                }
+                return task;
+              })
+            };
+          }
+          return room;
+        })
+      );
+    };
+
+    socket.on('task:completed', handleTaskCompleted);
+    socket.on('task:uncompleted', handleTaskUncompleted);
+
+    return () => {
+      socket.off('task:completed', handleTaskCompleted);
+      socket.off('task:uncompleted', handleTaskUncompleted);
+    };
+  }, [socket, user?.id]);
 
   const loadDashboardData = async () => {
     try {

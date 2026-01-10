@@ -28,49 +28,49 @@ const onboardingSteps = [
   {
     title: 'Welcome to Krios! 👋',
     subtitle: 'Overview',
-    description: 'Build better habits with friends! Track tasks, earn points, and stay accountable together.',
+    description: 'Build better habits with friends! Track tasks, earn points, and stay accountable together in real-time.',
     icon: DashboardIcon,
     features: [
-      { label: 'Dashboard', desc: 'Your daily overview & stats' },
-      { label: 'Rooms', desc: 'Collaborative habit spaces' },
-      { label: 'Friends', desc: 'Connect & message friends' },
-      { label: 'Notifications', desc: 'Real-time updates & alerts' }
+      { label: 'Today\'s Focus', desc: 'See all your tasks synced across rooms' },
+      { label: 'Smart Theme', desc: 'Auto-adapts to your device settings' },
+      { label: 'Fast & Optimized', desc: 'Lightning-fast mobile experience' },
+      { label: 'Real-time Sync', desc: 'Instant updates when friends complete tasks' }
     ]
   },
   {
     title: 'Create & Join Rooms 🏠',
     subtitle: 'Rooms',
-    description: 'Rooms are shared spaces where you and your friends complete tasks together.',
+    description: 'Rooms are shared accountability spaces where you and friends complete tasks together.',
     icon: GroupIcon,
     features: [
-      { label: 'Create Rooms', desc: 'Set up habit groups (up to 1 month)' },
-      { label: 'Join via Code', desc: 'Use invite codes to join' },
-      { label: 'Leaderboards', desc: 'Compete with room members' },
-      { label: 'Room Chat', desc: 'Discuss progress together' }
+      { label: 'Create Rooms', desc: 'Set up habit groups with custom tasks' },
+      { label: 'Join via Code', desc: 'Use invite codes to join friends' },
+      { label: 'Live Leaderboards', desc: 'Compete and track progress' },
+      { label: 'Room Chat', desc: 'Discuss and motivate each other' }
     ]
   },
   {
     title: 'Complete Tasks & Earn Points 📝',
     subtitle: 'Tasks',
-    description: 'Complete daily, weekly, or monthly tasks to earn points and build streaks.',
+    description: 'Complete daily, weekly, or monthly tasks to earn points and build your streak!',
     icon: TaskIcon,
     features: [
-      { label: 'Room Tasks', desc: 'Visible to all room members' },
-      { label: 'Points System', desc: 'Earn points for completions' },
-      { label: 'Daily Streaks', desc: 'Build consistency over time' },
-      { label: 'See Who Completed', desc: 'Track team progress' }
+      { label: 'Flexible Tasks', desc: 'Daily, weekly, or monthly options' },
+      { label: 'Points & Streaks', desc: 'Earn rewards for consistency' },
+      { label: 'Dashboard Sync', desc: 'Task completions show everywhere instantly' },
+      { label: 'Team Progress', desc: 'See when friends complete tasks' }
     ]
   },
   {
     title: 'Stay Connected 💬',
     subtitle: 'Social',
-    description: 'Add friends, send messages, and get instant notifications when things happen.',
+    description: 'Get notified instantly when friends complete tasks, send messages, and more!',
     icon: ChatIcon,
     features: [
-      { label: 'Add Friends', desc: 'Search & send friend requests' },
+      { label: 'Push Notifications', desc: 'Get alerts for task completions' },
       { label: 'Direct Messages', desc: 'Private chats with friends' },
-      { label: 'Push Notifications', desc: 'Never miss an update' },
-      { label: 'Online Status', desc: 'See who\'s active' }
+      { label: 'Friend Activity', desc: 'See what your friends are achieving' },
+      { label: 'Quick Access', desc: 'Profile & settings in the top menu' }
     ]
   }
 ];
@@ -102,7 +102,12 @@ const OnboardingModal = ({ open, onClose }) => {
   return (
     <Dialog
       open={open}
-      onClose={handleSkip}
+      onClose={(event, reason) => {
+        // Only allow closing via buttons, not backdrop click or escape
+        if (reason !== 'backdropClick' && reason !== 'escapeKeyDown') {
+          handleSkip();
+        }
+      }}
       maxWidth="sm"
       fullWidth
       fullScreen={isMobile}

@@ -79,10 +79,18 @@ const userSchema = new mongoose.Schema({
     }
   },
   pushSubscriptions: [{
+    // Web push fields
     endpoint: String,
     keys: {
       p256dh: String,
       auth: String
+    },
+    // Native push fields (FCM/APNS)
+    nativeToken: String,
+    platform: {
+      type: String,
+      enum: ['web', 'android', 'ios', 'unknown'],
+      default: 'web'
     },
     userAgent: String,
     subscribedAt: {

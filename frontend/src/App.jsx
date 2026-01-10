@@ -1,6 +1,6 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { CssBaseline, Box } from '@mui/material';
+import { CssBaseline, Box, Snackbar } from '@mui/material';
 import { useAuth } from './context/AuthContext';
 import { useTheme as useCustomTheme } from './context/ThemeContext';
 
@@ -46,10 +46,30 @@ const PublicRoute = ({ children }) => {
 function App() {
   const { mode } = useCustomTheme();
   const { user } = useAuth();
+  const [backToastOpen, setBackToastOpen] = useState(false);
+
+  // Listen for back button toast event from Capacitor
+  useEffect(() => {
+    const handleBackToExit = (event) => {
+      setBackToastOpen(true);
+    };
+    
+    window.addEventListener('app:backToExit', handleBackToExit);
+    return () => window.removeEventListener('app:backToExit', handleBackToExit);
+  }, []);
 
   return (
     <>
       <CssBaseline />
+      {/* Back button exit toast */}
+      <Snackbar
+        open={backToastOpen}
+        autoHideDuration={2000}
+        onClose={() => setBackToastOpen(false)}
+        message="Press back again to exit"
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{ mb: 8 }}
+      />
       {/* Show push notification prompt for logged-in users */}
       {user && <PushNotificationPrompt />}
       <Box sx={{ 
