@@ -79,7 +79,7 @@ const Navbar = () => {
               sx={{ flexGrow: 1, fontWeight: 'bold', cursor: 'pointer' }}
               onClick={() => navigate('/dashboard')}
             >
-              RoomScore
+              Krios
             </Typography>
             <NotificationPopup />
           </Toolbar>
@@ -128,7 +128,7 @@ const Navbar = () => {
           sx={{ flexGrow: 0, mr: 4, fontWeight: 700, cursor: 'pointer' }}
           onClick={() => navigate('/dashboard')}
         >
-          RoomScore
+          Krios
         </Typography>
 
         <Box sx={{ flexGrow: 1, display: 'flex', gap: 2 }}>

@@ -26,7 +26,7 @@ import {
 
 const onboardingSteps = [
   {
-    title: 'Welcome to RoomScore! 👋',
+    title: 'Welcome to Krios! 👋',
     subtitle: 'Overview',
     description: 'Build better habits with friends! Track tasks, earn points, and stay accountable together.',
     icon: DashboardIcon,

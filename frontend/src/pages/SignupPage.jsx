@@ -107,7 +107,7 @@ const SignupPage = () => {
                 Create Account
               </Typography>
               <Typography variant="body1" color="text.secondary">
-                Join RoomScore and start tracking habits together
+                Join Krios and start tracking habits together
               </Typography>
             </Box>
 

@@ -71,7 +71,7 @@ const LoginPage = () => {
                 Welcome Back
               </Typography>
               <Typography variant="body1" color="text.secondary">
-                Sign in to continue to RoomScore
+                Sign in to continue to Krios
               </Typography>
             </Box>
 

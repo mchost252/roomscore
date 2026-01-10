@@ -5,6 +5,10 @@ import App from './App';
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { initializeCapacitor } from './utils/capacitor';
+
+// Initialize Capacitor for native platforms (iOS/Android)
+initializeCapacitor().catch(console.error);
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

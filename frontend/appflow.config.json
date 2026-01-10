@@ -1,0 +1,46 @@
+{
+  "$schema": "https://ionic.io/schemas/appflow.config.json",
+  "app_id": "20a7c5e1",
+  "root": ".",
+  "builds": {
+    "web": {
+      "build_type": "web",
+      "build_script": "npm run build",
+      "output_path": "dist"
+    },
+    "android-debug": {
+      "build_type": "android-debug",
+      "build_script": "npm run cap:build",
+      "environment": "development"
+    },
+    "android-release": {
+      "build_type": "android-release",
+      "build_script": "npm run cap:build",
+      "environment": "production"
+    },
+    "ios-debug": {
+      "build_type": "ios-development",
+      "build_script": "npm run cap:build",
+      "environment": "development"
+    },
+    "ios-release": {
+      "build_type": "ios-app-store",
+      "build_script": "npm run cap:build",
+      "environment": "production"
+    }
+  },
+  "live_updates": {
+    "channel": "Production",
+    "auto_update_method": "background",
+    "max_versions": 2,
+    "min_background_duration": 30
+  },
+  "environments": {
+    "development": {
+      "VITE_API_URL": "https://your-backend-url.com"
+    },
+    "production": {
+      "VITE_API_URL": "https://your-backend-url.com"
+    }
+  }
+}
