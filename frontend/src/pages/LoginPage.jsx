@@ -16,6 +16,7 @@ import {
 } from '@mui/material';
 import { Visibility, VisibilityOff, Login as LoginIcon } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
+import { API_BASE_URL } from '../utils/api';
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -46,7 +47,8 @@ const LoginPage = () => {
     if (result.success) {
       navigate('/dashboard');
     } else {
-      setError(result.message);
+      // Show detailed error for debugging native app issues
+      setError(`${result.message} [API: ${API_BASE_URL}]`);
     }
 
     setLoading(false);

@@ -17,6 +17,7 @@ import {
 import { Visibility, VisibilityOff, PersonAdd } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import OnboardingModal from '../components/OnboardingModal';
+import { API_BASE_URL } from '../utils/api';
 
 const SignupPage = () => {
   const navigate = useNavigate();
@@ -69,7 +70,8 @@ const SignupPage = () => {
       localStorage.setItem('isNewUser', 'true');
       setShowOnboarding(true);
     } else {
-      setError(result.message);
+      // Show detailed error for debugging native app issues
+      setError(`${result.message} [API: ${API_BASE_URL}]`);
     }
 
     setLoading(false);

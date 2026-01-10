@@ -55,6 +55,7 @@ export const AuthProvider = ({ children }) => {
   // Register
   const register = async (email, password, username) => {
     try {
+      console.log('📝 Attempting registration to:', `${API_BASE_URL}/api/auth/register`);
       const response = await axios.post(`${API_BASE_URL}/api/auth/register`, {
         email,
         password,
@@ -70,9 +71,19 @@ export const AuthProvider = ({ children }) => {
       
       return { success: true };
     } catch (error) {
+      console.error('❌ Registration failed:', error);
+      // Provide detailed error message for debugging
+      let errorMessage = 'Registration failed';
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.code === 'ERR_NETWORK') {
+        errorMessage = 'Network error - cannot reach server';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
       return {
         success: false,
-        message: error.response?.data?.message || 'Registration failed'
+        message: errorMessage
       };
     }
   };
@@ -98,7 +109,7 @@ export const AuthProvider = ({ children }) => {
       console.log('✅ Login successful! Token saved:', !!newToken);
       return { success: true };
     } catch (error) {
-      console.error('❌ Login failed:', error.response?.data || error.message);
+      console.error('❌ Login failed:', error);
       
       // Handle rate limit error specifically
       if (error.response?.status === 429) {
@@ -108,9 +119,19 @@ export const AuthProvider = ({ children }) => {
         };
       }
       
+      // Provide detailed error message for debugging
+      let errorMessage = 'Login failed';
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.code === 'ERR_NETWORK') {
+        errorMessage = 'Network error - cannot reach server';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       return {
         success: false,
-        message: error.response?.data?.message || 'Login failed'
+        message: errorMessage
       };
     }
   };
