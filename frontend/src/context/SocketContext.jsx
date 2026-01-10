@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import { useAuth } from './AuthContext';
+import { API_BASE_URL } from '../utils/api';
 
 const SocketContext = createContext();
 
@@ -25,7 +26,7 @@ export const SocketProvider = ({ children }) => {
       // Connect socket immediately - don't block render with artificial delay
       const token = localStorage.getItem('token');
       
-      const newSocket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000', {
+      const newSocket = io(API_BASE_URL, {
         auth: { token },
         transports: ['websocket', 'polling'],
         reconnection: true,

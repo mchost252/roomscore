@@ -1,8 +1,29 @@
 import axios from 'axios';
 import cacheManager from './cache';
 
+// Production API URL - hardcoded fallback for native app builds (Appflow)
+// This ensures the app works even if environment variables aren't injected
+const PRODUCTION_API_URL = 'https://roomscore-production.up.railway.app';
+
+// Use environment variable if available, otherwise use production URL for native builds
+// localhost is only used for local development
+const getApiUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl) return envUrl;
+  
+  // Check if we're in a browser dev environment
+  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+    return 'http://localhost:5000';
+  }
+  
+  // Default to production for native apps and production builds
+  return PRODUCTION_API_URL;
+};
+
+export const API_BASE_URL = getApiUrl();
+
 const api = axios.create({
-  baseURL: `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`,
+  baseURL: `${API_BASE_URL}/api`,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -103,7 +124,7 @@ api.interceptors.response.use(
         }
 
         const response = await axios.post(
-          `${import.meta.env.VITE_API_URL}/api/auth/refresh`,
+          `${API_BASE_URL}/api/auth/refresh`,
           { refreshToken }
         );
 

@@ -1,6 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import axios from 'axios';
-import api, { clearAllCache } from '../utils/api';
+import api, { clearAllCache, API_BASE_URL } from '../utils/api';
 import pushNotificationManager from '../utils/pushNotifications';
 
 const AuthContext = createContext();
@@ -55,7 +55,7 @@ export const AuthProvider = ({ children }) => {
   // Register
   const register = async (email, password, username) => {
     try {
-      const response = await axios.post(`${import.meta.env.VITE_API_URL}/api/auth/register`, {
+      const response = await axios.post(`${API_BASE_URL}/api/auth/register`, {
         email,
         password,
         username
@@ -80,8 +80,8 @@ export const AuthProvider = ({ children }) => {
   // Login
   const login = async (email, password) => {
     try {
-      console.log('🔐 Attempting login...');
-      const response = await axios.post(`${import.meta.env.VITE_API_URL}/api/auth/login`, {
+      console.log('🔐 Attempting login to:', `${API_BASE_URL}/api/auth/login`);
+      const response = await axios.post(`${API_BASE_URL}/api/auth/login`, {
         email,
         password
       });
@@ -118,7 +118,7 @@ export const AuthProvider = ({ children }) => {
   // Google login
   const googleLogin = async (googleToken) => {
     try {
-      const response = await axios.post(`${import.meta.env.VITE_API_URL}/api/auth/google`, {
+      const response = await axios.post(`${API_BASE_URL}/api/auth/google`, {
         token: googleToken
       });
       
