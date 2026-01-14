@@ -244,7 +244,7 @@ const SignupPage = () => {
             position: 'relative',
             zIndex: 10,
             width: '100%',
-            maxWidth: 420,
+            maxWidth: { xs: 340, sm: 420 },
             transform: mounted ? 'translateY(0) scale(1)' : 'translateY(20px) scale(0.95)',
             opacity: mounted ? 1 : 0,
             transition: 'all 0.6s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -256,24 +256,24 @@ const SignupPage = () => {
               background: 'rgba(30, 41, 59, 0.7)',
               backdropFilter: 'blur(20px)',
               WebkitBackdropFilter: 'blur(20px)',
-              borderRadius: 4,
+              borderRadius: { xs: 3, sm: 4 },
               border: '1px solid rgba(255, 255, 255, 0.1)',
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.1)',
-              p: 4,
+              p: { xs: 2.5, sm: 4 },
             }}
           >
             {/* Logo and title */}
-            <Box sx={{ textAlign: 'center', mb: 3 }}>
+            <Box sx={{ textAlign: 'center', mb: { xs: 2, sm: 3 } }}>
               {/* App Icon */}
               <Box
                 component="img"
                 src="/icon-192x192.png"
                 alt="Krios"
                 sx={{
-                  width: 70,
-                  height: 70,
+                  width: { xs: 56, sm: 70 },
+                  height: { xs: 56, sm: 70 },
                   borderRadius: 2.5,
-                  mb: 2,
+                  mb: { xs: 1.5, sm: 2 },
                   boxShadow: '0 10px 40px rgba(245, 158, 11, 0.3)',
                   animation: 'iconGlow 3s ease-in-out infinite',
                   '@keyframes iconGlow': {
@@ -290,18 +290,19 @@ const SignupPage = () => {
                 variant="h4"
                 sx={{
                   fontWeight: 700,
+                  fontSize: { xs: '1.5rem', sm: '2.125rem' },
                   background: 'linear-gradient(135deg, #F59E0B 0%, #60A5FA 100%)',
                   backgroundClip: 'text',
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
-                  mb: 1,
+                  mb: 0.5,
                 }}
               >
                 Join Krios
               </Typography>
               <Typography
                 variant="body1"
-                sx={{ color: 'rgba(255, 255, 255, 0.6)' }}
+                sx={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: { xs: '0.875rem', sm: '1rem' } }}
               >
                 Start your habit tracking journey
               </Typography>
@@ -334,7 +335,8 @@ const SignupPage = () => {
                 required
                 autoComplete="username"
                 helperText="At least 3 characters"
-                sx={{ mb: 2, ...textFieldStyles }}
+                size="small"
+                sx={{ mb: { xs: 1.5, sm: 2 }, ...textFieldStyles }}
               />
 
               <TextField
@@ -346,7 +348,8 @@ const SignupPage = () => {
                 onChange={handleChange}
                 required
                 autoComplete="email"
-                sx={{ mb: 2, ...textFieldStyles }}
+                size="small"
+                sx={{ mb: { xs: 1.5, sm: 2 }, ...textFieldStyles }}
               />
 
               <TextField
@@ -359,13 +362,15 @@ const SignupPage = () => {
                 required
                 autoComplete="new-password"
                 helperText="At least 6 characters"
-                sx={{ mb: 2, ...textFieldStyles }}
+                size="small"
+                sx={{ mb: { xs: 1.5, sm: 2 }, ...textFieldStyles }}
                 InputProps={{
                   endAdornment: (
                     <InputAdornment position="end">
                       <IconButton
                         onClick={() => setShowPassword(!showPassword)}
                         edge="end"
+                        size="small"
                         sx={{ color: 'rgba(255, 255, 255, 0.5)' }}
                       >
                         {showPassword ? <VisibilityOff /> : <Visibility />}
@@ -384,7 +389,8 @@ const SignupPage = () => {
                 onChange={handleChange}
                 required
                 autoComplete="new-password"
-                sx={{ mb: 3, ...textFieldStyles }}
+                size="small"
+                sx={{ mb: { xs: 2, sm: 3 }, ...textFieldStyles }}
               />
 
               <Button
@@ -395,9 +401,9 @@ const SignupPage = () => {
                 disabled={loading}
                 startIcon={!loading && <PersonAdd />}
                 sx={{
-                  py: 1.5,
+                  py: { xs: 1.2, sm: 1.5 },
                   borderRadius: 2,
-                  fontSize: '1rem',
+                  fontSize: { xs: '0.9rem', sm: '1rem' },
                   fontWeight: 600,
                   textTransform: 'none',
                   background: 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)',

@@ -182,7 +182,7 @@ const LoginPage = () => {
           position: 'relative',
           zIndex: 10,
           width: '100%',
-          maxWidth: 420,
+          maxWidth: { xs: 340, sm: 420 },
           transform: mounted ? 'translateY(0) scale(1)' : 'translateY(20px) scale(0.95)',
           opacity: mounted ? 1 : 0,
           transition: 'all 0.6s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -194,24 +194,24 @@ const LoginPage = () => {
             background: 'rgba(30, 41, 59, 0.7)',
             backdropFilter: 'blur(20px)',
             WebkitBackdropFilter: 'blur(20px)',
-            borderRadius: 4,
+            borderRadius: { xs: 3, sm: 4 },
             border: '1px solid rgba(255, 255, 255, 0.1)',
             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.1)',
-            p: 4,
+            p: { xs: 2.5, sm: 4 },
           }}
         >
           {/* Logo and title */}
-          <Box sx={{ textAlign: 'center', mb: 4 }}>
+          <Box sx={{ textAlign: 'center', mb: { xs: 2.5, sm: 4 } }}>
             {/* App Icon */}
             <Box
               component="img"
               src="/icon-192x192.png"
               alt="Krios"
               sx={{
-                width: 80,
-                height: 80,
-                borderRadius: 3,
-                mb: 2,
+                width: { xs: 64, sm: 80 },
+                height: { xs: 64, sm: 80 },
+                borderRadius: { xs: 2.5, sm: 3 },
+                mb: { xs: 1.5, sm: 2 },
                 boxShadow: '0 10px 40px rgba(96, 165, 250, 0.3)',
                 animation: 'iconGlow 3s ease-in-out infinite',
                 '@keyframes iconGlow': {
@@ -228,18 +228,19 @@ const LoginPage = () => {
               variant="h4"
               sx={{
                 fontWeight: 700,
+                fontSize: { xs: '1.5rem', sm: '2.125rem' },
                 background: 'linear-gradient(135deg, #60A5FA 0%, #F59E0B 100%)',
                 backgroundClip: 'text',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
-                mb: 1,
+                mb: 0.5,
               }}
             >
               Welcome Back
             </Typography>
             <Typography
               variant="body1"
-              sx={{ color: 'rgba(255, 255, 255, 0.6)' }}
+              sx={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: { xs: '0.875rem', sm: '1rem' } }}
             >
               Sign in to continue your journey
             </Typography>
@@ -272,8 +273,9 @@ const LoginPage = () => {
               onChange={handleChange}
               required
               autoComplete="email"
+              size="small"
               sx={{
-                mb: 2.5,
+                mb: { xs: 1.5, sm: 2.5 },
                 '& .MuiOutlinedInput-root': {
                   color: 'white',
                   background: 'rgba(255, 255, 255, 0.05)',
@@ -306,8 +308,9 @@ const LoginPage = () => {
               onChange={handleChange}
               required
               autoComplete="current-password"
+              size="small"
               sx={{
-                mb: 3,
+                mb: { xs: 2, sm: 3 },
                 '& .MuiOutlinedInput-root': {
                   color: 'white',
                   background: 'rgba(255, 255, 255, 0.05)',
@@ -335,6 +338,7 @@ const LoginPage = () => {
                     <IconButton
                       onClick={() => setShowPassword(!showPassword)}
                       edge="end"
+                      size="small"
                       sx={{ color: 'rgba(255, 255, 255, 0.5)' }}
                     >
                       {showPassword ? <VisibilityOff /> : <Visibility />}
@@ -352,9 +356,9 @@ const LoginPage = () => {
               disabled={loading}
               startIcon={!loading && <LoginIcon />}
               sx={{
-                py: 1.5,
+                py: { xs: 1.2, sm: 1.5 },
                 borderRadius: 2,
-                fontSize: '1rem',
+                fontSize: { xs: '0.9rem', sm: '1rem' },
                 fontWeight: 600,
                 textTransform: 'none',
                 background: 'linear-gradient(135deg, #60A5FA 0%, #3B82F6 100%)',

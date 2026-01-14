@@ -53,6 +53,13 @@ export const AuthProvider = ({ children }) => {
       
       const { token: newToken, refreshToken, user: newUser } = response.data;
       
+      // Clear stale cache after successful registration to ensure fresh data
+      try {
+        clearAllCache();
+      } catch (cacheError) {
+        console.warn('Failed to clear cache:', cacheError);
+      }
+      
       localStorage.setItem('token', newToken);
       localStorage.setItem('refreshToken', refreshToken);
       
@@ -88,6 +95,13 @@ export const AuthProvider = ({ children }) => {
       
       console.log('✅ Login response:', response.data);
       const { token: newToken, refreshToken, user: newUser } = response.data;
+      
+      // Clear stale cache after successful login to ensure fresh data
+      try {
+        clearAllCache();
+      } catch (cacheError) {
+        console.warn('Failed to clear cache:', cacheError);
+      }
       
       localStorage.setItem('token', newToken);
       localStorage.setItem('refreshToken', refreshToken);

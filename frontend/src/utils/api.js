@@ -32,10 +32,15 @@ const api = axios.create({
 const CACHE_CONFIG = {
   '/auth/profile': { ttl: 10 * 60 * 1000, cacheable: true, exact: true, persistent: true },
   '/rooms': { ttl: 2 * 60 * 1000, cacheable: true, exact: true, persistent: true },
+  '/rooms/': { ttl: 60 * 1000, cacheable: true, exact: false, persistent: true }, // Individual room details
   '/notifications': { ttl: 30 * 1000, cacheable: true, exact: true },
+  '/notifications/unread-count': { ttl: 30 * 1000, cacheable: true, exact: true },
   '/direct-messages/conversations': { ttl: 30 * 1000, cacheable: true, exact: true },
   '/friends': { ttl: 60 * 1000, cacheable: true, exact: true, persistent: true },
 };
+
+// Track rate limit state to prevent request storms
+let rateLimitedUntil = 0;
 
 // Check if endpoint should be cached
 const shouldCache = (url, method) => {
@@ -60,6 +65,28 @@ api.interceptors.request.use(
     const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    // Check if we're rate limited - if so, try to return cached data
+    if (rateLimitedUntil > Date.now()) {
+      const cacheKey = cacheManager.generateKey(config.url, config.params);
+      const cachedData = cacheManager.get(cacheKey, true); // Allow stale during rate limit
+      
+      if (cachedData) {
+        console.log('📦 Rate limited - returning cached data for:', config.url);
+        config.adapter = () => {
+          return Promise.resolve({
+            data: cachedData,
+            status: 200,
+            statusText: 'OK (Cached - Rate Limited)',
+            headers: {},
+            config,
+            request: {},
+            cached: true
+          });
+        };
+        return config;
+      }
     }
 
     // Allow bypassing cache per-request
@@ -113,6 +140,35 @@ api.interceptors.response.use(
   },
   async (error) => {
     const originalRequest = error.config;
+
+    // Handle 429 Rate Limit errors
+    if (error.response?.status === 429) {
+      // Set a cooldown period (default 30 seconds, or use Retry-After header)
+      const retryAfter = error.response.headers['retry-after'];
+      const cooldownMs = retryAfter ? parseInt(retryAfter) * 1000 : 30000;
+      rateLimitedUntil = Date.now() + cooldownMs;
+      
+      console.warn(`⚠️ Rate limited. Cooling down for ${cooldownMs / 1000}s`);
+      
+      // Try to return cached data if available
+      const cacheKey = cacheManager.generateKey(originalRequest.url, originalRequest.params);
+      const cachedData = cacheManager.get(cacheKey, true); // Allow stale
+      if (cachedData) {
+        console.log('📦 Returning cached data during rate limit');
+        return Promise.resolve({
+          data: cachedData,
+          status: 200,
+          statusText: 'OK (Cached - Rate Limited)',
+          headers: {},
+          config: originalRequest,
+          cached: true
+        });
+      }
+      
+      // If no cache, reject with a friendlier error
+      error.message = 'Too many requests. Please wait a moment and try again.';
+      return Promise.reject(error);
+    }
 
     // If error is 401 and we haven't tried to refresh yet
     if (error.response?.status === 401 && !originalRequest._retry) {

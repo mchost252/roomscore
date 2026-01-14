@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Container,
   Grid,
   Paper,
   Typography,
@@ -303,13 +302,20 @@ const ProfilePage = () => {
   }, [fetchMoreNotifications]);
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+    <Box sx={{ 
+      width: '100%', 
+      maxWidth: '100%', 
+      overflowX: 'hidden',
+      px: { xs: 1.5, sm: 2, md: 3 },
+      py: { xs: 2, md: 4 },
+      boxSizing: 'border-box',
+    }}>
       {/* Header */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" gutterBottom fontWeight="bold">
+      <Box sx={{ mb: { xs: 2, md: 4 } }}>
+        <Typography variant="h4" gutterBottom fontWeight="bold" sx={{ fontSize: { xs: '1.3rem', md: '2.125rem' } }}>
           Profile
         </Typography>
-        <Typography variant="body1" color="text.secondary">
+        <Typography variant="body1" color="text.secondary" sx={{ fontSize: { xs: '0.8rem', md: '1rem' } }}>
           Manage your account and view your progress
         </Typography>
       </Box>
@@ -326,63 +332,65 @@ const ProfilePage = () => {
         </Alert>
       )}
 
-      <Grid container spacing={3}>
+      <Grid container spacing={{ xs: 2, md: 3 }}>
         {/* Left Sidebar - Profile Info */}
         <Grid item xs={12} md={4}>
-          <Paper sx={{ p: 3, textAlign: 'center', mb: 3 }}>
+          <Paper sx={{ p: { xs: 2, md: 3 }, textAlign: 'center', mb: { xs: 2, md: 3 } }}>
             <Avatar
               src={user?.avatar || undefined}
               sx={{
-                width: 120,
-                height: 120,
+                width: { xs: 80, md: 120 },
+                height: { xs: 80, md: 120 },
                 margin: '0 auto',
-                mb: 2,
-                fontSize: '3rem',
+                mb: { xs: 1.5, md: 2 },
+                fontSize: { xs: '2rem', md: '3rem' },
                 bgcolor: 'primary.main'
               }}
             >
               {!user?.avatar && (user?.username?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?')}
             </Avatar>
             
-            <Typography variant="h5" fontWeight="bold" gutterBottom>
+            <Typography variant="h5" fontWeight="bold" gutterBottom sx={{ fontSize: { xs: '1.2rem', md: '1.5rem' } }}>
               {user?.username || 'User'}
             </Typography>
             
-            <Typography variant="body2" color="text.secondary" gutterBottom>
+            <Typography variant="body2" color="text.secondary" gutterBottom sx={{ fontSize: { xs: '0.7rem', md: '0.875rem' }, wordBreak: 'break-all' }}>
               {user?.email}
             </Typography>
 
             {user?.bio && (
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 2, fontStyle: 'italic' }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: { xs: 1, md: 2 }, fontStyle: 'italic', fontSize: { xs: '0.75rem', md: '0.875rem' } }}>
                 "{user.bio}"
               </Typography>
             )}
 
-            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mt: 2 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mt: { xs: 1.5, md: 2 } }}>
               <Button
                 variant="outlined"
+                size="small"
                 startIcon={<Edit />}
                 onClick={() => setEditDialogOpen(true)}
+                sx={{ fontSize: { xs: '0.75rem', md: '0.875rem' } }}
               >
                 Edit Profile
               </Button>
-              <IconButton color="error" onClick={handleLogout}>
-                <Logout />
+              <IconButton color="error" onClick={handleLogout} size="small">
+                <Logout fontSize="small" />
               </IconButton>
             </Box>
 
-            <Divider sx={{ my: 3 }} />
+            <Divider sx={{ my: { xs: 2, md: 3 } }} />
 
-            <Box sx={{ textAlign: 'left' }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                <Email fontSize="small" color="action" />
-                <Typography variant="body2" color="text.secondary">
+            <Box sx={{ textAlign: 'left', overflow: 'hidden' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: { xs: 1, md: 2 } }}>
+                <Email fontSize="small" color="action" sx={{ flexShrink: 0 }} />
+                <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.7rem', md: '0.875rem' }, wordBreak: 'break-all' }}>
                   {user?.email}
                 </Typography>
               </Box>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <CalendarToday fontSize="small" color="action" />
-                <Typography variant="body2" color="text.secondary">
+                <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', md: '0.875rem' } }}>
                   Joined {user?.createdAt ? format(parseISO(user.createdAt), 'MMM d, yyyy') : 'Recently'}
                 </Typography>
               </Box>
@@ -390,38 +398,38 @@ const ProfilePage = () => {
           </Paper>
 
           {/* Quick Stats */}
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" fontWeight="bold" gutterBottom>
+          <Paper sx={{ p: { xs: 2, md: 3 } }}>
+            <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
               Quick Stats
             </Typography>
             
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 1.5, md: 2 } }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <EmojiEvents color="warning" />
-                  <Typography variant="body2">Total Points</Typography>
+                  <EmojiEvents color="warning" sx={{ fontSize: { xs: 18, md: 24 } }} />
+                  <Typography variant="body2" sx={{ fontSize: { xs: '0.75rem', md: '0.875rem' } }}>Total Points</Typography>
                 </Box>
-                <Typography variant="h6" fontWeight="bold">
+                <Typography variant="h6" fontWeight="bold" sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
                   {userStats?.totalPoints || 0}
                 </Typography>
               </Box>
 
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <LocalFireDepartment color="error" />
-                  <Typography variant="body2">Current Streak</Typography>
+                  <LocalFireDepartment color="error" sx={{ fontSize: { xs: 18, md: 24 } }} />
+                  <Typography variant="body2" sx={{ fontSize: { xs: '0.75rem', md: '0.875rem' } }}>Current Streak</Typography>
                 </Box>
-                <Typography variant="h6" fontWeight="bold">
+                <Typography variant="h6" fontWeight="bold" sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
                   {userStats?.currentStreak || 0} days
                 </Typography>
               </Box>
 
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <TrendingUp color="success" />
-                  <Typography variant="body2">Best Streak</Typography>
+                  <TrendingUp color="success" sx={{ fontSize: { xs: 18, md: 24 } }} />
+                  <Typography variant="body2" sx={{ fontSize: { xs: '0.75rem', md: '0.875rem' } }}>Best Streak</Typography>
                 </Box>
-                <Typography variant="h6" fontWeight="bold">
+                <Typography variant="h6" fontWeight="bold" sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
                   {userStats?.longestStreak || 0} days
                 </Typography>
               </Box>
@@ -431,23 +439,33 @@ const ProfilePage = () => {
 
         {/* Right Content Area */}
         <Grid item xs={12} md={8}>
-          <Paper sx={{ mb: 3 }}>
+          <Paper sx={{ mb: { xs: 2, md: 3 } }}>
             <Tabs 
               value={tabValue} 
               onChange={(e, newValue) => setTabValue(newValue)}
               variant="scrollable"
               scrollButtons="auto"
               allowScrollButtonsMobile
+              sx={{
+                '& .MuiTab-root': {
+                  minHeight: { xs: 48, md: 64 },
+                  fontSize: { xs: '0.7rem', md: '0.875rem' },
+                  px: { xs: 1, md: 2 },
+                },
+                '& .MuiTab-iconWrapper': {
+                  fontSize: { xs: 18, md: 24 },
+                },
+              }}
             >
               <Tab icon={<TrendingUp />} label="Overview" iconPosition="start" />
               <Tab icon={<History />} label="Activity" iconPosition="start" />
               <Tab 
                 icon={<Notifications />} 
                 label={
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                     Notifications
                     {unreadNotifications > 0 && (
-                      <Chip label={unreadNotifications} size="small" color="error" />
+                      <Chip label={unreadNotifications} size="small" color="error" sx={{ height: { xs: 18, md: 24 }, '& .MuiChip-label': { px: 0.5, fontSize: { xs: '0.65rem', md: '0.75rem' } } }} />
                     )}
                   </Box>
                 } 
@@ -460,88 +478,88 @@ const ProfilePage = () => {
           {/* Overview Tab */}
           {tabValue === 0 && (
             <Box>
-              <Grid container spacing={3}>
+              <Grid container spacing={{ xs: 1.5, md: 3 }}>
                 {/* Stat Cards */}
-                <Grid item xs={12} sm={6}>
+                <Grid item xs={6} sm={6}>
                   <Card>
-                    <CardContent>
+                    <CardContent sx={{ p: { xs: 1.5, md: 2 }, '&:last-child': { pb: { xs: 1.5, md: 2 } } }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <Box>
-                          <Typography variant="body2" color="text.secondary" gutterBottom>
+                          <Typography variant="body2" color="text.secondary" gutterBottom sx={{ fontSize: { xs: '0.65rem', md: '0.875rem' } }}>
                             Total Points
                           </Typography>
-                          <Typography variant="h4" fontWeight="bold">
+                          <Typography variant="h4" fontWeight="bold" sx={{ fontSize: { xs: '1.25rem', md: '2.125rem' } }}>
                             {userStats?.totalPoints || 0}
                           </Typography>
                         </Box>
-                        <Avatar sx={{ bgcolor: 'primary.main' }}>
-                          <EmojiEvents />
+                        <Avatar sx={{ bgcolor: 'primary.main', width: { xs: 28, md: 40 }, height: { xs: 28, md: 40 } }}>
+                          <EmojiEvents sx={{ fontSize: { xs: 16, md: 24 } }} />
                         </Avatar>
                       </Box>
                     </CardContent>
                   </Card>
                 </Grid>
 
-                <Grid item xs={12} sm={6}>
+                <Grid item xs={6} sm={6}>
                   <Card>
-                    <CardContent>
+                    <CardContent sx={{ p: { xs: 1.5, md: 2 }, '&:last-child': { pb: { xs: 1.5, md: 2 } } }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <Box>
-                          <Typography variant="body2" color="text.secondary" gutterBottom>
+                          <Typography variant="body2" color="text.secondary" gutterBottom sx={{ fontSize: { xs: '0.65rem', md: '0.875rem' } }}>
                             Current Streak
                           </Typography>
-                          <Typography variant="h4" fontWeight="bold">
+                          <Typography variant="h4" fontWeight="bold" sx={{ fontSize: { xs: '1.25rem', md: '2.125rem' } }}>
                             {userStats?.currentStreak || 0}
-                            <Typography component="span" variant="body1" sx={{ ml: 0.5 }}>
+                            <Typography component="span" variant="body1" sx={{ ml: 0.5, fontSize: { xs: '0.7rem', md: '1rem' } }}>
                               days
                             </Typography>
                           </Typography>
                         </Box>
-                        <Avatar sx={{ bgcolor: 'error.main' }}>
-                          <LocalFireDepartment />
+                        <Avatar sx={{ bgcolor: 'error.main', width: { xs: 28, md: 40 }, height: { xs: 28, md: 40 } }}>
+                          <LocalFireDepartment sx={{ fontSize: { xs: 16, md: 24 } }} />
                         </Avatar>
                       </Box>
                     </CardContent>
                   </Card>
                 </Grid>
 
-                <Grid item xs={12} sm={6}>
+                <Grid item xs={6} sm={6}>
                   <Card>
-                    <CardContent>
+                    <CardContent sx={{ p: { xs: 1.5, md: 2 }, '&:last-child': { pb: { xs: 1.5, md: 2 } } }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <Box>
-                          <Typography variant="body2" color="text.secondary" gutterBottom>
+                          <Typography variant="body2" color="text.secondary" gutterBottom sx={{ fontSize: { xs: '0.65rem', md: '0.875rem' } }}>
                             Longest Streak
                           </Typography>
-                          <Typography variant="h4" fontWeight="bold">
+                          <Typography variant="h4" fontWeight="bold" sx={{ fontSize: { xs: '1.25rem', md: '2.125rem' } }}>
                             {userStats?.longestStreak || 0}
-                            <Typography component="span" variant="body1" sx={{ ml: 0.5 }}>
+                            <Typography component="span" variant="body1" sx={{ ml: 0.5, fontSize: { xs: '0.7rem', md: '1rem' } }}>
                               days
                             </Typography>
                           </Typography>
                         </Box>
-                        <Avatar sx={{ bgcolor: 'success.main' }}>
-                          <TrendingUp />
+                        <Avatar sx={{ bgcolor: 'success.main', width: { xs: 28, md: 40 }, height: { xs: 28, md: 40 } }}>
+                          <TrendingUp sx={{ fontSize: { xs: 16, md: 24 } }} />
                         </Avatar>
                       </Box>
                     </CardContent>
                   </Card>
                 </Grid>
 
-                <Grid item xs={12} sm={6}>
+                <Grid item xs={6} sm={6}>
                   <Card>
-                    <CardContent>
+                    <CardContent sx={{ p: { xs: 1.5, md: 2 }, '&:last-child': { pb: { xs: 1.5, md: 2 } } }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <Box>
-                          <Typography variant="body2" color="text.secondary" gutterBottom>
+                          <Typography variant="body2" color="text.secondary" gutterBottom sx={{ fontSize: { xs: '0.65rem', md: '0.875rem' } }}>
                             Rooms Joined
                           </Typography>
-                          <Typography variant="h4" fontWeight="bold">
+                          <Typography variant="h4" fontWeight="bold" sx={{ fontSize: { xs: '1.25rem', md: '2.125rem' } }}>
                             {userStats?.roomsJoined || 0}
                           </Typography>
                         </Box>
-                        <Avatar sx={{ bgcolor: 'warning.main' }}>
-                          <Person />
+                        <Avatar sx={{ bgcolor: 'warning.main', width: { xs: 28, md: 40 }, height: { xs: 28, md: 40 } }}>
+                          <Person sx={{ fontSize: { xs: 16, md: 24 } }} />
                         </Avatar>
                       </Box>
                     </CardContent>
@@ -914,7 +932,7 @@ const ProfilePage = () => {
           </Button>
         </DialogActions>
       </Dialog>
-    </Container>
+    </Box>
   );
 };
 

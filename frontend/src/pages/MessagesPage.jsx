@@ -524,8 +524,10 @@ const MessagesPage = () => {
             right: 0,
             bottom: 0,
             bgcolor: 'background.paper',
-            zIndex: 1100,
-            overflow: 'hidden'
+            zIndex: 1200, // Increased to be above AppLayout sidebar backdrop (which is drawer zIndex - 1)
+            overflow: 'hidden',
+            // Ensure this view is fully opaque and covers everything
+            isolation: 'isolate',
           }}>
             {/* Chat Header */}
             <Paper elevation={2} sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2, borderRadius: 0 }}>

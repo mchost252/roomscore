@@ -1,10 +1,10 @@
 import React, { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { CssBaseline, Box } from '@mui/material';
+import { CssBaseline, Box, CircularProgress } from '@mui/material';
 import { useAuth } from './context/AuthContext';
 
-// Components (loaded immediately)
-import Navbar from './components/Navbar';
+// Components
+import AppLayout from './components/AppLayout';
 import LoadingScreen from './components/LoadingScreen';
 
 // Pages (lazy loaded for code splitting)
@@ -18,6 +18,21 @@ const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const FriendsPage = lazy(() => import('./pages/FriendsPage'));
 const MessagesPage = lazy(() => import('./pages/MessagesPage'));
 const ChangelogPage = lazy(() => import('./pages/ChangelogPage'));
+
+// Inline loading spinner for content area only (doesn't cover sidebar)
+const ContentLoadingFallback = () => (
+  <Box
+    sx={{
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      minHeight: '50vh',
+      width: '100%',
+    }}
+  >
+    <CircularProgress size={40} />
+  </Box>
+);
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -41,6 +56,19 @@ const PublicRoute = ({ children }) => {
   return user ? <Navigate to="/dashboard" /> : children;
 };
 
+// Layout wrapper for protected routes - Suspense is INSIDE the layout
+const ProtectedLayout = ({ children }) => {
+  return (
+    <ProtectedRoute>
+      <AppLayout>
+        <Suspense fallback={<ContentLoadingFallback />}>
+          {children}
+        </Suspense>
+      </AppLayout>
+    </ProtectedRoute>
+  );
+};
+
 function App() {
   return (
     <>
@@ -48,84 +76,75 @@ function App() {
       <Box sx={{ 
         minHeight: '100vh',
         bgcolor: 'background.default',
-        pb: { xs: 8, sm: 0 }
       }}>
-        <Suspense fallback={<LoadingScreen />}>
-          <Routes>
-            {/* Public Routes */}
-            <Route path="/login" element={
-              <PublicRoute>
+        <Routes>
+          {/* Public Routes - still need Suspense for lazy loaded pages */}
+          <Route path="/login" element={
+            <PublicRoute>
+              <Suspense fallback={<LoadingScreen />}>
                 <LoginPage />
-              </PublicRoute>
-            } />
-            <Route path="/signup" element={
-              <PublicRoute>
+              </Suspense>
+            </PublicRoute>
+          } />
+          <Route path="/signup" element={
+            <PublicRoute>
+              <Suspense fallback={<LoadingScreen />}>
                 <SignupPage />
-              </PublicRoute>
-            } />
+              </Suspense>
+            </PublicRoute>
+          } />
 
-            {/* Protected Routes */}
-            <Route path="/dashboard" element={
-              <ProtectedRoute>
-                <Navbar />
-                <DashboardPage />
-              </ProtectedRoute>
-            } />
-            <Route path="/rooms" element={
-              <ProtectedRoute>
-                <Navbar />
-                <RoomListPage />
-              </ProtectedRoute>
-            } />
-            <Route path="/rooms/create" element={
-              <ProtectedRoute>
-                <Navbar />
-                <CreateRoomPage />
-              </ProtectedRoute>
-            } />
-            <Route path="/rooms/:roomId" element={
-              <ProtectedRoute>
-                <Navbar />
-                <RoomDetailPage />
-              </ProtectedRoute>
-            } />
-            <Route path="/profile" element={
-              <ProtectedRoute>
-                <Navbar />
-                <ProfilePage />
-              </ProtectedRoute>
-            } />
-            <Route path="/friends" element={
-              <ProtectedRoute>
-                <Navbar />
-                <FriendsPage />
-              </ProtectedRoute>
-            } />
-            <Route path="/messages" element={
-              <ProtectedRoute>
-                <Navbar />
-                <MessagesPage />
-              </ProtectedRoute>
-            } />
-            <Route path="/messages/:friendId" element={
-              <ProtectedRoute>
-                <Navbar />
-                <MessagesPage />
-              </ProtectedRoute>
-            } />
-            <Route path="/changelog" element={
-              <ProtectedRoute>
-                <Navbar />
-                <ChangelogPage />
-              </ProtectedRoute>
-            } />
+          {/* Protected Routes with AppLayout - Suspense is inside ProtectedLayout */}
+          <Route path="/dashboard" element={
+            <ProtectedLayout>
+              <DashboardPage />
+            </ProtectedLayout>
+          } />
+          <Route path="/rooms" element={
+            <ProtectedLayout>
+              <RoomListPage />
+            </ProtectedLayout>
+          } />
+          <Route path="/rooms/create" element={
+            <ProtectedLayout>
+              <CreateRoomPage />
+            </ProtectedLayout>
+          } />
+          <Route path="/rooms/:roomId" element={
+            <ProtectedLayout>
+              <RoomDetailPage />
+            </ProtectedLayout>
+          } />
+          <Route path="/profile" element={
+            <ProtectedLayout>
+              <ProfilePage />
+            </ProtectedLayout>
+          } />
+          <Route path="/friends" element={
+            <ProtectedLayout>
+              <FriendsPage />
+            </ProtectedLayout>
+          } />
+          <Route path="/messages" element={
+            <ProtectedLayout>
+              <MessagesPage />
+            </ProtectedLayout>
+          } />
+          <Route path="/messages/:friendId" element={
+            <ProtectedLayout>
+              <MessagesPage />
+            </ProtectedLayout>
+          } />
+          <Route path="/changelog" element={
+            <ProtectedLayout>
+              <ChangelogPage />
+            </ProtectedLayout>
+          } />
 
-            {/* Default Route */}
-            <Route path="/" element={<Navigate to="/dashboard" />} />
-            <Route path="*" element={<Navigate to="/dashboard" />} />
-          </Routes>
-        </Suspense>
-
+          {/* Default Route */}
+          <Route path="/" element={<Navigate to="/dashboard" />} />
+          <Route path="*" element={<Navigate to="/dashboard" />} />
+        </Routes>
       </Box>
     </>
   );

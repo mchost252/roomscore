@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Container,
   Grid,
   Paper,
   Typography,
@@ -12,26 +11,221 @@ import {
   Button,
   Chip,
   Alert,
-  Skeleton
+  Skeleton,
+  IconButton,
+  useTheme,
+  alpha,
 } from '@mui/material';
 import {
   TrendingUp,
   EmojiEvents,
   CheckCircle,
   Groups,
-  CalendarToday,
-  LocalFireDepartment
+  LocalFireDepartment,
+  ArrowForward,
+  Add,
+  Star,
+  Whatshot,
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { useNavigate } from 'react-router-dom';
 import api, { invalidateCache } from '../utils/api';
 import cacheManager from '../utils/cache';
-import { format, startOfDay, differenceInDays } from 'date-fns';
 import OnboardingModal from '../components/OnboardingModal';
 import WhatsNewCard from '../components/WhatsNewCard';
 
+// Stat Card Component
+const StatCard = ({ icon: Icon, label, value, color, subtext }) => {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+  
+  return (
+    <Card
+      sx={{
+        height: '100%',
+        background: isDark
+          ? `linear-gradient(135deg, ${alpha(color, 0.15)} 0%, ${alpha(color, 0.05)} 100%)`
+          : `linear-gradient(135deg, ${alpha(color, 0.1)} 0%, ${alpha(color, 0.02)} 100%)`,
+        border: `1px solid ${alpha(color, isDark ? 0.2 : 0.15)}`,
+        transition: 'all 0.3s ease',
+        '&:hover': {
+          transform: 'translateY(-4px)',
+          boxShadow: `0 12px 24px ${alpha(color, 0.2)}`,
+        },
+      }}
+    >
+      <CardContent sx={{ p: { xs: 1.5, md: 3 } }}>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <Box>
+            <Typography 
+              variant="body2" 
+              color="text.secondary" 
+              fontWeight={500} 
+              gutterBottom
+              sx={{ fontSize: { xs: '0.7rem', md: '0.875rem' } }}
+            >
+              {label}
+            </Typography>
+            <Typography 
+              variant="h3" 
+              fontWeight={700} 
+              sx={{ color, fontSize: { xs: '1.5rem', md: '3rem' } }}
+            >
+              {value}
+            </Typography>
+            {subtext && (
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: { xs: '0.65rem', md: '0.75rem' } }}>
+                {subtext}
+              </Typography>
+            )}
+          </Box>
+          <Box
+            sx={{
+              width: { xs: 32, md: 48 },
+              height: { xs: 32, md: 48 },
+              borderRadius: { xs: 1.5, md: 2 },
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              bgcolor: alpha(color, isDark ? 0.2 : 0.15),
+            }}
+          >
+            <Icon sx={{ fontSize: { xs: 18, md: 28 }, color }} />
+          </Box>
+        </Box>
+      </CardContent>
+    </Card>
+  );
+};
+
+// Room Card Component
+const RoomCard = ({ room, user, onClick }) => {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+  const isOwner = room.owner._id === user?.id || room.owner === user?.id;
+  const memberCount = room.members?.length || 0;
+  const myMember = room.members?.find(m => 
+    m.userId._id === user?.id || m.userId === user?.id
+  );
+  const activeTasks = room.tasks?.filter(t => t.isActive)?.length || 0;
+
+  return (
+    <Card
+      onClick={onClick}
+      sx={{
+        cursor: 'pointer',
+        height: '100%',
+        transition: 'all 0.3s ease',
+        '&:hover': {
+          transform: 'translateY(-4px)',
+          boxShadow: isDark
+            ? '0 12px 24px rgba(0,0,0,0.4)'
+            : '0 12px 24px rgba(0,0,0,0.1)',
+          '& .arrow-icon': {
+            transform: 'translateX(4px)',
+            opacity: 1,
+          },
+        },
+      }}
+    >
+      <CardContent sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="h6" fontWeight={700} noWrap>
+              {room.name}
+            </Typography>
+            {room.description && (
+              <Typography 
+                variant="body2" 
+                color="text.secondary" 
+                sx={{ 
+                  mt: 0.5,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                }}
+              >
+                {room.description}
+              </Typography>
+            )}
+          </Box>
+          <ArrowForward 
+            className="arrow-icon"
+            sx={{ 
+              ml: 1,
+              color: 'text.secondary',
+              opacity: 0.5,
+              transition: 'all 0.3s ease',
+            }} 
+          />
+        </Box>
+
+        <Box sx={{ flex: 1 }} />
+
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
+          {isOwner && (
+            <Chip 
+              label="Owner" 
+              size="small" 
+              color="secondary"
+              sx={{ fontWeight: 600, fontSize: '0.7rem' }}
+            />
+          )}
+          <Chip 
+            icon={<Groups sx={{ fontSize: 14 }} />}
+            label={memberCount}
+            size="small"
+            variant="outlined"
+            sx={{ fontSize: '0.7rem' }}
+          />
+          {activeTasks > 0 && (
+            <Chip 
+              icon={<CheckCircle sx={{ fontSize: 14 }} />}
+              label={`${activeTasks} tasks`}
+              size="small"
+              variant="outlined"
+              sx={{ fontSize: '0.7rem' }}
+            />
+          )}
+        </Box>
+
+        {myMember && (
+          <Box 
+            sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 1,
+              p: 1.5,
+              borderRadius: 2,
+              bgcolor: isDark ? 'rgba(245, 158, 11, 0.1)' : 'rgba(217, 119, 6, 0.08)',
+            }}
+          >
+            <EmojiEvents sx={{ color: '#F59E0B', fontSize: 20 }} />
+            <Typography variant="body2" fontWeight={600}>
+              {myMember.points} points
+            </Typography>
+            {myMember.streak > 0 && (
+              <>
+                <Box sx={{ width: 1, height: 16, bgcolor: 'divider' }} />
+                <Whatshot sx={{ color: '#EF4444', fontSize: 18 }} />
+                <Typography variant="body2" fontWeight={600}>
+                  {myMember.streak} day streak
+                </Typography>
+              </>
+            )}
+          </Box>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
 const DashboardPage = () => {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const { user } = useAuth();
   const { socket } = useSocket();
   const navigate = useNavigate();
@@ -44,23 +238,17 @@ const DashboardPage = () => {
   const hasMounted = useRef(false);
 
   useEffect(() => {
-    // Show onboarding if just signed up (flag set in SignupPage)
-    // Show onboarding modal if not completed yet
     if (localStorage.getItem('onboardingCompleted') !== 'true') {
       setShowOnboarding(true);
     }
 
-    // Show content immediately, load data in background
     if (user) {
-      // Set stats immediately from user context
       setStats({
         totalPoints: user?.totalPoints || 0,
         currentStreak: user?.currentStreak || 0,
         longestStreak: user?.longestStreak || 0,
         roomsJoined: 0
       });
-      
-      // Try to load from cache first for instant display (mobile optimization)
       loadFromCacheFirst();
     }
   }, [user]);
@@ -70,13 +258,11 @@ const DashboardPage = () => {
     localStorage.setItem('onboardingCompleted', 'true');
   };
 
-  // Load cached data first, then revalidate - stale-while-revalidate pattern
   const loadFromCacheFirst = useCallback(() => {
     const cacheKey = cacheManager.generateKey('/rooms');
     const cached = cacheManager.getWithStale(cacheKey);
     
     if (cached.data?.rooms) {
-      // Show cached data immediately
       setRooms(cached.data.rooms);
       setStats(prev => ({
         ...prev,
@@ -84,28 +270,23 @@ const DashboardPage = () => {
       }));
       setIsStaleData(cached.isStale);
       
-      // If stale, revalidate in background
       if (cached.isStale) {
-        loadDashboardData(true); // silent refresh
+        loadDashboardData(true);
       }
     } else {
-      // No cache, fetch fresh
       loadDashboardData();
     }
   }, []);
 
-  // Listen for app foreground event to refresh data (mobile)
   useEffect(() => {
     const handleForeground = () => {
-      console.log('App came to foreground, refreshing data...');
-      loadDashboardData(true); // silent refresh
+      loadDashboardData(true);
     };
     
     window.addEventListener('app:foreground', handleForeground);
     return () => window.removeEventListener('app:foreground', handleForeground);
   }, []);
 
-  // Preload rooms on mount for instant display
   useEffect(() => {
     if (user && !hasMounted.current) {
       hasMounted.current = true;
@@ -113,23 +294,18 @@ const DashboardPage = () => {
     }
   }, [user, loadFromCacheFirst]);
 
-  // Listen for real-time task completion updates
   useEffect(() => {
     if (!socket) return;
 
     const handleTaskCompleted = (data) => {
-      // Update the specific task in the rooms state
       setRooms(prevRooms => 
         prevRooms.map(room => {
           if (room._id === data.roomId) {
             return {
               ...room,
               tasks: room.tasks.map(task => {
-                if (task._id === data.taskId) {
-                  // If current user completed it, mark as completed
-                  if (data.userId === user?.id) {
-                    return { ...task, isCompleted: true };
-                  }
+                if (task._id === data.taskId && data.userId === user?.id) {
+                  return { ...task, isCompleted: true };
                 }
                 return task;
               })
@@ -139,7 +315,6 @@ const DashboardPage = () => {
         })
       );
       
-      // Update points if it was the current user
       if (data.userId === user?.id && data.points) {
         setStats(prev => ({
           ...prev,
@@ -149,7 +324,6 @@ const DashboardPage = () => {
     };
 
     const handleTaskUncompleted = (data) => {
-      // Update the specific task in the rooms state
       setRooms(prevRooms => 
         prevRooms.map(room => {
           if (room._id === data.roomId) {
@@ -179,468 +353,241 @@ const DashboardPage = () => {
 
   const loadDashboardData = async (silentRefresh = false) => {
     try {
-      if (!silentRefresh) {
-        setError(null);
-      }
+      if (!silentRefresh) setError(null);
       
-      // Fetch user's rooms (single API call)
       const roomsResponse = await api.get('/rooms');
       const freshRooms = roomsResponse.data.rooms || [];
       
       setRooms(freshRooms);
       setIsStaleData(false);
 
-      // Update stats with room count
       setStats(prev => ({
         ...prev,
         roomsJoined: freshRooms.length || 0
       }));
     } catch (err) {
       console.error('Error loading dashboard:', err);
-      // Only show error if not a silent refresh and we don't have cached data
       if (!silentRefresh && rooms.length === 0) {
-        setError(err.response?.data?.message || 'Failed to load dashboard data');
+        setError('Failed to load dashboard data');
       }
     }
   };
 
-  const getStreakColor = (streak) => {
-    if (streak === 0) return 'default';
-    if (streak < 7) return 'primary';
-    if (streak < 30) return 'warning';
-    return 'error';
+  // Calculate greeting based on time
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
   };
 
-  // Remove blocking loading screen - show content immediately
-
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      {/* Onboarding Modal (after signup) */}
+    <Box sx={{ maxWidth: 1400, mx: 'auto' }}>
+      {/* Onboarding Modal */}
       <OnboardingModal open={showOnboarding} onClose={handleOnboardingClose} />
 
-      {/* What's New */}
-      <WhatsNewCard />
-
-      {/* Welcome Section */}
-      <Box sx={{ mb: 4 }}>
-        <Typography 
-          variant="h4" 
-          gutterBottom 
-          fontWeight="bold"
-          sx={{
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            maxWidth: '100%'
-          }}
-        >
-          Welcome back, {user?.username}! 👋
-        </Typography>
-        <Typography variant="body1" color="text.secondary">
-          Here's your habit tracking progress
+      {/* Header Section */}
+      <Box sx={{ mb: { xs: 2, md: 4 } }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+          <Typography 
+            variant="h4" 
+            fontWeight={700}
+            sx={{
+              fontSize: { xs: '1.5rem', md: '2.125rem' },
+              background: isDark
+                ? 'linear-gradient(135deg, #f1f5f9 0%, #94a3b8 100%)'
+                : 'linear-gradient(135deg, #0f172a 0%, #334155 100%)',
+              backgroundClip: 'text',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+            }}
+          >
+            {getGreeting()}, {user?.username || 'there'}!
+          </Typography>
+          <span style={{ fontSize: '1.75rem' }} role="img" aria-label="wave">👋</span>
+        </Box>
+        <Typography variant="body1" color="text.secondary" sx={{ mt: 0.5, fontSize: { xs: '0.875rem', md: '1rem' } }}>
+          Here's your habit tracking overview
         </Typography>
       </Box>
 
+      {/* Error Alert */}
       {error && (
         <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
 
-      {/* Today's Focus Section */}
-      <Paper sx={{ p: 3, mb: 3, borderLeft: 4, borderColor: 'primary.main' }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Typography variant="h5" fontWeight="bold">
-              Today's Focus
-            </Typography>
-            {(() => {
-              const allTasks = (rooms || []).flatMap(room => (room?.tasks || []).filter(t => t.isActive));
-              const completedCount = allTasks.filter(t => t.isCompleted).length;
-              const totalCount = allTasks.length;
-              if (totalCount > 0) {
-                return (
-                  <Chip 
-                    size="small" 
-                    color={completedCount === totalCount ? 'success' : 'default'}
-                    label={`${completedCount}/${totalCount} done`}
-                  />
-                );
-              }
-              return null;
-            })()}
-          </Box>
-          <Button variant="text" onClick={() => navigate('/rooms')}>View all</Button>
-        </Box>
+      {/* Stale Data Indicator */}
+      {isStaleData && (
+        <Alert severity="info" sx={{ mb: 3 }}>
+          Showing cached data. Refreshing in background...
+        </Alert>
+      )}
 
-        {(() => {
-          // Build task list grouped by room, showing completion status
-          const roomsWithTasks = (rooms || [])
-            .map(room => ({
-              ...room,
-              activeTasks: (room?.tasks || []).filter(t => t.isActive)
-            }))
-            .filter(room => room.activeTasks.length > 0)
-            .slice(0, 3); // Limit to 3 rooms max
-
-          if (roomsWithTasks.length === 0) {
-            return (
-              <Box sx={{ textAlign: 'center', py: 3 }}>
-                <Typography variant="body1" color="text.secondary" gutterBottom>
-                  No tasks for today yet. Start with one small task.
-                </Typography>
-                <Button variant="contained" onClick={() => navigate('/rooms')}>
-                  Add a Task
-                </Button>
-              </Box>
-            );
-          }
-
-          return (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {roomsWithTasks.map(room => {
-                const completedTasks = room.activeTasks.filter(t => t.isCompleted).length;
-                const totalTasks = room.activeTasks.length;
-                const progress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
-                
-                return (
-                  <Card 
-                    key={room._id} 
-                    sx={{ 
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      '&:hover': { boxShadow: 3, transform: 'translateY(-2px)' }
-                    }}
-                    onClick={() => navigate(`/rooms/${room._id}`)}
-                  >
-                    <Box sx={{ p: 2 }}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Typography variant="subtitle1" fontWeight="bold">
-                            {room.name}
-                          </Typography>
-                          <Chip 
-                            size="small" 
-                            label={`${completedTasks}/${totalTasks}`}
-                            color={completedTasks === totalTasks ? 'success' : 'default'}
-                            variant={completedTasks === totalTasks ? 'filled' : 'outlined'}
-                          />
-                        </Box>
-                        <Typography variant="caption" color="text.secondary">
-                          {room.activeTasks.reduce((sum, t) => sum + (t.isCompleted ? 0 : t.points), 0)} pts remaining
-                        </Typography>
-                      </Box>
-                      
-                      {/* Progress bar */}
-                      <LinearProgress 
-                        variant="determinate" 
-                        value={progress} 
-                        sx={{ 
-                          height: 6, 
-                          borderRadius: 3,
-                          bgcolor: 'action.hover',
-                          '& .MuiLinearProgress-bar': {
-                            bgcolor: completedTasks === totalTasks ? 'success.main' : 'primary.main'
-                          }
-                        }} 
-                      />
-                      
-                      {/* Task list - compact */}
-                      <Box sx={{ mt: 1.5, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {room.activeTasks.slice(0, 4).map(task => (
-                          <Chip
-                            key={task._id}
-                            size="small"
-                            icon={task.isCompleted ? <CheckCircle sx={{ fontSize: 14 }} /> : undefined}
-                            label={task.title.length > 20 ? task.title.substring(0, 20) + '...' : task.title}
-                            variant={task.isCompleted ? 'filled' : 'outlined'}
-                            color={task.isCompleted ? 'success' : 'default'}
-                            sx={{ 
-                              textDecoration: task.isCompleted ? 'line-through' : 'none',
-                              opacity: task.isCompleted ? 0.7 : 1
-                            }}
-                          />
-                        ))}
-                        {room.activeTasks.length > 4 && (
-                          <Chip
-                            size="small"
-                            label={`+${room.activeTasks.length - 4} more`}
-                            variant="outlined"
-                          />
-                        )}
-                      </Box>
-                    </Box>
-                  </Card>
-                );
-              })}
-              
-              {rooms.length > 3 && (
-                <Button 
-                  variant="text" 
-                  onClick={() => navigate('/rooms')}
-                  sx={{ alignSelf: 'center' }}
-                >
-                  View {rooms.length - 3} more rooms
-                </Button>
-              )}
-            </Box>
-          );
-        })()}
-      </Paper>
-
-      {/* Stats Cards */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        {/* Total Points */}
-        <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ height: '100%', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
-            <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <Box>
-                  <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.8)', mb: 1 }}>
-                    Total Points
-                  </Typography>
-                  <Typography variant="h4" sx={{ color: 'white', fontWeight: 'bold' }}>
-                    {stats?.totalPoints || 0}
-                  </Typography>
-                </Box>
-                <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)' }}>
-                  <TrendingUp sx={{ color: 'white' }} />
-                </Avatar>
-              </Box>
-            </CardContent>
-          </Card>
+      {/* Stats Grid */}
+      <Grid container spacing={{ xs: 1.5, md: 3 }} sx={{ mb: { xs: 2, md: 4 } }}>
+        <Grid item xs={6} md={3}>
+          <StatCard
+            icon={EmojiEvents}
+            label="Total Points"
+            value={stats?.totalPoints || 0}
+            color="#F59E0B"
+            subtext="Keep earning!"
+          />
         </Grid>
-
-        {/* Current Streak */}
-        <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ height: '100%', background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' }}>
-            <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <Box>
-                  <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.8)', mb: 1 }}>
-                    Current Streak
-                  </Typography>
-                  <Typography variant="h4" sx={{ color: 'white', fontWeight: 'bold' }}>
-                    {stats?.currentStreak || 0}
-                    <Typography component="span" variant="body1" sx={{ ml: 0.5 }}>
-                      days
-                    </Typography>
-                  </Typography>
-                </Box>
-                <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)' }}>
-                  <LocalFireDepartment sx={{ color: 'white' }} />
-                </Avatar>
-              </Box>
-            </CardContent>
-          </Card>
+        <Grid item xs={6} md={3}>
+          <StatCard
+            icon={LocalFireDepartment}
+            label="Current Streak"
+            value={stats?.currentStreak || 0}
+            color="#EF4444"
+            subtext="days"
+          />
         </Grid>
-
-        {/* Longest Streak */}
-        <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ height: '100%', background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)' }}>
-            <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <Box>
-                  <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.8)', mb: 1 }}>
-                    Best Streak
-                  </Typography>
-                  <Typography variant="h4" sx={{ color: 'white', fontWeight: 'bold' }}>
-                    {stats?.longestStreak || 0}
-                    <Typography component="span" variant="body1" sx={{ ml: 0.5 }}>
-                      days
-                    </Typography>
-                  </Typography>
-                </Box>
-                <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)' }}>
-                  <EmojiEvents sx={{ color: 'white' }} />
-                </Avatar>
-              </Box>
-            </CardContent>
-          </Card>
+        <Grid item xs={6} md={3}>
+          <StatCard
+            icon={TrendingUp}
+            label="Best Streak"
+            value={stats?.longestStreak || 0}
+            color="#22C55E"
+            subtext="days"
+          />
         </Grid>
-
-        {/* Rooms Joined */}
-        <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ height: '100%', background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)' }}>
-            <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <Box>
-                  <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.8)', mb: 1 }}>
-                    Rooms
-                  </Typography>
-                  <Typography variant="h4" sx={{ color: 'white', fontWeight: 'bold' }}>
-                    {stats?.roomsJoined || 0}
-                  </Typography>
-                </Box>
-                <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)' }}>
-                  <Groups sx={{ color: 'white' }} />
-                </Avatar>
-              </Box>
-            </CardContent>
-          </Card>
+        <Grid item xs={6} md={3}>
+          <StatCard
+            icon={Groups}
+            label="Rooms Joined"
+            value={stats?.roomsJoined || 0}
+            color={isDark ? '#60A5FA' : '#3B82F6'}
+            subtext="active"
+          />
         </Grid>
       </Grid>
 
-      {/* My Rooms Section */}
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h5" fontWeight="bold">
-            My Rooms
+      {/* What's New */}
+      <WhatsNewCard />
+
+      {/* Your Rooms Section */}
+      <Box sx={{ mb: { xs: 2, md: 4 } }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: { xs: 2, md: 3 } }}>
+          <Typography variant="h5" fontWeight={700} sx={{ fontSize: { xs: '1.1rem', md: '1.5rem' } }}>
+            Your Rooms
           </Typography>
           <Button
-            variant="contained"
+            variant="text"
+            endIcon={<ArrowForward />}
             onClick={() => navigate('/rooms')}
+            sx={{ fontWeight: 600 }}
           >
-            View All Rooms
+            View All
           </Button>
         </Box>
 
         {rooms.length === 0 ? (
-          <Box sx={{ textAlign: 'center', py: 6 }}>
-            <Groups sx={{ fontSize: 80, color: 'text.secondary', mb: 2 }} />
-            <Typography variant="h6" color="text.secondary" gutterBottom>
+          <Card
+            sx={{
+              p: 6,
+              textAlign: 'center',
+              background: isDark
+                ? 'linear-gradient(135deg, rgba(96, 165, 250, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%)'
+                : 'linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(217, 119, 6, 0.04) 100%)',
+              border: `2px dashed ${isDark ? 'rgba(96, 165, 250, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
+            }}
+          >
+            <Groups sx={{ fontSize: 64, color: 'text.secondary', mb: 2, opacity: 0.5 }} />
+            <Typography variant="h6" color="text.secondary" fontWeight={600} gutterBottom>
               No rooms yet
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              Join or create a room to start tracking your habits with others
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3, maxWidth: 400, mx: 'auto' }}>
+              Join or create a room to start tracking your habits with friends and build streaks together!
             </Typography>
-            <Button
-              variant="contained"
-              onClick={() => navigate('/rooms/create')}
-              sx={{ mr: 2 }}
-            >
-              Create Room
-            </Button>
-            <Button
-              variant="outlined"
-              onClick={() => navigate('/rooms')}
-            >
-              Browse Rooms
-            </Button>
-          </Box>
+            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Button
+                variant="contained"
+                startIcon={<Add />}
+                onClick={() => navigate('/rooms/create')}
+              >
+                Create Room
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={() => navigate('/rooms')}
+              >
+                Browse Rooms
+              </Button>
+            </Box>
+          </Card>
         ) : (
-          <Grid container spacing={2}>
-            {rooms.slice(0, 4).map((room) => {
-              const isOwner = room.owner._id === user?.id || room.owner === user?.id;
-              const memberCount = room.members?.length || 0;
-              const myMember = room.members?.find(m => 
-                m.userId._id === user?.id || m.userId === user?.id
-              );
-
-              return (
-                <Grid item xs={12} sm={6} md={6} key={room._id}>
-                  <Card 
-                    sx={{ 
-                      cursor: 'pointer',
-                      transition: 'transform 0.2s, box-shadow 0.2s',
-                      '&:hover': {
-                        transform: 'translateY(-4px)',
-                        boxShadow: 6
-                      }
-                    }}
-                    onClick={() => navigate(`/rooms/${room._id}`)}
-                  >
-                    <CardContent>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                        <Typography variant="h6" fontWeight="bold">
-                          {room.name}
-                        </Typography>
-                        {isOwner && (
-                          <Chip label="Owner" size="small" color="primary" />
-                        )}
-                      </Box>
-                      
-                      {room.description && (
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                          {room.description.length > 100 
-                            ? `${room.description.substring(0, 100)}...` 
-                            : room.description}
-                        </Typography>
-                      )}
-
-                      <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                          <Groups fontSize="small" color="action" />
-                          <Typography variant="body2" color="text.secondary">
-                            {memberCount} {memberCount === 1 ? 'member' : 'members'}
-                          </Typography>
-                        </Box>
-                        
-                        {myMember && (
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                            <EmojiEvents fontSize="small" color="warning" />
-                            <Typography variant="body2" color="text.secondary">
-                              {myMember.points} points
-                            </Typography>
-                          </Box>
-                        )}
-                      </Box>
-
-                      {room.tasks && room.tasks.length > 0 && (
-                        <Box sx={{ mt: 2 }}>
-                          <Typography variant="caption" color="text.secondary">
-                            {room.tasks.filter(t => t.isActive).length} active tasks
-                          </Typography>
-                        </Box>
-                      )}
-                    </CardContent>
-                  </Card>
-                </Grid>
-              );
-            })}
+          <Grid container spacing={3}>
+            {rooms.slice(0, 4).map((room) => (
+              <Grid item xs={12} sm={6} key={room._id}>
+                <RoomCard
+                  room={room}
+                  user={user}
+                  onClick={() => navigate(`/rooms/${room._id}`)}
+                />
+              </Grid>
+            ))}
           </Grid>
         )}
-      </Paper>
+      </Box>
 
       {/* Quick Actions */}
-      <Paper sx={{ p: 3 }}>
-        <Typography variant="h5" fontWeight="bold" gutterBottom>
+      <Box>
+        <Typography variant="h5" fontWeight={700} sx={{ mb: { xs: 2, md: 3 }, fontSize: { xs: '1.1rem', md: '1.5rem' } }}>
           Quick Actions
         </Typography>
-        <Grid container spacing={2} sx={{ mt: 1 }}>
-          <Grid item xs={12} sm={6} md={3}>
-            <Button
-              fullWidth
-              variant="outlined"
-              startIcon={<Groups />}
-              onClick={() => navigate('/rooms/create')}
-            >
-              Create Room
-            </Button>
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <Button
-              fullWidth
-              variant="outlined"
-              startIcon={<CheckCircle />}
-              onClick={() => navigate('/rooms')}
-            >
-              Browse Rooms
-            </Button>
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <Button
-              fullWidth
-              variant="outlined"
-              startIcon={<CalendarToday />}
-              onClick={() => navigate('/profile')}
-            >
-              View Profile
-            </Button>
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <Button
-              fullWidth
-              variant="outlined"
-              startIcon={<EmojiEvents />}
-              onClick={() => navigate('/rooms')}
-            >
-              Leaderboards
-            </Button>
-          </Grid>
+        <Grid container spacing={{ xs: 1.5, md: 2 }}>
+          {[
+            { label: 'Create Room', icon: Add, path: '/rooms/create', color: '#F59E0B' },
+            { label: 'Browse Rooms', icon: Groups, path: '/rooms', color: '#3B82F6' },
+            { label: 'View Friends', icon: Star, path: '/friends', color: '#22C55E' },
+            { label: 'Leaderboards', icon: EmojiEvents, path: '/rooms', color: '#EF4444' },
+          ].map((action) => (
+            <Grid item xs={6} sm={3} key={action.label}>
+              <Card
+                onClick={() => navigate(action.path)}
+                sx={{
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  p: { xs: 2, md: 3 },
+                  transition: 'all 0.3s ease',
+                  '&:hover': {
+                    transform: 'translateY(-4px)',
+                    boxShadow: `0 8px 24px ${alpha(action.color, 0.25)}`,
+                    '& .action-icon': {
+                      transform: 'scale(1.1)',
+                    },
+                  },
+                }}
+              >
+                <Box
+                  className="action-icon"
+                  sx={{
+                    width: { xs: 40, md: 56 },
+                    height: { xs: 40, md: 56 },
+                    borderRadius: { xs: 2, md: 3 },
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    mx: 'auto',
+                    mb: { xs: 1, md: 2 },
+                    bgcolor: alpha(action.color, isDark ? 0.2 : 0.15),
+                    transition: 'transform 0.3s ease',
+                  }}
+                >
+                  <action.icon sx={{ fontSize: { xs: 20, md: 28 }, color: action.color }} />
+                </Box>
+                <Typography variant="body1" fontWeight={600} sx={{ fontSize: { xs: '0.8rem', md: '1rem' } }}>
+                  {action.label}
+                </Typography>
+              </Card>
+            </Grid>
+          ))}
         </Grid>
-      </Paper>
-    </Container>
+      </Box>
+    </Box>
   );
 };
 
