@@ -2,6 +2,7 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 import axios from 'axios';
 import api, { clearAllCache, API_BASE_URL } from '../utils/api';
 import pushNotificationManager from '../utils/pushNotifications';
+import storage from '../utils/storage';
 
 const AuthContext = createContext();
 
@@ -16,7 +17,22 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [token, setToken] = useState(storage.getItemSync('token'));
+  const [storageReady, setStorageReady] = useState(false);
+
+  // Initialize storage on mount (syncs native storage to localStorage)
+  useEffect(() => {
+    const initStorage = async () => {
+      await storage.initialize();
+      // Re-check token after storage is initialized
+      const storedToken = await storage.getItem('token');
+      if (storedToken && storedToken !== token) {
+        setToken(storedToken);
+      }
+      setStorageReady(true);
+    };
+    initStorage();
+  }, []);
 
   // Load user on mount
   useEffect(() => {
@@ -64,8 +80,9 @@ export const AuthProvider = ({ children }) => {
       
       const { token: newToken, refreshToken, user: newUser } = response.data;
       
-      localStorage.setItem('token', newToken);
-      localStorage.setItem('refreshToken', refreshToken);
+      // Use async storage for native app support
+      await storage.setItem('token', newToken);
+      await storage.setItem('refreshToken', refreshToken);
       setToken(newToken);
       setUser(newUser);
       
@@ -100,9 +117,10 @@ export const AuthProvider = ({ children }) => {
       console.log('✅ Login response:', response.data);
       const { token: newToken, refreshToken, user: newUser } = response.data;
       
-      console.log('💾 Saving token to localStorage...');
-      localStorage.setItem('token', newToken);
-      localStorage.setItem('refreshToken', refreshToken);
+      console.log('💾 Saving token to storage...');
+      // Use async storage for native app support
+      await storage.setItem('token', newToken);
+      await storage.setItem('refreshToken', refreshToken);
       setToken(newToken);
       setUser(newUser);
       
@@ -145,8 +163,9 @@ export const AuthProvider = ({ children }) => {
       
       const { token: newToken, refreshToken, user: newUser } = response.data;
       
-      localStorage.setItem('token', newToken);
-      localStorage.setItem('refreshToken', refreshToken);
+      // Use async storage for native app support
+      await storage.setItem('token', newToken);
+      await storage.setItem('refreshToken', refreshToken);
       setToken(newToken);
       setUser(newUser);
       
@@ -174,8 +193,9 @@ export const AuthProvider = ({ children }) => {
       // Clear all cache on logout
       clearAllCache();
       
-      localStorage.removeItem('token');
-      localStorage.removeItem('refreshToken');
+      // Use async storage for native app support
+      await storage.removeItem('token');
+      await storage.removeItem('refreshToken');
       setToken(null);
       setUser(null);
     }

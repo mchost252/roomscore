@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useRef, useCallb
 import { io } from 'socket.io-client';
 import { useAuth } from './AuthContext';
 import { API_BASE_URL } from '../utils/api';
+import storage from '../utils/storage';
 
 const SocketContext = createContext();
 
@@ -24,7 +25,8 @@ export const SocketProvider = ({ children }) => {
   useEffect(() => {
     if (user && !socketRef.current) {
       // Connect socket immediately - don't block render with artificial delay
-      const token = localStorage.getItem('token');
+      // Use sync method since we're in a synchronous context
+      const token = storage.getItemSync('token');
       
       const newSocket = io(API_BASE_URL, {
         auth: { token },

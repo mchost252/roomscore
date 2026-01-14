@@ -1,5 +1,6 @@
 import axios from 'axios';
 import cacheManager from './cache';
+import storage from './storage';
 
 // Production API URL - hardcoded fallback for native app builds (Appflow)
 // This ensures the app works even if environment variables aren't injected
@@ -60,7 +61,8 @@ const shouldCache = (url, method) => {
 // Request interceptor to add token and check cache
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
+    // Use sync method for request interceptor (async not supported here)
+    const token = storage.getItemSync('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -122,7 +124,7 @@ api.interceptors.response.use(
       originalRequest._retry = true;
 
       try {
-        const refreshToken = localStorage.getItem('refreshToken');
+        const refreshToken = storage.getItemSync('refreshToken');
         if (!refreshToken) {
           throw new Error('No refresh token');
         }
@@ -133,15 +135,16 @@ api.interceptors.response.use(
         );
 
         const { token } = response.data;
-        localStorage.setItem('token', token);
+        // Use async storage for native app support
+        await storage.setItem('token', token);
 
         // Retry original request with new token
         originalRequest.headers.Authorization = `Bearer ${token}`;
         return api(originalRequest);
       } catch (refreshError) {
         // Refresh failed, logout user
-        localStorage.removeItem('token');
-        localStorage.removeItem('refreshToken');
+        await storage.removeItem('token');
+        await storage.removeItem('refreshToken');
         window.location.href = '/login';
         return Promise.reject(refreshError);
       }
