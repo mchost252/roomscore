@@ -41,3 +41,9 @@ tmp/
 temp/
 *.tmp
 tmp_rovodev_*
+
+# Mobile (removed for now)
+android/
+ios/
+resources/
+.github/

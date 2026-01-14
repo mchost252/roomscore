@@ -4,18 +4,6 @@
   "description": "Frontend for Krios - Social Habit Tracking Platform",
   "private": true,
   "dependencies": {
-    "@capacitor/android": "^6.0.0",
-    "@capacitor/app": "^6.0.0",
-    "@capacitor/core": "^6.0.0",
-    "@capacitor/haptics": "^6.0.0",
-    "@capacitor/ios": "^6.0.0",
-    "@capacitor/keyboard": "^6.0.0",
-    "@capawesome/capacitor-live-update": "^6.0.0",
-    "@capacitor/local-notifications": "^6.0.0",
-    "@capacitor/preferences": "^6.0.0",
-    "@capacitor/push-notifications": "^6.0.0",
-    "@capacitor/splash-screen": "^6.0.0",
-    "@capacitor/status-bar": "^6.0.0",
     "@emotion/react": "^11.11.1",
     "@emotion/styled": "^11.11.0",
     "@mui/icons-material": "^5.14.3",
@@ -32,7 +20,6 @@
   "devDependencies": {
     "@babel/core": "^7.28.5",
     "@babel/preset-react": "^7.28.5",
-    "@capacitor/cli": "^6.0.0",
     "@vitejs/plugin-react": "^4.0.4",
     "eslint": "^8.48.0",
     "eslint-plugin-react": "^7.33.2",
@@ -43,17 +30,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "eslint src --ext js,jsx",
-    "cap:init": "npx cap init Krios com.krios.app --web-dir dist",
-    "cap:sync": "npx cap sync",
-    "cap:build": "npm run build && npx cap sync",
-    "cap:android": "npx cap open android",
-    "cap:ios": "npx cap open ios",
-    "cap:run:android": "npx cap run android",
-    "cap:run:ios": "npx cap run ios",
-    "cap:add:android": "npx cap add android",
-    "cap:add:ios": "npx cap add ios",
-    "deploy:ota": "npm run build && npx @capawesome/cli bundle zip --path dist && echo 'Bundle created! Upload dist.zip to Capawesome Cloud'"
+    "lint": "eslint src --ext js,jsx"
   },
   "browserslist": {
     "production": [

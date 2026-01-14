@@ -1,15 +1,11 @@
-import React, { Suspense, lazy, useState, useEffect } from 'react';
+import React, { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { CssBaseline, Box, Snackbar } from '@mui/material';
+import { CssBaseline, Box } from '@mui/material';
 import { useAuth } from './context/AuthContext';
-import { useTheme as useCustomTheme } from './context/ThemeContext';
 
 // Components (loaded immediately)
 import Navbar from './components/Navbar';
 import LoadingScreen from './components/LoadingScreen';
-import PushNotificationPrompt from './components/PushNotificationPrompt';
-import UpdatePrompt from './components/UpdatePrompt';
-import { initializeCapacitor } from './utils/capacitor';
 
 // Pages (lazy loaded for code splitting)
 const LoginPage = lazy(() => import('./pages/LoginPage'));
@@ -46,40 +42,9 @@ const PublicRoute = ({ children }) => {
 };
 
 function App() {
-  // Initialize Capacitor native features on mount
-  useEffect(() => {
-    initializeCapacitor();
-  }, []);
-  const { mode } = useCustomTheme();
-  const { user } = useAuth();
-  const [backToastOpen, setBackToastOpen] = useState(false);
-
-  // Listen for back button toast event from Capacitor
-  useEffect(() => {
-    const handleBackToExit = (event) => {
-      setBackToastOpen(true);
-    };
-    
-    window.addEventListener('app:backToExit', handleBackToExit);
-    return () => window.removeEventListener('app:backToExit', handleBackToExit);
-  }, []);
-
   return (
     <>
       <CssBaseline />
-      {/* Back button exit toast */}
-      <Snackbar
-        open={backToastOpen}
-        autoHideDuration={2000}
-        onClose={() => setBackToastOpen(false)}
-        message="Press back again to exit"
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        sx={{ mb: 8 }}
-      />
-      {/* Show push notification prompt for logged-in users */}
-      {user && <PushNotificationPrompt />}
-      {/* Live update prompt for native apps */}
-      <UpdatePrompt />
       <Box sx={{ 
         minHeight: '100vh',
         bgcolor: 'background.default',

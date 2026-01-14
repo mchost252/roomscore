@@ -1,13 +1,10 @@
 import axios from 'axios';
 import cacheManager from './cache';
-import storage from './storage';
 
-// Production API URL - hardcoded fallback for native app builds (Appflow)
-// This ensures the app works even if environment variables aren't injected
+// Production API URL
 const PRODUCTION_API_URL = 'https://roomscore-production.up.railway.app';
 
-// Use environment variable if available, otherwise use production URL for native builds
-// localhost is only used for local development
+// Use environment variable if available, otherwise use production URL
 const getApiUrl = () => {
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl) return envUrl;
@@ -17,7 +14,6 @@ const getApiUrl = () => {
     return 'http://localhost:5000';
   }
   
-  // Default to production for native apps and production builds
   return PRODUCTION_API_URL;
 };
 
@@ -61,8 +57,7 @@ const shouldCache = (url, method) => {
 // Request interceptor to add token and check cache
 api.interceptors.request.use(
   (config) => {
-    // Use sync method for request interceptor (async not supported here)
-    const token = storage.getItemSync('token');
+    const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -124,7 +119,7 @@ api.interceptors.response.use(
       originalRequest._retry = true;
 
       try {
-        const refreshToken = storage.getItemSync('refreshToken');
+        const refreshToken = localStorage.getItem('refreshToken');
         if (!refreshToken) {
           throw new Error('No refresh token');
         }
@@ -135,16 +130,15 @@ api.interceptors.response.use(
         );
 
         const { token } = response.data;
-        // Use async storage for native app support
-        await storage.setItem('token', token);
+        localStorage.setItem('token', token);
 
         // Retry original request with new token
         originalRequest.headers.Authorization = `Bearer ${token}`;
         return api(originalRequest);
       } catch (refreshError) {
         // Refresh failed, logout user
-        await storage.removeItem('token');
-        await storage.removeItem('refreshToken');
+        localStorage.removeItem('token');
+        localStorage.removeItem('refreshToken');
         window.location.href = '/login';
         return Promise.reject(refreshError);
       }

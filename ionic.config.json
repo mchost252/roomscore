@@ -1,7 +1,0 @@
-{
-  "name": "krios",
-  "integrations": {
-    "capacitor": {}
-  },
-  "type": "react"
-}
