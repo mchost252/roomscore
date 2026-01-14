@@ -80,9 +80,13 @@ export const AuthProvider = ({ children }) => {
       
       const { token: newToken, refreshToken, user: newUser } = response.data;
       
-      // Use async storage for native app support
+      // Save to storage - set localStorage first for immediate sync access
+      localStorage.setItem('token', newToken);
+      localStorage.setItem('refreshToken', refreshToken);
+      // Then save to native storage (async, for mobile persistence)
       await storage.setItem('token', newToken);
       await storage.setItem('refreshToken', refreshToken);
+      
       setToken(newToken);
       setUser(newUser);
       
@@ -118,9 +122,13 @@ export const AuthProvider = ({ children }) => {
       const { token: newToken, refreshToken, user: newUser } = response.data;
       
       console.log('💾 Saving token to storage...');
-      // Use async storage for native app support
+      // Save to storage - set localStorage first for immediate sync access
+      localStorage.setItem('token', newToken);
+      localStorage.setItem('refreshToken', refreshToken);
+      // Then save to native storage (async, for mobile persistence)
       await storage.setItem('token', newToken);
       await storage.setItem('refreshToken', refreshToken);
+      
       setToken(newToken);
       setUser(newUser);
       
@@ -163,9 +171,13 @@ export const AuthProvider = ({ children }) => {
       
       const { token: newToken, refreshToken, user: newUser } = response.data;
       
-      // Use async storage for native app support
+      // Save to storage - set localStorage first for immediate sync access
+      localStorage.setItem('token', newToken);
+      localStorage.setItem('refreshToken', refreshToken);
+      // Then save to native storage (async, for mobile persistence)
       await storage.setItem('token', newToken);
       await storage.setItem('refreshToken', refreshToken);
+      
       setToken(newToken);
       setUser(newUser);
       
