@@ -322,12 +322,12 @@ const ProfilePage = () => {
 
       {/* Alerts */}
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+        <Alert severity="error" sx={{ mb: { xs: 2, md: 3 }, fontSize: { xs: '0.75rem', md: '0.875rem' } }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
       {success && (
-        <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>
+        <Alert severity="success" sx={{ mb: { xs: 2, md: 3 }, fontSize: { xs: '0.75rem', md: '0.875rem' } }} onClose={() => setSuccess(null)}>
           {success}
         </Alert>
       )}
@@ -568,13 +568,13 @@ const ProfilePage = () => {
               </Grid>
 
               {/* Achievement Section */}
-              <Paper sx={{ p: 3, mt: 3 }}>
-                <Typography variant="h6" fontWeight="bold" gutterBottom>
+              <Paper sx={{ p: { xs: 2, md: 3 }, mt: { xs: 2, md: 3 } }}>
+                <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
                   Recent Achievements
                 </Typography>
-                <Box sx={{ textAlign: 'center', py: 4 }}>
-                  <EmojiEvents sx={{ fontSize: 60, color: 'text.secondary', mb: 2 }} />
-                  <Typography variant="body2" color="text.secondary">
+                <Box sx={{ textAlign: 'center', py: { xs: 2, md: 4 } }}>
+                  <EmojiEvents sx={{ fontSize: { xs: 40, md: 60 }, color: 'text.secondary', mb: 1 }} />
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', md: '0.875rem' } }}>
                     No achievements yet. Keep completing tasks to earn badges!
                   </Typography>
                 </Box>
@@ -584,27 +584,29 @@ const ProfilePage = () => {
 
           {/* Activity Tab */}
           {tabValue === 1 && (
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" fontWeight="bold" gutterBottom>
+            <Paper sx={{ p: { xs: 2, md: 3 } }}>
+              <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
                 Activity History
               </Typography>
               {activityHistory.length === 0 ? (
-                <Box sx={{ textAlign: 'center', py: 6 }}>
-                  <History sx={{ fontSize: 60, color: 'text.secondary', mb: 2 }} />
-                  <Typography variant="body2" color="text.secondary">
+                <Box sx={{ textAlign: 'center', py: { xs: 3, md: 6 } }}>
+                  <History sx={{ fontSize: { xs: 40, md: 60 }, color: 'text.secondary', mb: 1 }} />
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', md: '0.875rem' } }}>
                     No activity history yet
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: { xs: '0.65rem', md: '0.75rem' } }}>
                     Your completed tasks and milestones will appear here
                   </Typography>
                 </Box>
               ) : (
-                <List>
+                <List dense>
                   {activityHistory.map((activity, index) => (
                     <ListItem key={index} divider={index < activityHistory.length - 1}>
                       <ListItemText
                         primary={activity.description}
                         secondary={format(parseISO(activity.timestamp), 'MMM d, yyyy h:mm a')}
+                        primaryTypographyProps={{ fontSize: { xs: '0.8rem', md: '1rem' } }}
+                        secondaryTypographyProps={{ fontSize: { xs: '0.65rem', md: '0.75rem' } }}
                       />
                     </ListItem>
                   ))}
@@ -615,25 +617,34 @@ const ProfilePage = () => {
 
           {/* Notifications Tab */}
           {tabValue === 2 && (
-            <Paper sx={{ p: 3 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                  <Typography variant="h6" fontWeight="bold">
+            <Paper sx={{ p: { xs: 1.5, md: 3 } }}>
+              <Box sx={{ 
+                display: 'flex', 
+                flexDirection: { xs: 'column', sm: 'row' },
+                justifyContent: 'space-between', 
+                alignItems: { xs: 'flex-start', sm: 'center' }, 
+                gap: { xs: 1.5, sm: 2 },
+                mb: { xs: 2, md: 3 } 
+              }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="h6" fontWeight="bold" sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
                     Notifications
                   </Typography>
                   {unreadNotifications > 0 && (
                     <Chip 
                       label={`${unreadNotifications} unread`} 
                       color="error" 
-                      size="small" 
+                      size="small"
+                      sx={{ height: { xs: 20, md: 24 }, '& .MuiChip-label': { fontSize: { xs: '0.65rem', md: '0.75rem' }, px: 1 } }}
                     />
                   )}
                 </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
                   <Button
                     variant={notifStatus === 'all' ? 'contained' : 'text'}
                     size="small"
                     onClick={async () => { setNotifStatus('all'); await loadProfileData(); }}
+                    sx={{ minWidth: 'auto', px: { xs: 1, md: 2 }, fontSize: { xs: '0.7rem', md: '0.875rem' } }}
                   >
                     All
                   </Button>
@@ -641,6 +652,7 @@ const ProfilePage = () => {
                     variant={notifStatus === 'unread' ? 'contained' : 'text'}
                     size="small"
                     onClick={async () => { setNotifStatus('unread'); await loadProfileData(); }}
+                    sx={{ minWidth: 'auto', px: { xs: 1, md: 2 }, fontSize: { xs: '0.7rem', md: '0.875rem' } }}
                   >
                     Unread
                   </Button>
@@ -648,6 +660,7 @@ const ProfilePage = () => {
                     variant={notifStatus === 'read' ? 'contained' : 'text'}
                     size="small"
                     onClick={async () => { setNotifStatus('read'); await loadProfileData(); }}
+                    sx={{ minWidth: 'auto', px: { xs: 1, md: 2 }, fontSize: { xs: '0.7rem', md: '0.875rem' } }}
                   >
                     Read
                   </Button>
@@ -657,22 +670,23 @@ const ProfilePage = () => {
                       variant="outlined"
                       color="error"
                       size="small"
-                      startIcon={<Clear />}
+                      startIcon={<Clear sx={{ fontSize: { xs: 14, md: 18 } }} />}
                       onClick={() => setConfirmClearOpen(true)}
+                      sx={{ minWidth: 'auto', px: { xs: 1, md: 2 }, fontSize: { xs: '0.65rem', md: '0.875rem' } }}
                     >
-                      Clear All Read
+                      Clear
                     </Button>
                   )}
                 </Box>
               </Box>
 
               {notifications.length === 0 ? (
-                <Box sx={{ textAlign: 'center', py: 6 }}>
-                  <Notifications sx={{ fontSize: 60, color: 'text.secondary', mb: 2 }} />
-                  <Typography variant="body2" color="text.secondary">
+                <Box sx={{ textAlign: 'center', py: { xs: 3, md: 6 } }}>
+                  <Notifications sx={{ fontSize: { xs: 40, md: 60 }, color: 'text.secondary', mb: 1 }} />
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', md: '0.875rem' } }}>
                     No notifications yet
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: { xs: '0.65rem', md: '0.75rem' } }}>
                     You'll receive notifications about room activity and achievements
                   </Typography>
                 </Box>
@@ -763,43 +777,51 @@ const ProfilePage = () => {
 
           {/* Settings Tab */}
           {tabValue === 3 && (
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" fontWeight="bold" gutterBottom>
+            <Paper sx={{ p: { xs: 2, md: 3 } }}>
+              <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
                 Settings
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: { xs: 2, md: 3 }, fontSize: { xs: '0.75rem', md: '0.875rem' } }}>
                 Manage your preferences
               </Typography>
 
               {/* Appearance Section */}
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+              <Box sx={{ mb: { xs: 2, md: 3 } }}>
+                <Typography variant="subtitle1" fontWeight="bold" gutterBottom sx={{ fontSize: { xs: '0.9rem', md: '1rem' } }}>
                   Appearance
                 </Typography>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Box sx={{ 
+                  display: 'flex', 
+                  flexDirection: { xs: 'column', sm: 'row' },
+                  justifyContent: 'space-between', 
+                  alignItems: { xs: 'flex-start', sm: 'center' }, 
+                  gap: { xs: 1.5, sm: 2 },
+                  mb: 2 
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                     {mode === 'dark' ? (
-                      <Brightness4 color="primary" />
+                      <Brightness4 color="primary" sx={{ fontSize: { xs: 20, md: 24 } }} />
                     ) : (
-                      <Brightness7 color="primary" />
+                      <Brightness7 color="primary" sx={{ fontSize: { xs: 20, md: 24 } }} />
                     )}
                     <Box>
-                      <Typography variant="body1" fontWeight="bold">
+                      <Typography variant="body1" fontWeight="bold" sx={{ fontSize: { xs: '0.85rem', md: '1rem' } }}>
                         Theme
                       </Typography>
-                      <Typography variant="body2" color="text.secondary">
+                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.7rem', md: '0.875rem' } }}>
                         {themePreference === 'system' 
                           ? `System (${mode === 'dark' ? 'Dark' : 'Light'})` 
                           : mode === 'dark' ? 'Dark Mode' : 'Light Mode'}
                       </Typography>
                     </Box>
                   </Box>
-                  <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                     <Button
                       variant={themePreference === 'light' ? 'contained' : 'outlined'}
                       size="small"
                       onClick={() => setThemeMode('light')}
-                      startIcon={<Brightness7 />}
+                      startIcon={<Brightness7 sx={{ fontSize: { xs: 14, md: 18 } }} />}
+                      sx={{ minWidth: 'auto', px: { xs: 1, md: 1.5 }, fontSize: { xs: '0.7rem', md: '0.875rem' } }}
                     >
                       Light
                     </Button>
@@ -807,7 +829,8 @@ const ProfilePage = () => {
                       variant={themePreference === 'dark' ? 'contained' : 'outlined'}
                       size="small"
                       onClick={() => setThemeMode('dark')}
-                      startIcon={<Brightness4 />}
+                      startIcon={<Brightness4 sx={{ fontSize: { xs: 14, md: 18 } }} />}
+                      sx={{ minWidth: 'auto', px: { xs: 1, md: 1.5 }, fontSize: { xs: '0.7rem', md: '0.875rem' } }}
                     >
                       Dark
                     </Button>
@@ -815,6 +838,7 @@ const ProfilePage = () => {
                       variant={themePreference === 'system' ? 'contained' : 'outlined'}
                       size="small"
                       onClick={() => setThemeMode('system')}
+                      sx={{ minWidth: 'auto', px: { xs: 1, md: 1.5 }, fontSize: { xs: '0.7rem', md: '0.875rem' } }}
                     >
                       System
                     </Button>
