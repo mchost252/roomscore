@@ -8,6 +8,7 @@ import { useTheme as useCustomTheme } from './context/ThemeContext';
 import Navbar from './components/Navbar';
 import LoadingScreen from './components/LoadingScreen';
 import PushNotificationPrompt from './components/PushNotificationPrompt';
+import UpdatePrompt from './components/UpdatePrompt';
 import { initializeCapacitor } from './utils/capacitor';
 
 // Pages (lazy loaded for code splitting)
@@ -77,6 +78,8 @@ function App() {
       />
       {/* Show push notification prompt for logged-in users */}
       {user && <PushNotificationPrompt />}
+      {/* Live update prompt for native apps */}
+      <UpdatePrompt />
       <Box sx={{ 
         minHeight: '100vh',
         bgcolor: 'background.default',

@@ -38,13 +38,12 @@ const config: CapacitorConfig = {
       iconColor: '#5865F2',
       sound: 'beep.wav'
     },
-    // Appflow Live Updates configuration
-    // Replace YOUR_APPFLOW_APP_ID with your actual Appflow App ID after setup
-    LiveUpdates: {
-      appId: '22858e1a',
-      channel: 'Production',
-      autoUpdateMethod: 'background',
-      maxVersions: 2
+    // Capawesome Cloud Live Update configuration
+    // Updates are fetched from Capawesome Cloud and applied automatically
+    LiveUpdate: {
+      appId: 'YOUR_CAPAWESOME_APP_ID', // Replace after creating app on cloud.capawesome.io
+      autoDeleteBundles: true,
+      resetOnUpdate: true
     }
   }
 };
