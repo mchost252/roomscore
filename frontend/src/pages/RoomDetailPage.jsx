@@ -50,7 +50,6 @@ import { useSocket } from '../context/SocketContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import api, { invalidateCache } from '../utils/api';
-import { hapticFeedback, isNativePlatform } from '../utils/capacitor';
 import ChatDrawer from '../components/ChatDrawer';
 import TaskTypeSelector from '../components/TaskTypeSelector';
 
@@ -464,11 +463,6 @@ const RoomDetailPage = () => {
       setSuccess(`+${pts} points added • Room notified`);
       setTimeout(() => setSuccess(null), 3000);
       
-      // Haptic feedback on mobile for task completion
-      if (isNativePlatform()) {
-        hapticFeedback('medium');
-      }
-      
       // API call in background (no await - non-blocking)
       api.post(`/rooms/${roomId}/tasks/${taskId}/complete`)
         .then(() => {
@@ -555,11 +549,6 @@ const RoomDetailPage = () => {
       
       setSuccess('Task unmarked. Points deducted.');
       setTimeout(() => setSuccess(null), 3000);
-      
-      // Haptic feedback on mobile
-      if (isNativePlatform()) {
-        hapticFeedback('light');
-      }
       
       // API call in background (non-blocking for faster UI)
       api.delete(`/rooms/${roomId}/tasks/${taskId}/complete`)

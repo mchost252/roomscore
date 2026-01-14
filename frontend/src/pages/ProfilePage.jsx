@@ -47,13 +47,12 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { useTheme as useCustomTheme } from '../context/ThemeContext';
-import pushNotificationManager from '../utils/pushNotifications';
 import { useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import api from '../utils/api';
 
 const ProfilePage = () => {
-  const { user, logout, enablePushNotifications, disablePushNotifications } = useAuth();
+  const { user, logout } = useAuth();
   const { socket } = useSocket();
   const { mode, themePreference, setThemeMode } = useCustomTheme();
   const navigate = useNavigate();
@@ -86,7 +85,6 @@ const ProfilePage = () => {
 
   useEffect(() => {
     loadProfileData();
-    checkPushNotificationStatus();
   }, []);
 
   // Real-time notification updates
@@ -104,16 +102,6 @@ const ProfilePage = () => {
       socket.off('notification:new', handleNewNotification);
     };
   }, [socket]);
-
-  const checkPushNotificationStatus = async () => {
-    const supported = pushNotificationManager.isSupported();
-    setPushSupported(supported);
-
-    if (supported) {
-      const subscription = await pushNotificationManager.getSubscription();
-      setPushEnabled(!!subscription);
-    }
-  };
 
   const loadProfileData = async () => {
     try {
@@ -313,50 +301,6 @@ const ProfilePage = () => {
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [fetchMoreNotifications]);
-
-  const handleEnablePushNotifications = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const result = await enablePushNotifications();
-      
-      if (result.success) {
-        setPushEnabled(true);
-        setSuccess('Push notifications enabled! You will now receive notifications on this device.');
-        setTimeout(() => setSuccess(null), 5000);
-      } else {
-        setError(result.message || 'Failed to enable push notifications');
-        setTimeout(() => setError(null), 5000);
-      }
-    } catch (err) {
-      setError('Failed to enable push notifications. Please check your browser settings.');
-      setTimeout(() => setError(null), 5000);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDisablePushNotifications = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const result = await disablePushNotifications();
-      
-      if (result.success) {
-        setPushEnabled(false);
-        setSuccess('Push notifications disabled');
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError(result.message || 'Failed to disable push notifications');
-        setTimeout(() => setError(null), 5000);
-      }
-    } catch (err) {
-      setError('Failed to disable push notifications');
-      setTimeout(() => setError(null), 5000);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
@@ -860,69 +804,6 @@ const ProfilePage = () => {
                 </Box>
               </Box>
 
-              <Divider sx={{ my: 3 }} />
-
-              {/* Notifications Section */}
-              <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                Notifications
-              </Typography>
-
-              {/* Push Notifications Section */}
-              <Box sx={{ mb: 3 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    {pushEnabled ? (
-                      <NotificationsActive color="primary" />
-                    ) : (
-                      <NotificationsOff color="disabled" />
-                    )}
-                    <Box>
-                      <Typography variant="body1" fontWeight="bold">
-                        Push Notifications
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        Receive real-time notifications on your device
-                      </Typography>
-                    </Box>
-                  </Box>
-                  {pushSupported ? (
-                    <Button
-                      variant={pushEnabled ? 'outlined' : 'contained'}
-                      color={pushEnabled ? 'error' : 'primary'}
-                      onClick={pushEnabled ? handleDisablePushNotifications : handleEnablePushNotifications}
-                      disabled={loading}
-                    >
-                      {pushEnabled ? 'Disable' : 'Enable'}
-                    </Button>
-                  ) : (
-                    <Chip 
-                      label="Not Supported" 
-                      size="small" 
-                      color="default"
-                    />
-                  )}
-                </Box>
-                
-                {pushSupported && (
-                  <Alert severity="info" sx={{ mt: 2 }}>
-                    <Typography variant="body2">
-                      Push notifications will alert you about:
-                    </Typography>
-                    <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
-                      <li>New tasks created in your rooms</li>
-                      <li>Task completions by room members</li>
-                      <li>New chat messages</li>
-                      <li>Members leaving rooms</li>
-                    </ul>
-                  </Alert>
-                )}
-                
-                {!pushSupported && (
-                  <Alert severity="warning" sx={{ mt: 2 }}>
-                    Push notifications are not supported in your browser. Please use a modern browser like Chrome, Firefox, or Edge.
-                  </Alert>
-                )}
-              </Box>
             </Paper>
           )}
         </Grid>
