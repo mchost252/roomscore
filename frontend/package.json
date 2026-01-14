@@ -52,7 +52,8 @@
     "cap:run:android": "npx cap run android",
     "cap:run:ios": "npx cap run ios",
     "cap:add:android": "npx cap add android",
-    "cap:add:ios": "npx cap add ios"
+    "cap:add:ios": "npx cap add ios",
+    "deploy:ota": "npm run build && npx @capawesome/cli bundle zip --path dist && echo 'Bundle created! Upload dist.zip to Capawesome Cloud'"
   },
   "browserslist": {
     "production": [

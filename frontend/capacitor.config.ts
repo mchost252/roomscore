@@ -41,7 +41,7 @@ const config: CapacitorConfig = {
     // Capawesome Cloud Live Update configuration
     // Updates are fetched from Capawesome Cloud and applied automatically
     LiveUpdate: {
-      appId: 'YOUR_CAPAWESOME_APP_ID', // Replace after creating app on cloud.capawesome.io
+      appId: '0f6988af-7c60-43ce-a400-c5976067ee3a',
       autoDeleteBundles: true,
       resetOnUpdate: true
     }
