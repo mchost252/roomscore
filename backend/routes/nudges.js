@@ -3,6 +3,7 @@ const router = express.Router();
 const { protect, isRoomMember } = require('../middleware/auth');
 const { prisma } = require('../config/database');
 const logger = require('../utils/logger');
+const NotificationService = require('../services/notificationService');
 
 // Helper to get today's date string
 const getTodayString = () => new Date().toISOString().split('T')[0];
@@ -83,6 +84,27 @@ router.post('/:roomId', protect, isRoomMember, async (req, res) => {
     // Emit socket event
     const io = req.app.get('io');
     io.to(roomId).emit('chat:message', { message: formattedMessage });
+
+    // Create notifications for all room members (except sender)
+    try {
+      const roomMembers = req.room.members || [];
+      const recipientIds = roomMembers
+        .map(m => m.userId)
+        .filter(uid => uid && uid !== req.user.id);
+
+      await Promise.allSettled(
+        recipientIds.map(uid => NotificationService.createNotification({
+          recipientId: uid,
+          type: 'nudge',
+          title: '🔔 Nudge from your room',
+          message: `${req.user.username} nudged the room: don't forget today's tasks.`,
+          roomId,
+          data: { roomId, senderId: req.user.id }
+        }))
+      );
+    } catch (notifyErr) {
+      logger.warn('Failed to create nudge notifications:', notifyErr.message);
+    }
     
     logger.info(`Nudge sent in room ${roomId} by user ${req.user.id}`);
     

@@ -50,6 +50,8 @@ const ChatDrawer = ({
   roomMembers = [],
   onSendAppreciation,
   appreciationRemaining = 3,
+  sentAppreciations = new Set(),
+  appreciationStatsByUser = {},
   onSendNudge,
   canNudge = false,
   nudgeStatus = null, // { hasCompletedTask: bool, alreadySentToday: bool }
@@ -123,8 +125,31 @@ const ChatDrawer = ({
     }
   };
 
+  const getUserId = (u) => u?._id || u?.id || u || null;
   const isMyMessage = (msg) => {
-    return msg.userId?._id === currentUser?._id || msg.userId?._id === currentUser?.id || msg.userId === currentUser?._id || msg.userId === currentUser?.id;
+    const msgUserId = getUserId(msg.userId);
+    const myId = getUserId(currentUser);
+    return msgUserId === myId;
+  };
+
+  const getAppreciationDisplay = (userId) => {
+    const uid = getUserId(userId);
+    const stats = appreciationStatsByUser?.[uid];
+    if (!stats) return [];
+
+    const mapping = [
+      { type: 'star', emoji: '⭐', count: stats.star || 0 },
+      { type: 'fire', emoji: '🔥', count: stats.fire || 0 },
+      { type: 'shield', emoji: '🛡️', count: stats.shield || 0 }
+    ];
+
+    // Only show if count > 0. If count==1 show emoji only; if >1 show emoji+count.
+    return mapping
+      .filter(x => x.count > 0)
+      .map(x => ({
+        type: x.type,
+        label: x.count === 1 ? x.emoji : `${x.emoji}${x.count}`
+      }));
   };
 
   const formatTime = (date) => {
@@ -231,9 +256,10 @@ const ChatDrawer = ({
           ) : (
             messages.map((msg, index) => {
               const isMine = isMyMessage(msg);
+              const msgUserId = getUserId(msg.userId);
+              const prevUserId = getUserId(messages[index - 1]?.userId);
               const showAvatar = !isMine && (
-                index === 0 || 
-                messages[index - 1]?.userId?._id !== msg.userId?._id
+                index === 0 || prevUserId !== msgUserId
               );
 
               return (
@@ -279,7 +305,18 @@ const ChatDrawer = ({
                           color="text.secondary"
                           sx={{ ml: 1, mb: 0.5 }}
                         >
-                          {msg.userId?.username || 'Unknown'}
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
+                            <span>{msg.userId?.username || 'Unknown'}</span>
+                            {getAppreciationDisplay(msg.userId).map((b) => (
+                              <Chip
+                                key={b.type}
+                                label={b.label}
+                                size="small"
+                                variant="outlined"
+                                sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
+                              />
+                            ))}
+                          </Box>
                         </Typography>
                       )}
 
@@ -606,7 +643,12 @@ const ChatDrawer = ({
                       <ListItemButton
                         key={memberId}
                         onClick={() => handleMemberSelect(memberId)}
-                        sx={{ borderRadius: 1, mb: 0.5 }}
+                        disabled={sentAppreciations.has(`${memberId}:${selectedAppreciationType}`)}
+                        sx={{
+                          borderRadius: 1,
+                          mb: 0.5,
+                          opacity: sentAppreciations.has(`${memberId}:${selectedAppreciationType}`) ? 0.5 : 1
+                        }}
                       >
                         <ListItemAvatar>
                           <Avatar src={memberData?.avatar}>
@@ -614,7 +656,29 @@ const ChatDrawer = ({
                           </Avatar>
                         </ListItemAvatar>
                         <ListItemText 
-                          primary={memberData?.username || 'Unknown'} 
+                          primary={
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                              <span>{memberData?.username || 'Unknown'}</span>
+                              {getAppreciationDisplay(memberId).map((b) => (
+                                <Chip
+                                  key={b.type}
+                                  label={b.label}
+                                  size="small"
+                                  variant="outlined"
+                                  sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
+                                />
+                              ))}
+                              {sentAppreciations.has(`${memberId}:${selectedAppreciationType}`) && (
+                                <Chip
+                                  label="Sent"
+                                  size="small"
+                                  color="success"
+                                  variant="outlined"
+                                  sx={{ height: 18, fontSize: '0.65rem' }}
+                                />
+                              )}
+                            </Box>
+                          }
                           secondary={`${member.points || 0} points`}
                         />
                       </ListItemButton>

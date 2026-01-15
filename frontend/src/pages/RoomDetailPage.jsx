@@ -87,6 +87,12 @@ const RoomDetailPage = () => {
   const [nudging, setNudging] = useState(false);
   const [nudgeStatus, setNudgeStatus] = useState({ hasCompletedTask: false, alreadySentToday: false });
   const [appreciationRemaining, setAppreciationRemaining] = useState(3);
+  // Track which appreciations have been sent in the last 24h so UI can disable duplicates
+  // Map key: `${toUserId}:${type}` => true
+  const [sentAppreciations, setSentAppreciations] = useState(() => new Set());
+  // Track last-24h received appreciation counts per user for displaying emojis in chat
+  // { [userId]: { star: number, fire: number, shield: number } }
+  const [appreciationStatsByUser, setAppreciationStatsByUser] = useState({});
   const [appreciating, setAppreciating] = useState(false);
   const [newTask, setNewTask] = useState({
     title: '',
@@ -154,27 +160,84 @@ const RoomDetailPage = () => {
     }
   };
 
-  // Check appreciation remaining
+  // Load appreciation state (remaining + sent-in-window + member stats)
   useEffect(() => {
-    const checkAppreciationRemaining = async () => {
-      if (!roomId) return;
+    const loadAppreciations = async () => {
+      if (!roomId || !room) return;
       try {
-        const response = await api.get(`/appreciations/${roomId}/remaining`);
-        setAppreciationRemaining(response.data.remaining);
+        const [remainingRes, sentRes] = await Promise.all([
+          api.get(`/appreciations/${roomId}/remaining`),
+          api.get(`/appreciations/${roomId}/sent`)
+        ]);
+
+        setAppreciationRemaining(remainingRes.data.remaining);
+
+        // Build sent lookup set for quick disable checks
+        const sentSet = new Set();
+        (sentRes.data.sent || []).forEach(a => {
+          if (a?.toUserId && a?.type) sentSet.add(`${a.toUserId}:${a.type}`);
+        });
+        setSentAppreciations(sentSet);
+
+        // Load per-member stats (last 24h) so chat badges can render
+        // Do in parallel but avoid spamming too much
+        const members = room.members || [];
+        const userIds = members
+          .map(m => m.userId?._id || m.userId)
+          .filter(Boolean);
+
+        const statsResults = await Promise.allSettled(
+          userIds.map(uid => api.get(`/appreciations/${roomId}/user/${uid}`))
+        );
+
+        const statsByUser = {};
+        statsResults.forEach((r, idx) => {
+          if (r.status === 'fulfilled') {
+            statsByUser[userIds[idx]] = r.value.data.stats;
+          }
+        });
+        setAppreciationStatsByUser(statsByUser);
       } catch (err) {
-        console.error('Error checking appreciation remaining:', err);
+        console.error('Error loading appreciations:', err);
       }
     };
-    if (room) checkAppreciationRemaining();
+
+    loadAppreciations();
   }, [roomId, room]);
 
   // Handle appreciation
   const handleAppreciation = async (toUserId, type) => {
     if (appreciating) return;
+
+    // Prevent duplicate sends client-side
+    if (sentAppreciations.has(`${toUserId}:${type}`)) {
+      setError('⚠️ You already sent this appreciation to this member in the last 24 hours');
+      setTimeout(() => setError(null), 2500);
+      return;
+    }
+
     try {
       setAppreciating(true);
-      await api.post(`/appreciations/${roomId}`, { toUserId, type });
-      setAppreciationRemaining(prev => prev - 1);
+      const res = await api.post(`/appreciations/${roomId}`, { toUserId, type });
+
+      // Update remaining
+      setAppreciationRemaining(prev => Math.max(0, prev - 1));
+
+      // Disable this type for this user immediately
+      setSentAppreciations(prev => {
+        const next = new Set(prev);
+        next.add(`${toUserId}:${type}`);
+        return next;
+      });
+
+      // Update stats for recipient
+      if (res.data?.stats) {
+        setAppreciationStatsByUser(prev => ({
+          ...prev,
+          [toUserId]: res.data.stats
+        }));
+      }
+
       const emoji = type === 'star' ? '⭐' : type === 'fire' ? '🔥' : '🛡️';
       setSuccess(`${emoji} Appreciation sent!`);
       setTimeout(() => setSuccess(null), 2000);
@@ -309,6 +372,24 @@ const RoomDetailPage = () => {
         }
       });
 
+      // Listen for appreciation events and update badges in realtime
+      socket.on('appreciation:given', (data) => {
+        if (!data?.toUserId || !data?.stats) return;
+        setAppreciationStatsByUser(prev => ({
+          ...prev,
+          [data.toUserId]: data.stats
+        }));
+        // If we are the sender, mark as sent for disable logic
+        if (data.fromUserId === user?.id) {
+          setSentAppreciations(prev => {
+            const next = new Set(prev);
+            if (data.toUserId && data.type) next.add(`${data.toUserId}:${data.type}`);
+            return next;
+          });
+          setAppreciationRemaining(prev => Math.max(0, prev - 1));
+        }
+      });
+
       // Listen for task deleted
       socket.on('task:deleted', (data) => {
         if (data.roomId === roomId) {
@@ -429,6 +510,7 @@ const RoomDetailPage = () => {
         socket.off('chat:message');
         socket.off('task:created');
         socket.off('task:deleted');
+        socket.off('appreciation:given');
         socket.off('member:joined');
         socket.off('member:left');
         socket.off('member:kicked');
@@ -2043,6 +2125,8 @@ const RoomDetailPage = () => {
         roomMembers={room?.members || []}
         onSendAppreciation={handleAppreciation}
         appreciationRemaining={appreciationRemaining}
+        sentAppreciations={sentAppreciations}
+        appreciationStatsByUser={appreciationStatsByUser}
         onSendNudge={handleNudge}
         canNudge={canNudge}
         nudgeStatus={nudgeStatus}

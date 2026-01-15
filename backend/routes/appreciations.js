@@ -3,8 +3,12 @@ const router = express.Router();
 const { protect, isRoomMember } = require('../middleware/auth');
 const { prisma } = require('../config/database');
 const logger = require('../utils/logger');
+const NotificationService = require('../services/notificationService');
 
-const DAILY_LIMIT = 3; // Maximum appreciations per day per room
+const DAILY_LIMIT = 3; // Maximum appreciations per 24 hours per room
+
+// Rolling 24h window start
+const getWindowStart = () => new Date(Date.now() - 24 * 60 * 60 * 1000);
 
 // Give appreciation to a user
 router.post('/:roomId', protect, isRoomMember, async (req, res) => {
@@ -38,41 +42,32 @@ router.post('/:roomId', protect, isRoomMember, async (req, res) => {
       });
     }
     
-    // Check daily limit
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    // Check rolling 24h limit
+    const windowStart = getWindowStart();
     
-    const usedToday = await prisma.appreciation.count({
+    const usedInWindow = await prisma.appreciation.count({
       where: {
         roomId,
         fromUserId: req.user.id,
-        createdAt: {
-          gte: today,
-          lt: tomorrow
-        }
+        createdAt: { gte: windowStart }
       }
     });
     
-    if (usedToday >= DAILY_LIMIT) {
+    if (usedInWindow >= DAILY_LIMIT) {
       return res.status(400).json({
         success: false,
-        message: `You can only give ${DAILY_LIMIT} appreciations per day per room`
+        message: `You can only give ${DAILY_LIMIT} appreciations per 24 hours per room`
       });
     }
     
-    // Check if already gave this type to this user today
+    // Check if already gave this type to this user in the last 24h
     const existingAppreciation = await prisma.appreciation.findFirst({
       where: {
         roomId,
         fromUserId: req.user.id,
         toUserId,
         type,
-        createdAt: {
-          gte: today,
-          lt: tomorrow
-        }
+        createdAt: { gte: windowStart }
       }
     });
     
@@ -94,11 +89,14 @@ router.post('/:roomId', protect, isRoomMember, async (req, res) => {
     });
     
     // Get updated stats for the recipient
+    // Stats are only for the last 24h (rolling)
+    const windowStart = getWindowStart();
     const stats = await prisma.appreciation.groupBy({
       by: ['type'],
       where: {
         roomId,
-        toUserId
+        toUserId,
+        createdAt: { gte: windowStart }
       },
       _count: {
         type: true
@@ -119,10 +117,26 @@ router.post('/:roomId', protect, isRoomMember, async (req, res) => {
     const io = req.app.get('io');
     io.to(roomId).emit('appreciation:given', {
       appreciation: { ...appreciation, _id: appreciation.id },
+      fromUserId: req.user.id,
       toUserId,
+      type,
       stats: formattedStats
     });
     
+    // Create notification for recipient
+    try {
+      await NotificationService.createNotification({
+        recipientId: toUserId,
+        type: 'appreciation',
+        title: '✨ New appreciation',
+        message: `${req.user.username} sent you ${type === 'star' ? 'a ⭐ star' : type === 'fire' ? 'a 🔥 fire' : 'a 🛡️ shield'} in the room.`,
+        roomId,
+        data: { roomId, fromUserId: req.user.id, type }
+      });
+    } catch (notifyErr) {
+      logger.warn('Failed to create appreciation notification:', notifyErr.message);
+    }
+
     logger.info(`Appreciation (${type}) given in room ${roomId} from ${req.user.id} to ${toUserId}`);
     
     res.json({
@@ -141,16 +155,18 @@ router.post('/:roomId', protect, isRoomMember, async (req, res) => {
   }
 });
 
-// Get appreciation stats for a user in a room
+// Get appreciation stats for a user in a room (last 24h)
 router.get('/:roomId/user/:userId', protect, isRoomMember, async (req, res) => {
   try {
     const { roomId, userId } = req.params;
     
+    const windowStart = getWindowStart();
     const stats = await prisma.appreciation.groupBy({
       by: ['type'],
       where: {
         roomId,
-        toUserId: userId
+        toUserId: userId,
+        createdAt: { gte: windowStart }
       },
       _count: {
         type: true
@@ -181,34 +197,64 @@ router.get('/:roomId/user/:userId', protect, isRoomMember, async (req, res) => {
   }
 });
 
-// Get remaining appreciations for current user today
+// Get appreciations the current user has sent in this room within the last 24h
+// Used by the UI to disable already-sent appreciation buttons
+router.get('/:roomId/sent', protect, isRoomMember, async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const windowStart = getWindowStart();
+
+    const sent = await prisma.appreciation.findMany({
+      where: {
+        roomId,
+        fromUserId: req.user.id,
+        createdAt: { gte: windowStart }
+      },
+      select: {
+        id: true,
+        toUserId: true,
+        type: true,
+        createdAt: true
+      }
+    });
+
+    res.json({
+      success: true,
+      windowStart,
+      sent: sent.map(a => ({ ...a, _id: a.id }))
+    });
+  } catch (error) {
+    logger.error('Error getting sent appreciations:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get sent appreciations'
+    });
+  }
+});
+
+// Get remaining appreciations for current user (last 24h rolling)
 router.get('/:roomId/remaining', protect, isRoomMember, async (req, res) => {
   try {
     const { roomId } = req.params;
     
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    
-    const usedToday = await prisma.appreciation.count({
+    const windowStart = getWindowStart();
+
+    const usedInWindow = await prisma.appreciation.count({
       where: {
         roomId,
         fromUserId: req.user.id,
-        createdAt: {
-          gte: today,
-          lt: tomorrow
-        }
+        createdAt: { gte: windowStart }
       }
     });
-    
-    const remaining = Math.max(0, DAILY_LIMIT - usedToday);
+
+    const remaining = Math.max(0, DAILY_LIMIT - usedInWindow);
     
     res.json({
       success: true,
       dailyLimit: DAILY_LIMIT,
-      usedToday,
-      remaining
+      usedInWindow,
+      remaining,
+      windowStart
     });
     
   } catch (error) {
