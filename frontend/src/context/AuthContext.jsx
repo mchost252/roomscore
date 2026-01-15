@@ -69,14 +69,25 @@ export const AuthProvider = ({ children }) => {
       return { success: true };
     } catch (error) {
       console.error('❌ Registration failed:', error);
+      console.error('❌ Response data:', error.response?.data);
+      
       let errorMessage = 'Registration failed';
-      if (error.response?.data?.message) {
+      
+      // Check for validation errors array first
+      if (error.response?.data?.errors && error.response.data.errors.length > 0) {
+        errorMessage = error.response.data.errors.map(e => e.message).join('. ');
+      } else if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
       } else if (error.code === 'ERR_NETWORK') {
         errorMessage = 'Network error - cannot reach server';
+      } else if (error.response?.status === 400) {
+        errorMessage = 'Invalid input. Please check your email, username, and password.';
+      } else if (error.response?.status === 500) {
+        errorMessage = 'Server error. Please try again later.';
       } else if (error.message) {
         errorMessage = error.message;
       }
+      
       return {
         success: false,
         message: errorMessage
@@ -113,6 +124,7 @@ export const AuthProvider = ({ children }) => {
       return { success: true };
     } catch (error) {
       console.error('❌ Login failed:', error);
+      console.error('❌ Response data:', error.response?.data);
       
       if (error.response?.status === 429) {
         return {
@@ -122,10 +134,20 @@ export const AuthProvider = ({ children }) => {
       }
       
       let errorMessage = 'Login failed';
-      if (error.response?.data?.message) {
+      
+      // Check for validation errors array first
+      if (error.response?.data?.errors && error.response.data.errors.length > 0) {
+        errorMessage = error.response.data.errors.map(e => e.message).join('. ');
+      } else if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
       } else if (error.code === 'ERR_NETWORK') {
         errorMessage = 'Network error - cannot reach server';
+      } else if (error.response?.status === 400) {
+        errorMessage = 'Invalid input. Please check your email and password.';
+      } else if (error.response?.status === 401) {
+        errorMessage = 'Invalid credentials. Please check your email and password, or sign up if you\'re new.';
+      } else if (error.response?.status === 500) {
+        errorMessage = 'Server error. Please try again later.';
       } else if (error.message) {
         errorMessage = error.message;
       }
