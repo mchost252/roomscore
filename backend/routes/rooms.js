@@ -30,7 +30,7 @@ router.get('/', protect, async (req, res, next) => {
         'members.userId': { $ne: req.user.id }
       })
       .populate('owner', 'username _id')
-      .populate('members.userId', 'username _id')
+      .populate('members.userId', 'username _id avatar')
       .sort({ createdAt: -1 })
       .limit(50)
       .lean()
@@ -53,7 +53,7 @@ router.get('/', protect, async (req, res, next) => {
       isActive: true
     })
     .populate('owner', 'username _id')
-    .populate('members.userId', 'username _id')
+    .populate('members.userId', 'username _id avatar')
     .sort({ updatedAt: -1 })
     .lean()
     .maxTimeMS(15000);
@@ -123,7 +123,7 @@ router.post('/', protect, validate(createRoomSchema), async (req, res, next) => 
     });
 
     await room.populate('owner', 'username _id');
-    await room.populate('members.userId', 'username _id');
+    await room.populate('members.userId', 'username _id avatar');
 
     // Emit socket event
     const io = req.app.get('io');
@@ -145,7 +145,7 @@ router.post('/', protect, validate(createRoomSchema), async (req, res, next) => 
 router.get('/:id', protect, isRoomMember, async (req, res, next) => {
   try {
     await req.room.populate('owner', 'username _id');
-    await req.room.populate('members.userId', 'username _id');
+    await req.room.populate('members.userId', 'username _id avatar');
 
     res.json({
       success: true,
@@ -175,7 +175,7 @@ router.put('/:id', protect, isRoomOwner, validate(updateRoomSchema), async (req,
       updateFields,
       { new: true, runValidators: true }
     ).populate('owner', 'username _id')
-     .populate('members.userId', 'username _id');
+     .populate('members.userId', 'username _id avatar');
 
     // Emit socket event
     const io = req.app.get('io');
@@ -325,7 +325,7 @@ router.post('/join', protect, validate(joinRoomSchema), async (req, res, next) =
     // Add member directly (no approval required)
     await room.addMember(req.user.id);
     await room.populate('owner', 'username _id');
-    await room.populate('members.userId', 'username _id');
+    await room.populate('members.userId', 'username _id avatar');
 
     // Create system message
     await ChatMessage.create({
@@ -696,7 +696,7 @@ router.put('/:id/approve-member/:userId', protect, isRoomOwner, async (req, res,
     
     await req.room.approvePendingMember(userId);
     await req.room.populate('owner', 'username _id');
-    await req.room.populate('members.userId', 'username _id');
+    await req.room.populate('members.userId', 'username _id avatar');
 
     const approvedUser = await User.findById(userId);
     
@@ -834,7 +834,7 @@ router.put('/:id/settings', protect, isRoomOwner, async (req, res, next) => {
       { $set: updateFields },
       { new: true, runValidators: true }
     ).populate('owner', 'username _id')
-     .populate('members.userId', 'username _id');
+     .populate('members.userId', 'username _id avatar');
 
     // Emit socket event
     const io = req.app.get('io');

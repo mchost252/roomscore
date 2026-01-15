@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Container,
   Grid,
   Paper,
   Typography,
@@ -373,6 +372,9 @@ const RoomDetailPage = () => {
       // Handle room data
       if (roomResponse.status === 'fulfilled') {
         const roomData = roomResponse.value.data.room;
+        
+        // Debug: Check if backend is returning avatar data
+        console.log('🔍 Room members data sample:', roomData.members?.[0]);
         
         // Handle tasks data
         if (tasksResponse.status === 'fulfilled') {
@@ -801,26 +803,35 @@ const RoomDetailPage = () => {
   const isLoading = !room;
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+    <Box sx={{ 
+      width: '100%', 
+      maxWidth: '100%', 
+      overflowX: 'hidden',
+      px: { xs: 1.5, sm: 2, md: 3 },
+      py: { xs: 2, md: 4 },
+      boxSizing: 'border-box',
+    }}>
       {/* Room Intro Card (first-time) */}
       {showRoomIntro && (
-        <Paper sx={{ p: 2, mb: 2, borderLeft: 4, borderColor: 'info.main' }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Paper sx={{ p: { xs: 1.5, md: 2 }, mb: 2, borderLeft: 4, borderColor: 'info.main' }}>
+          <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 1 }}>
             <Box>
-              <Typography variant="subtitle1" fontWeight="bold">
+              <Typography variant="subtitle1" fontWeight="bold" sx={{ fontSize: { xs: '0.9rem', md: '1rem' } }}>
                 Welcome to this room 👋
               </Typography>
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', md: '0.875rem' } }}>
                 Complete tasks here to earn points. Your progress is visible to everyone.
               </Typography>
             </Box>
             <Button
               variant="outlined"
+              size="small"
               onClick={() => {
                 const seenKey = `room_intro_seen_${roomId}`;
                 localStorage.setItem(seenKey, 'true');
                 setShowRoomIntro(false);
               }}
+              sx={{ fontSize: { xs: '0.75rem', md: '0.875rem' } }}
             >
               Got it
             </Button>
@@ -852,35 +863,37 @@ const RoomDetailPage = () => {
       {/* Show content as soon as room data is available */}
       {room && (<>
       {/* Header */}
-      <Paper sx={{ p: 3, mb: 3 }}>
+      <Paper sx={{ p: { xs: 2, md: 3 }, mb: { xs: 2, md: 3 } }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <IconButton onClick={() => navigate('/rooms')}>
-              <ArrowBack />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, md: 2 }, flex: 1, minWidth: 0 }}>
+            <IconButton onClick={() => navigate('/rooms')} size="small">
+              <ArrowBack sx={{ fontSize: { xs: 20, md: 24 } }} />
             </IconButton>
-            <Box>
-              <Typography variant="h4" fontWeight="bold">
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <Typography variant="h4" fontWeight="bold" sx={{ fontSize: { xs: '1.2rem', md: '2.125rem' }, wordBreak: 'break-word' }}>
                 {room.name}
               </Typography>
-              <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
-                {isOwner && <Chip label="Owner" size="small" color="primary" />}
+              <Box sx={{ display: 'flex', gap: 0.5, mt: 0.5, flexWrap: 'wrap' }}>
+                {isOwner && <Chip label="Owner" size="small" color="primary" sx={{ height: { xs: 20, md: 24 }, fontSize: { xs: '0.65rem', md: '0.75rem' } }} />}
                 <Chip 
                   label={room.isPublic ? 'Public' : 'Private'} 
                   size="small" 
                   color={room.isPublic ? 'success' : 'default'}
+                  sx={{ height: { xs: 20, md: 24 }, fontSize: { xs: '0.65rem', md: '0.75rem' } }}
                 />
                 <Chip 
-                  icon={<People />}
-                  label={`${room.members?.length || 0} members`} 
-                  size="small" 
+                  icon={<People sx={{ fontSize: { xs: 12, md: 16 } }} />}
+                  label={`${room.members?.length || 0}`} 
+                  size="small"
+                  sx={{ height: { xs: 20, md: 24 }, fontSize: { xs: '0.65rem', md: '0.75rem' } }}
                 />
               </Box>
             </Box>
           </Box>
-          <Box sx={{ display: 'flex', gap: 1 }}>
+          <Box sx={{ display: 'flex', gap: 0.5 }}>
             {isOwner && (
               <Tooltip title="Room Settings">
-                <IconButton onClick={() => {
+                <IconButton size="small" onClick={() => {
                   setRoomSettings({
                     name: room.name,
                     description: room.description || '',
@@ -889,14 +902,14 @@ const RoomDetailPage = () => {
                   });
                   setSettingsOpen(true);
                 }}>
-                  <Settings />
+                  <Settings sx={{ fontSize: { xs: 20, md: 24 } }} />
                 </IconButton>
               </Tooltip>
             )}
             {!isOwner && (
               <Tooltip title="Leave Room">
-                <IconButton onClick={() => setLeaveDialogOpen(true)} color="error">
-                  <ExitToApp />
+                <IconButton size="small" onClick={() => setLeaveDialogOpen(true)} color="error">
+                  <ExitToApp sx={{ fontSize: { xs: 20, md: 24 } }} />
                 </IconButton>
               </Tooltip>
             )}
@@ -904,14 +917,24 @@ const RoomDetailPage = () => {
         </Box>
 
         {room.description && (
-          <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 2, fontSize: { xs: '0.8rem', md: '1rem' } }}>
             {room.description}
           </Typography>
         )}
 
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="body2" color="text.secondary">
+        {/* Room Expiry Info */}
+        {room.expiresAt && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, p: 1, bgcolor: 'warning.main', borderRadius: 1, opacity: 0.9 }}>
+            <CalendarToday sx={{ fontSize: { xs: 16, md: 20 }, color: 'warning.contrastText' }} />
+            <Typography variant="body2" sx={{ fontSize: { xs: '0.7rem', md: '0.875rem' }, color: 'warning.contrastText' }}>
+              Room expires: {format(parseISO(room.expiresAt), 'MMM d, yyyy')} ({Math.max(0, Math.ceil((new Date(room.expiresAt) - new Date()) / (1000 * 60 * 60 * 24)))} days left)
+            </Typography>
+          </Box>
+        )}
+
+        <Box sx={{ display: 'flex', gap: { xs: 1, md: 2 }, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.7rem', md: '0.875rem' } }}>
               Join Code:
             </Typography>
             <Chip 
@@ -919,13 +942,14 @@ const RoomDetailPage = () => {
               size="small"
               onClick={handleCopyJoinCode}
               onDelete={handleCopyJoinCode}
-              deleteIcon={<ContentCopy />}
+              deleteIcon={<ContentCopy sx={{ fontSize: { xs: 14, md: 18 } }} />}
+              sx={{ height: { xs: 22, md: 28 }, fontSize: { xs: '0.7rem', md: '0.875rem' } }}
             />
           </Box>
           {myMember && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <EmojiEvents color="warning" />
-              <Typography variant="body2">
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <EmojiEvents color="warning" sx={{ fontSize: { xs: 18, md: 24 } }} />
+              <Typography variant="body2" sx={{ fontSize: { xs: '0.75rem', md: '0.875rem' } }}>
                 Your Points: <strong>{myMember.points}</strong>
               </Typography>
             </Box>
@@ -935,29 +959,41 @@ const RoomDetailPage = () => {
 
       {/* Alerts */}
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+        <Alert severity="error" sx={{ mb: { xs: 2, md: 3 }, fontSize: { xs: '0.75rem', md: '0.875rem' } }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
       {success && (
-        <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>
+        <Alert severity="success" sx={{ mb: { xs: 2, md: 3 }, fontSize: { xs: '0.75rem', md: '0.875rem' } }} onClose={() => setSuccess(null)}>
           {success}
         </Alert>
       )}
 
-      <Grid container spacing={3}>
+      <Grid container spacing={{ xs: 2, md: 3 }}>
         {/* Main Content */}
         <Grid item xs={12} md={8}>
-          <Paper sx={{ mb: 3 }}>
-            <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)}>
-              <Tab icon={<Assignment />} label="Tasks" iconPosition="start" />
-              <Tab icon={<EmojiEvents />} label="Leaderboard" iconPosition="start" />
+          <Paper sx={{ mb: { xs: 2, md: 3 } }}>
+            <Tabs 
+              value={tabValue} 
+              onChange={(e, newValue) => setTabValue(newValue)}
+              variant="scrollable"
+              scrollButtons="auto"
+              allowScrollButtonsMobile
+              sx={{
+                '& .MuiTab-root': {
+                  minHeight: { xs: 48, md: 64 },
+                  fontSize: { xs: '0.7rem', md: '0.875rem' },
+                  px: { xs: 1, md: 2 },
+                },
+              }}
+            >
+              <Tab icon={<Assignment sx={{ fontSize: { xs: 18, md: 24 } }} />} label="Tasks" iconPosition="start" />
+              <Tab icon={<EmojiEvents sx={{ fontSize: { xs: 18, md: 24 } }} />} label="Leaderboard" iconPosition="start" />
               <Tab
-                icon={<Chat />}
+                icon={<Chat sx={{ fontSize: { xs: 18, md: 24 } }} />}
                 label="Chat"
                 iconPosition="start"
                 onClick={(e) => {
-                  // If already on Chat tab, clicking the tab header opens full chat
                   if (tabValue === 2) {
                     e.stopPropagation();
                     setChatDrawerOpen(true);
@@ -973,19 +1009,20 @@ const RoomDetailPage = () => {
 
           {/* Tasks Tab */}
           {tabValue === 0 && (
-            <Paper sx={{ p: 3 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                <Typography variant="h6" fontWeight="bold">
+            <Paper sx={{ p: { xs: 2, md: 3 } }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: { xs: 2, md: 3 } }}>
+                <Typography variant="h6" fontWeight="bold" sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
                   Daily Tasks
                 </Typography>
                 {isOwner && (
                   <Button 
                     variant="outlined" 
                     size="small" 
-                    startIcon={<Edit />}
+                    startIcon={<Edit sx={{ fontSize: { xs: 14, md: 18 } }} />}
                     onClick={() => setTaskTypeOpen(true)}
+                    sx={{ fontSize: { xs: '0.7rem', md: '0.875rem' } }}
                   >
-                    Manage Tasks
+                    Manage
                   </Button>
                 )}
               </Box>
@@ -1130,8 +1167,8 @@ const RoomDetailPage = () => {
 
           {/* Leaderboard Tab */}
           {tabValue === 1 && (
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" fontWeight="bold" gutterBottom>
+            <Paper sx={{ p: { xs: 2, md: 3 } }}>
+              <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
                 Leaderboard
               </Typography>
               <List>
@@ -1176,8 +1213,8 @@ const RoomDetailPage = () => {
 
           {/* Chat Tab */}
           {tabValue === 2 && (
-            <Paper sx={{ p: 3, height: 500, display: 'flex', flexDirection: 'column' }}>
-              <Typography variant="h6" fontWeight="bold" gutterBottom>
+            <Paper sx={{ p: { xs: 2, md: 3 }, height: { xs: 400, md: 500 }, display: 'flex', flexDirection: 'column' }}>
+              <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
                 Room Chat
               </Typography>
               <Box 
@@ -1435,6 +1472,13 @@ const RoomDetailPage = () => {
                 const memberId = member.userId._id || member.userId;
                 const isRoomOwner = room.owner._id === memberId || room.owner === memberId;
                 const isCurrentUser = user?.id === memberId;
+                
+                // Debug avatar
+                if (!member.userId.avatar) {
+                  console.log('⚠️ No avatar for:', member.userId.username);
+                } else {
+                  console.log('✅ Avatar found for:', member.userId.username, member.userId.avatar);
+                }
                 
                 return (
                   <ListItem 
@@ -1872,7 +1916,7 @@ const RoomDetailPage = () => {
         currentUser={user}
         roomName={room?.name || 'Room Chat'}
       />
-    </Container>
+    </Box>
   );
 };
 

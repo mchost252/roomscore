@@ -570,16 +570,21 @@ const AppLayout = ({ children }) => {
         {/* Mobile Header */}
         <Box
           sx={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
             display: { xs: 'flex', md: 'none' },
             alignItems: 'center',
             justifyContent: 'space-between',
             px: 2,
             py: 1.5,
             bgcolor: isDark 
-              ? 'rgba(15, 23, 42, 0.8)' 
-              : 'rgba(255, 255, 255, 0.8)',
+              ? 'rgba(15, 23, 42, 0.95)' 
+              : 'rgba(255, 255, 255, 0.95)',
             backdropFilter: 'blur(10px)',
             borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+            zIndex: (theme) => theme.zIndex.appBar,
           }}
         >
           {/* Left side - Menu + Logo */}
@@ -633,6 +638,8 @@ const AppLayout = ({ children }) => {
             flex: 1,
             overflow: 'auto',
             p: { xs: 2, md: 3 },
+            pt: { xs: '64px', md: 3 }, // Fixed header height
+            pb: { xs: '72px', md: 3 }, // Bottom nav height
           }}
         >
           {children}

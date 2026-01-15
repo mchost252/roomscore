@@ -84,11 +84,12 @@ const Navbar = () => {
       <>
         {/* Mobile Top App Bar - matches theme */}
         <AppBar 
-          position="sticky" 
+          position="fixed"
           elevation={1}
           sx={{ 
             bgcolor: 'background.paper',
-            color: 'text.primary'
+            color: 'text.primary',
+            zIndex: (theme) => theme.zIndex.drawer + 1
           }}
         >
           <Toolbar sx={{ minHeight: 56 }}>
@@ -185,7 +186,7 @@ const Navbar = () => {
             bottom: 0,
             left: 0,
             right: 0,
-            zIndex: 1000,
+            zIndex: (theme) => theme.zIndex.drawer + 1,
           }}
           elevation={3}
         >

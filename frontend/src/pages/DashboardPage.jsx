@@ -26,6 +26,7 @@ import {
   Add,
   Star,
   Whatshot,
+  AccessTime,
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
@@ -99,6 +100,98 @@ const StatCard = ({ icon: Icon, label, value, color, subtext }) => {
   );
 };
 
+// Constellation Progress Ring Component
+const ConstellationProgressRing = ({ progress, size = 60 }) => {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+  const strokeWidth = 4;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const offset = circumference - (progress / 100) * circumference;
+  
+  // Generate constellation dots based on progress
+  const dotCount = 8;
+  const dots = [];
+  for (let i = 0; i < dotCount; i++) {
+    const angle = (i / dotCount) * 2 * Math.PI - Math.PI / 2;
+    const x = size / 2 + (radius - 2) * Math.cos(angle);
+    const y = size / 2 + (radius - 2) * Math.sin(angle);
+    const isActive = (i / dotCount) * 100 <= progress;
+    dots.push({ x, y, isActive });
+  }
+
+  return (
+    <Box sx={{ position: 'relative', width: size, height: size }}>
+      <svg width={size} height={size}>
+        {/* Background circle */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}
+          strokeWidth={strokeWidth}
+        />
+        {/* Progress arc with gradient */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="url(#progressGradient)"
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          style={{ transition: 'stroke-dashoffset 0.5s ease' }}
+        />
+        {/* Gradient definition */}
+        <defs>
+          <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#60A5FA" />
+            <stop offset="100%" stopColor="#F59E0B" />
+          </linearGradient>
+        </defs>
+        {/* Constellation dots */}
+        {dots.map((dot, i) => (
+          <circle
+            key={i}
+            cx={dot.x}
+            cy={dot.y}
+            r={dot.isActive ? 3 : 2}
+            fill={dot.isActive ? (i % 2 === 0 ? '#60A5FA' : '#F59E0B') : (isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)')}
+            style={{ transition: 'all 0.3s ease' }}
+          />
+        ))}
+      </svg>
+      {/* Center percentage */}
+      <Box
+        sx={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          textAlign: 'center',
+        }}
+      >
+        <Typography 
+          variant="caption" 
+          fontWeight={700} 
+          sx={{ 
+            fontSize: size > 50 ? '0.75rem' : '0.6rem',
+            background: 'linear-gradient(135deg, #60A5FA 0%, #F59E0B 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+          }}
+        >
+          {Math.round(progress)}%
+        </Typography>
+      </Box>
+    </Box>
+  );
+};
+
 // Room Card Component
 const RoomCard = ({ room, user, onClick }) => {
   const theme = useTheme();
@@ -108,7 +201,17 @@ const RoomCard = ({ room, user, onClick }) => {
   const myMember = room.members?.find(m => 
     m.userId._id === user?.id || m.userId === user?.id
   );
-  const activeTasks = room.tasks?.filter(t => t.isActive)?.length || 0;
+  const activeTasks = room.tasks?.filter(t => t.isActive) || [];
+  // Backend adds isCompleted flag to tasks based on user's completions today
+  const completedTasks = activeTasks.filter(t => t.isCompleted);
+  const taskProgress = activeTasks.length > 0 
+    ? (completedTasks.length / activeTasks.length) * 100 
+    : 0;
+  
+  // Calculate days until expiry
+  const daysLeft = room.expiresAt 
+    ? Math.max(0, Math.ceil((new Date(room.expiresAt) - new Date()) / (1000 * 60 * 60 * 24)))
+    : null;
 
   return (
     <Card
@@ -129,10 +232,10 @@ const RoomCard = ({ room, user, onClick }) => {
         },
       }}
     >
-      <CardContent sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <CardContent sx={{ p: { xs: 2, md: 3 }, height: '100%', display: 'flex', flexDirection: 'column' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-          <Box sx={{ flex: 1 }}>
-            <Typography variant="h6" fontWeight={700} noWrap>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="h6" fontWeight={700} noWrap sx={{ fontSize: { xs: '0.95rem', md: '1.25rem' } }}>
               {room.name}
             </Typography>
             {room.description && (
@@ -146,48 +249,55 @@ const RoomCard = ({ room, user, onClick }) => {
                   display: '-webkit-box',
                   WebkitLineClamp: 2,
                   WebkitBoxOrient: 'vertical',
+                  fontSize: { xs: '0.7rem', md: '0.875rem' },
                 }}
               >
                 {room.description}
               </Typography>
             )}
           </Box>
-          <ArrowForward 
-            className="arrow-icon"
-            sx={{ 
-              ml: 1,
-              color: 'text.secondary',
-              opacity: 0.5,
-              transition: 'all 0.3s ease',
-            }} 
-          />
+          {/* Progress Ring */}
+          <Box sx={{ ml: 1, flexShrink: 0 }}>
+            <ConstellationProgressRing progress={taskProgress} size={50} />
+          </Box>
         </Box>
 
         <Box sx={{ flex: 1 }} />
 
-        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
+        <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 1.5 }}>
           {isOwner && (
             <Chip 
               label="Owner" 
               size="small" 
               color="secondary"
-              sx={{ fontWeight: 600, fontSize: '0.7rem' }}
+              sx={{ fontWeight: 600, fontSize: '0.65rem', height: 22 }}
             />
           )}
           <Chip 
-            icon={<Groups sx={{ fontSize: 14 }} />}
+            icon={<Groups sx={{ fontSize: 12 }} />}
             label={memberCount}
             size="small"
             variant="outlined"
-            sx={{ fontSize: '0.7rem' }}
+            sx={{ fontSize: '0.65rem', height: 22 }}
           />
-          {activeTasks > 0 && (
+          {activeTasks.length > 0 && (
             <Chip 
-              icon={<CheckCircle sx={{ fontSize: 14 }} />}
-              label={`${activeTasks} tasks`}
+              icon={<CheckCircle sx={{ fontSize: 12 }} />}
+              label={`${completedTasks.length}/${activeTasks.length}`}
               size="small"
               variant="outlined"
-              sx={{ fontSize: '0.7rem' }}
+              color={taskProgress === 100 ? 'success' : 'default'}
+              sx={{ fontSize: '0.65rem', height: 22 }}
+            />
+          )}
+          {daysLeft !== null && (
+            <Chip 
+              icon={<AccessTime sx={{ fontSize: 12 }} />}
+              label={`${daysLeft}d`}
+              size="small"
+              variant="outlined"
+              color={daysLeft <= 7 ? 'warning' : 'default'}
+              sx={{ fontSize: '0.65rem', height: 22 }}
             />
           )}
         </Box>
@@ -198,21 +308,21 @@ const RoomCard = ({ room, user, onClick }) => {
               display: 'flex', 
               alignItems: 'center', 
               gap: 1,
-              p: 1.5,
+              p: { xs: 1, md: 1.5 },
               borderRadius: 2,
               bgcolor: isDark ? 'rgba(245, 158, 11, 0.1)' : 'rgba(217, 119, 6, 0.08)',
             }}
           >
-            <EmojiEvents sx={{ color: '#F59E0B', fontSize: 20 }} />
-            <Typography variant="body2" fontWeight={600}>
-              {myMember.points} points
+            <EmojiEvents sx={{ color: '#F59E0B', fontSize: { xs: 16, md: 20 } }} />
+            <Typography variant="body2" fontWeight={600} sx={{ fontSize: { xs: '0.7rem', md: '0.875rem' } }}>
+              {myMember.points} pts
             </Typography>
             {myMember.streak > 0 && (
               <>
-                <Box sx={{ width: 1, height: 16, bgcolor: 'divider' }} />
-                <Whatshot sx={{ color: '#EF4444', fontSize: 18 }} />
-                <Typography variant="body2" fontWeight={600}>
-                  {myMember.streak} day streak
+                <Box sx={{ width: 1, height: 14, bgcolor: 'divider' }} />
+                <Whatshot sx={{ color: '#EF4444', fontSize: { xs: 14, md: 18 } }} />
+                <Typography variant="body2" fontWeight={600} sx={{ fontSize: { xs: '0.7rem', md: '0.875rem' } }}>
+                  {myMember.streak}d
                 </Typography>
               </>
             )}

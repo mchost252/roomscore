@@ -306,8 +306,6 @@ const ProfilePage = () => {
       width: '100%', 
       maxWidth: '100%', 
       overflowX: 'hidden',
-      px: { xs: 1.5, sm: 2, md: 3 },
-      py: { xs: 2, md: 4 },
       boxSizing: 'border-box',
     }}>
       {/* Header */}
@@ -332,9 +330,9 @@ const ProfilePage = () => {
         </Alert>
       )}
 
-      <Grid container spacing={{ xs: 2, md: 3 }}>
+      <Grid container spacing={{ xs: 0, md: 3 }} sx={{ width: '100%', maxWidth: '100%', margin: 0, minHeight: 0 }}>
         {/* Left Sidebar - Profile Info */}
-        <Grid item xs={12} md={4}>
+        <Grid item xs={12} md={4} sx={{ maxWidth: '100%' }}>
           <Paper sx={{ p: { xs: 2, md: 3 }, textAlign: 'center', mb: { xs: 2, md: 3 } }}>
             <Avatar
               src={user?.avatar || undefined}
@@ -438,7 +436,7 @@ const ProfilePage = () => {
         </Grid>
 
         {/* Right Content Area */}
-        <Grid item xs={12} md={8}>
+        <Grid item xs={12} md={8} sx={{ maxWidth: '100%' }}>
           <Paper sx={{ mb: { xs: 2, md: 3 } }}>
             <Tabs 
               value={tabValue} 
@@ -477,10 +475,10 @@ const ProfilePage = () => {
 
           {/* Overview Tab */}
           {tabValue === 0 && (
-            <Box>
-              <Grid container spacing={{ xs: 1.5, md: 3 }}>
+            <Box sx={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
+              <Grid container spacing={{ xs: 0.5, md: 3 }} sx={{ width: '100%', maxWidth: '100%', margin: 0 }}>
                 {/* Stat Cards */}
-                <Grid item xs={6} sm={6}>
+                <Grid item xs={6} sm={6} sx={{ maxWidth: '100%' }}>
                   <Card>
                     <CardContent sx={{ p: { xs: 1.5, md: 2 }, '&:last-child': { pb: { xs: 1.5, md: 2 } } }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -500,7 +498,7 @@ const ProfilePage = () => {
                   </Card>
                 </Grid>
 
-                <Grid item xs={6} sm={6}>
+                <Grid item xs={6} sm={6} sx={{ maxWidth: '100%' }}>
                   <Card>
                     <CardContent sx={{ p: { xs: 1.5, md: 2 }, '&:last-child': { pb: { xs: 1.5, md: 2 } } }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -523,7 +521,7 @@ const ProfilePage = () => {
                   </Card>
                 </Grid>
 
-                <Grid item xs={6} sm={6}>
+                <Grid item xs={6} sm={6} sx={{ maxWidth: '100%' }}>
                   <Card>
                     <CardContent sx={{ p: { xs: 1.5, md: 2 }, '&:last-child': { pb: { xs: 1.5, md: 2 } } }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -546,7 +544,7 @@ const ProfilePage = () => {
                   </Card>
                 </Grid>
 
-                <Grid item xs={6} sm={6}>
+                <Grid item xs={6} sm={6} sx={{ maxWidth: '100%' }}>
                   <Card>
                     <CardContent sx={{ p: { xs: 1.5, md: 2 }, '&:last-child': { pb: { xs: 1.5, md: 2 } } }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -691,7 +689,7 @@ const ProfilePage = () => {
                   </Typography>
                 </Box>
               ) : (
-                <List>
+                <List dense sx={{ '& .MuiListItem-root': { px: { xs: 1, md: 2 } } }}>
                   {notifications.map((notification, index) => (
                     <ListItem
                       key={notification._id}
@@ -701,73 +699,79 @@ const ProfilePage = () => {
                         borderRadius: 1,
                         mb: 1,
                         cursor: notification.relatedRoom ? 'pointer' : 'default',
+                        flexDirection: 'column',
+                        alignItems: 'flex-start',
                         '&:hover': notification.relatedRoom ? {
                           bgcolor: 'action.selected'
                         } : {}
                       }}
                       onClick={() => notification.relatedRoom && handleNotificationClick(notification)}
-                      secondaryAction={
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                          {!notification.isRead && (
-                            <Button 
-                              size="small" 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleMarkNotificationRead(notification._id);
-                              }}
-                            >
-                              Mark Read
-                            </Button>
-                          )}
-                          <IconButton
-                            size="small"
-                            color="error"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteNotification(notification._id);
-                            }}
-                          >
-                            <Delete fontSize="small" />
-                          </IconButton>
-                        </Box>
-                      }
                     >
                       <ListItemText
+                        sx={{ width: '100%', m: 0 }}
                         primary={
                           <Box>
                             <Typography 
                               variant="body2" 
                               color="primary"
                               fontWeight="bold"
-                              gutterBottom
+                              sx={{ fontSize: { xs: '0.75rem', md: '0.875rem' } }}
                             >
                               {notification.title}
                             </Typography>
                             <Typography 
                               variant="body1" 
                               fontWeight={notification.isRead ? 'normal' : 'bold'}
+                              sx={{ fontSize: { xs: '0.8rem', md: '1rem' }, wordBreak: 'break-word' }}
                             >
                               {notification.message}
                             </Typography>
                           </Box>
                         }
                         secondary={
-                          <Box sx={{ mt: 0.5 }}>
+                          <Box sx={{ mt: 0.5, display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'center' }}>
                             {notification.createdAt && (
-                              <Typography variant="caption" color="text.secondary">
-                                {format(parseISO(notification.createdAt), 'MMM d, yyyy h:mm a')}
+                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: { xs: '0.6rem', md: '0.75rem' } }}>
+                                {format(parseISO(notification.createdAt), 'MMM d, yyyy')}
                               </Typography>
                             )}
                             {notification.relatedRoom && (
                               <Chip 
-                                label="Click to view room" 
+                                label="View room" 
                                 size="small" 
-                                sx={{ ml: 1, height: 20, fontSize: '0.7rem' }}
+                                sx={{ height: 18, fontSize: { xs: '0.55rem', md: '0.65rem' } }}
                               />
                             )}
                           </Box>
                         }
                       />
+                      {/* Action buttons below content on mobile */}
+                      <Box sx={{ display: 'flex', gap: 0.5, mt: 1, width: '100%', justifyContent: 'flex-end' }}>
+                        {!notification.isRead && (
+                          <Button 
+                            size="small"
+                            variant="text"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleMarkNotificationRead(notification._id);
+                            }}
+                            sx={{ fontSize: { xs: '0.6rem', md: '0.75rem' }, minWidth: 'auto', px: 1 }}
+                          >
+                            Mark Read
+                          </Button>
+                        )}
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteNotification(notification._id);
+                          }}
+                          sx={{ p: 0.5 }}
+                        >
+                          <Delete sx={{ fontSize: { xs: 16, md: 20 } }} />
+                        </IconButton>
+                      </Box>
                     </ListItem>
                   ))}
                 </List>
