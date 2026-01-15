@@ -51,7 +51,9 @@ const ChatDrawer = ({
   onSendAppreciation,
   appreciationRemaining = 3,
   onSendNudge,
-  canNudge = false
+  canNudge = false,
+  nudgeStatus = null, // { hasCompletedTask: bool, alreadySentToday: bool }
+  nudging = false
 }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -403,14 +405,41 @@ const ChatDrawer = ({
                         </IconButton>
                       </Tooltip>
                     )}
-                    {canNudge && (
-                      <Tooltip title="Nudge room - remind everyone to complete tasks">
+                    {/* Nudge Button - Show different states */}
+                    {nudgeStatus?.alreadySentToday ? (
+                      <Tooltip title="✓ You've already sent your daily nudge">
+                        <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center' }}>
+                          <IconButton 
+                            size="small" 
+                            disabled
+                            sx={{ color: 'success.main', opacity: 0.6 }}
+                          >
+                            <NotificationsActive fontSize="small" />
+                          </IconButton>
+                        </Box>
+                      </Tooltip>
+                    ) : !nudgeStatus?.hasCompletedTask ? (
+                      <Tooltip title="Complete a task first to unlock nudge">
+                        <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center' }}>
+                          <IconButton 
+                            size="small" 
+                            disabled
+                            sx={{ color: 'text.disabled' }}
+                          >
+                            <NotificationsActive fontSize="small" />
+                          </IconButton>
+                        </Box>
+                      </Tooltip>
+                    ) : canNudge && (
+                      <Tooltip title="🔔 Nudge room - remind everyone to complete tasks">
                         <IconButton 
                           size="small" 
                           onClick={onSendNudge}
+                          disabled={nudging}
                           sx={{ 
                             color: 'info.main',
-                            '&:hover': { bgcolor: 'info.50' }
+                            '&:hover': { bgcolor: 'info.50' },
+                            animation: nudging ? 'pulse 1s infinite' : 'none'
                           }}
                         >
                           <NotificationsActive fontSize="small" />

@@ -85,6 +85,7 @@ const RoomDetailPage = () => {
   const [showRoomIntro, setShowRoomIntro] = useState(false);
   const [canNudge, setCanNudge] = useState(false);
   const [nudging, setNudging] = useState(false);
+  const [nudgeStatus, setNudgeStatus] = useState({ hasCompletedTask: false, alreadySentToday: false });
   const [appreciationRemaining, setAppreciationRemaining] = useState(3);
   const [appreciating, setAppreciating] = useState(false);
   const [newTask, setNewTask] = useState({
@@ -121,6 +122,10 @@ const RoomDetailPage = () => {
     try {
       const response = await api.get(`/nudges/${roomId}/can-send`);
       setCanNudge(response.data.canSend);
+      setNudgeStatus({
+        hasCompletedTask: response.data.hasCompletedTask,
+        alreadySentToday: response.data.alreadySentToday
+      });
     } catch (err) {
       console.error('Error checking nudge status:', err);
     }
@@ -136,8 +141,9 @@ const RoomDetailPage = () => {
     try {
       setNudging(true);
       await api.post(`/nudges/${roomId}`);
-      setSuccess('✨ Nudge sent to the room!');
+      setSuccess('✨ Nudge sent! Your orbit has been reminded.');
       setCanNudge(false);
+      setNudgeStatus(prev => ({ ...prev, alreadySentToday: true }));
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
       const { icon, message } = getErrorMessage(err, 'nudge');
@@ -2039,6 +2045,8 @@ const RoomDetailPage = () => {
         appreciationRemaining={appreciationRemaining}
         onSendNudge={handleNudge}
         canNudge={canNudge}
+        nudgeStatus={nudgeStatus}
+        nudging={nudging}
       />
     </Box>
   );

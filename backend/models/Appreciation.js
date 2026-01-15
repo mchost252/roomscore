@@ -67,8 +67,8 @@ appreciationSchema.statics.getUserStats = async function(roomId, userId) {
   const stats = await this.aggregate([
     {
       $match: {
-        roomId: mongoose.Types.ObjectId(roomId),
-        toUserId: mongoose.Types.ObjectId(userId)
+        roomId: new mongoose.Types.ObjectId(roomId),
+        toUserId: new mongoose.Types.ObjectId(userId)
       }
     },
     {

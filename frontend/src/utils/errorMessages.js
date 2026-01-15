@@ -127,6 +127,11 @@ const ERROR_MESSAGES = {
     message: 'You\'ve sent your daily nudge for this orbit. Try again tomorrow!',
     icon: '🔔'
   },
+  NUDGE_NEED_TASK: {
+    title: 'Complete a Task First',
+    message: 'You need to complete at least one task today before you can nudge others. Lead by example! ⭐',
+    icon: '📋'
+  },
   CANNOT_NUDGE_SELF: {
     title: 'Self-Nudge Detected',
     message: 'You can\'t nudge yourself! Complete your tasks to inspire others.',
@@ -197,6 +202,12 @@ export const getErrorMessage = (error, context = '') => {
         }
         if (serverMessage.includes('limit') && serverMessage.includes('nudge')) {
           return ERROR_MESSAGES.NUDGE_LIMIT_REACHED;
+        }
+        if (serverMessage.includes('complete') && serverMessage.includes('task') && serverMessage.includes('nudge')) {
+          return ERROR_MESSAGES.NUDGE_NEED_TASK;
+        }
+        if (serverMessage.includes('must complete') && serverMessage.includes('task')) {
+          return ERROR_MESSAGES.NUDGE_NEED_TASK;
         }
         if (serverMessage.includes('limit') && serverMessage.includes('appreciation')) {
           return ERROR_MESSAGES.APPRECIATION_LIMIT;
