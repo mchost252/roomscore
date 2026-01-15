@@ -90,7 +90,6 @@ router.post('/:roomId', protect, isRoomMember, async (req, res) => {
     
     // Get updated stats for the recipient
     // Stats are only for the last 24h (rolling)
-    const windowStart = getWindowStart();
     const stats = await prisma.appreciation.groupBy({
       by: ['type'],
       where: {
