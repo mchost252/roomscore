@@ -27,15 +27,29 @@ exports.verifyRefreshToken = (token) => {
   }
 };
 
+// Helper to convert user to public profile (for Prisma)
+const toPublicProfile = (user) => ({
+  id: user.id,
+  email: user.email,
+  username: user.username,
+  avatar: user.avatar,
+  timezone: user.timezone,
+  onboardingCompleted: user.onboardingCompleted,
+  streak: user.streak,
+  longestStreak: user.longestStreak,
+  totalTasksCompleted: user.totalTasksCompleted,
+  createdAt: user.createdAt
+});
+
 // Send token response
 exports.sendTokenResponse = (user, statusCode, res) => {
-  const token = exports.generateToken(user._id);
-  const refreshToken = exports.generateRefreshToken(user._id);
+  const token = exports.generateToken(user.id);
+  const refreshToken = exports.generateRefreshToken(user.id);
 
   res.status(statusCode).json({
     success: true,
     token,
     refreshToken,
-    user: user.toPublicProfile()
+    user: toPublicProfile(user)
   });
 };
