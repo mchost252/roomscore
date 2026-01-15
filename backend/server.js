@@ -8,7 +8,7 @@ const { Server } = require('socket.io');
 const logger = require('./utils/logger');
 const passport = require('passport');
 const session = require('express-session');
-const { prisma, connectDatabase } = require('./config/database');
+const { prisma, connectDatabase, startKeepAlive } = require('./config/database');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -104,6 +104,8 @@ console.log('📋 DATABASE_URL:', process.env.DATABASE_URL ? 'Set (hidden for se
 connectDatabase()
   .then(() => {
     logger.info('PostgreSQL connected successfully');
+    // Start keep-alive pings to prevent Neon database from sleeping
+    startKeepAlive();
   })
   .catch((err) => {
     console.error('❌ PostgreSQL connection error:', err.message);
