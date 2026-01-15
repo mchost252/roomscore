@@ -68,7 +68,9 @@ module.exports = (io) => {
         return next(new Error('User not found or inactive'));
       }
       
-      if (!user.isActive) {
+      // NOTE: Prisma User model does not include `isActive`.
+      // Treat users as active unless an explicit `isActive === false` field exists.
+      if (user.isActive === false) {
         logger.warn(`Socket auth failed: User ${decoded.id} is inactive`);
         return next(new Error('User not found or inactive'));
       }

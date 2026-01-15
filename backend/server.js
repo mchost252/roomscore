@@ -21,10 +21,15 @@ const directMessageRoutes = require('./routes/directMessages');
 const nudgeRoutes = require('./routes/nudges');
 const appreciationRoutes = require('./routes/appreciations');
 
-// Import socket handler and cron jobs
+// Import socket handler
 const socketHandler = require('./socket/socketHandler');
 const { setIO } = require('./socket/io');
-require('./services/cronJobs');
+
+// Cron jobs (legacy Mongo implementation) are disabled by default.
+// Enable only if you have migrated cron jobs to Prisma.
+if (process.env.ENABLE_CRON_JOBS === 'true') {
+  require('./services/cronJobs');
+}
 
 const app = express();
 const server = http.createServer(app);
