@@ -27,31 +27,35 @@ module.exports = (io) => {
         return next(new Error('Authentication error'));
       }
 
-      // Retry user lookup with exponential backoff for database timing issues
+      // Retry user lookup with exponential backoff for database timing issues (Neon cold start)
       let user = null;
-      let retries = 3;
-      let delay = 100;
+      let retries = 5;
+      let delay = 500; // Start with 500ms for Neon
       
-      while (retries > 0 && !user) {
+      while (retries > 0) {
         try {
           user = await prisma.user.findUnique({
             where: { id: decoded.id }
           });
           
-          if (!user && retries > 1) {
+          if (user) {
+            break; // Found user, exit loop
+          }
+          
+          if (retries > 1) {
             // User not found yet - might be database sync delay
             logger.info(`User ${decoded.id} not found, retrying... (${retries - 1} attempts left)`);
             await new Promise(resolve => setTimeout(resolve, delay));
-            delay *= 2;
+            delay = Math.min(delay * 1.5, 2000); // Cap at 2 seconds
             retries--;
-            continue;
+          } else {
+            break; // Last retry, exit loop
           }
-          break;
         } catch (dbError) {
-          logger.error('Database error during socket auth:', dbError);
+          logger.error('Database error during socket auth:', dbError.message);
           if (retries > 1) {
             await new Promise(resolve => setTimeout(resolve, delay));
-            delay *= 2;
+            delay = Math.min(delay * 1.5, 2000);
             retries--;
           } else {
             return next(new Error('Authentication error'));

@@ -74,16 +74,20 @@ export const SocketProvider = ({ children }) => {
       });
 
       newSocket.on('connect_error', (error) => {
-        console.error('Socket connection error:', error);
         setConnected(false);
         
-        // Handle specific error cases
+        // Handle specific error cases - only log once, not every retry
         if (error.message === 'User not found or inactive') {
-          console.warn('⚠️ Socket auth failed - user may not be synced yet. Will retry automatically.');
+          // This is expected during initial connection while DB warms up
+          if (reconnectAttempts.current === 0) {
+            console.log('🔄 Socket connecting... (waiting for database)');
+          }
           // Don't disconnect permanently - let the reconnection logic handle it
-          // The user might just need time for the database to sync
         } else if (error.message === 'Authentication error') {
-          console.warn('⚠️ Socket auth token may be invalid. Will retry with fresh token on reconnect.');
+          console.warn('⚠️ Socket auth token may be invalid.');
+        } else {
+          // Only log unexpected errors
+          console.error('Socket connection error:', error.message);
         }
       });
 
