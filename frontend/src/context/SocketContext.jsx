@@ -29,10 +29,10 @@ export const SocketProvider = ({ children }) => {
         auth: { token },
         transports: ['websocket', 'polling'],
         reconnection: true,
-        reconnectionAttempts: 10,
+        reconnectionAttempts: 15,
         reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000,
-        timeout: 20000
+        reconnectionDelayMax: 10000,
+        timeout: 30000
       });
 
       newSocket.on('connect', () => {
@@ -64,11 +64,27 @@ export const SocketProvider = ({ children }) => {
       newSocket.on('reconnect_attempt', (attemptNumber) => {
         console.log('Socket reconnection attempt:', attemptNumber);
         reconnectAttempts.current = attemptNumber;
+        
+        // Refresh auth token on reconnection attempts to ensure we have the latest
+        const freshToken = localStorage.getItem('token');
+        if (freshToken && freshToken !== newSocket.auth.token) {
+          console.log('🔄 Updating socket auth token for reconnection');
+          newSocket.auth.token = freshToken;
+        }
       });
 
       newSocket.on('connect_error', (error) => {
         console.error('Socket connection error:', error);
         setConnected(false);
+        
+        // Handle specific error cases
+        if (error.message === 'User not found or inactive') {
+          console.warn('⚠️ Socket auth failed - user may not be synced yet. Will retry automatically.');
+          // Don't disconnect permanently - let the reconnection logic handle it
+          // The user might just need time for the database to sync
+        } else if (error.message === 'Authentication error') {
+          console.warn('⚠️ Socket auth token may be invalid. Will retry with fresh token on reconnect.');
+        }
       });
 
       // Handle online users list

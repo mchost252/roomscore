@@ -27,7 +27,7 @@ export const AuthProvider = ({ children }) => {
   }, [token]);
 
   // Load user profile
-  const loadUser = async () => {
+  const loadUser = async (retryCount = 0) => {
     try {
       console.log('🔄 Loading user profile...');
       const response = await api.get('/auth/profile');
@@ -36,8 +36,23 @@ export const AuthProvider = ({ children }) => {
       setLoading(false); // Set loading false immediately after user is set
     } catch (error) {
       console.error('❌ Failed to load user:', error.response?.data || error.message);
-      setLoading(false);
-      logout();
+      
+      // Only logout on explicit auth errors (401), not on network/timeout errors
+      if (error.response?.status === 401) {
+        console.log('🔒 Authentication failed - logging out');
+        setLoading(false);
+        logout();
+      } else if (retryCount < 2) {
+        // Retry on network errors or timeouts (up to 2 retries)
+        console.log(`🔄 Retrying user profile load (attempt ${retryCount + 2}/3)...`);
+        setTimeout(() => loadUser(retryCount + 1), 1000 * (retryCount + 1));
+      } else {
+        // After retries exhausted, just set loading false but keep user logged in
+        // They can manually refresh or the app will retry later
+        console.warn('⚠️ Could not load user profile after retries, keeping session');
+        setLoading(false);
+        // Don't logout - let the user stay logged in with stale data
+      }
     }
   };
 

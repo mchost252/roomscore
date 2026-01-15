@@ -140,14 +140,30 @@ const RoomListPage = () => {
         setError(null);
       }
       
-      // Fetch both in parallel for speed
-      const [myRoomsResponse, publicRoomsResponse] = await Promise.all([
+      // Fetch both in parallel for speed, with individual error handling
+      const results = await Promise.allSettled([
         api.get('/rooms'),
         api.get('/rooms?type=public')
       ]);
       
-      setMyRooms(myRoomsResponse.data.rooms || []);
-      setPublicRooms(publicRoomsResponse.data.rooms || []);
+      // Handle my rooms result
+      if (results[0].status === 'fulfilled') {
+        setMyRooms(results[0].value.data.rooms || []);
+      } else {
+        console.error('Error loading my rooms:', results[0].reason);
+        // Keep existing rooms on error during silent refresh
+        if (!silentRefresh && myRooms.length === 0) {
+          const { icon, message } = getErrorMessage(results[0].reason, 'room');
+          setError(`${icon} ${message}`);
+        }
+      }
+      
+      // Handle public rooms result
+      if (results[1].status === 'fulfilled') {
+        setPublicRooms(results[1].value.data.rooms || []);
+      } else {
+        console.error('Error loading public rooms:', results[1].reason);
+      }
     } catch (err) {
       console.error('Error loading rooms:', err);
       if (!silentRefresh && myRooms.length === 0) {

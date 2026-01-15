@@ -15,15 +15,57 @@ module.exports = (io) => {
       const token = socket.handshake.auth.token;
       
       if (!token) {
+        logger.warn('Socket connection attempted without token');
         return next(new Error('Authentication error'));
       }
 
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await prisma.user.findUnique({
-        where: { id: decoded.id }
-      });
+      let decoded;
+      try {
+        decoded = jwt.verify(token, process.env.JWT_SECRET);
+      } catch (jwtError) {
+        logger.warn('Socket JWT verification failed:', jwtError.message);
+        return next(new Error('Authentication error'));
+      }
 
-      if (!user || !user.isActive) {
+      // Retry user lookup with exponential backoff for database timing issues
+      let user = null;
+      let retries = 3;
+      let delay = 100;
+      
+      while (retries > 0 && !user) {
+        try {
+          user = await prisma.user.findUnique({
+            where: { id: decoded.id }
+          });
+          
+          if (!user && retries > 1) {
+            // User not found yet - might be database sync delay
+            logger.info(`User ${decoded.id} not found, retrying... (${retries - 1} attempts left)`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            delay *= 2;
+            retries--;
+            continue;
+          }
+          break;
+        } catch (dbError) {
+          logger.error('Database error during socket auth:', dbError);
+          if (retries > 1) {
+            await new Promise(resolve => setTimeout(resolve, delay));
+            delay *= 2;
+            retries--;
+          } else {
+            return next(new Error('Authentication error'));
+          }
+        }
+      }
+
+      if (!user) {
+        logger.warn(`Socket auth failed: User ${decoded.id} not found after retries`);
+        return next(new Error('User not found or inactive'));
+      }
+      
+      if (!user.isActive) {
+        logger.warn(`Socket auth failed: User ${decoded.id} is inactive`);
         return next(new Error('User not found or inactive'));
       }
 
@@ -31,6 +73,7 @@ module.exports = (io) => {
       socket.username = user.username;
       next();
     } catch (error) {
+      logger.error('Socket auth error:', error);
       next(new Error('Authentication error'));
     }
   });
