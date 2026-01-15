@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const { prisma } = require('../config/database');
 const logger = require('../utils/logger');
 
 // Track online users: Map<userId, Set<socketId>>
@@ -19,13 +19,15 @@ module.exports = (io) => {
       }
 
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await User.findById(decoded.id);
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.id }
+      });
 
       if (!user || !user.isActive) {
         return next(new Error('User not found or inactive'));
       }
 
-      socket.userId = user._id.toString();
+      socket.userId = user.id;
       socket.username = user.username;
       next();
     } catch (error) {

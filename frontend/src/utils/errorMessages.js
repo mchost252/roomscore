@@ -170,11 +170,6 @@ const ERROR_MESSAGES = {
  * @returns {Object} - { title, message, icon }
  */
 export const getErrorMessage = (error, context = '') => {
-  // If it's a string error code, look it up directly
-  if (typeof error === 'string') {
-    return ERROR_MESSAGES[error] || ERROR_MESSAGES.UNKNOWN_ERROR;
-  }
-
   // Handle string messages from backend
   if (typeof error === 'string') {
     const lowerError = error.toLowerCase();
