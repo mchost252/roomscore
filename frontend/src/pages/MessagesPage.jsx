@@ -368,22 +368,23 @@ const MessagesPage = () => {
       // If friend not found in cache, extract from first message
       if (!friendFound && messagesData.length > 0) {
         const firstMsg = messagesData[0];
-        const friendData = firstMsg.sender._id === user?._id ? firstMsg.recipient : firstMsg.sender;
+        const myId = getUserId(user);
+        const friendData = getUserId(firstMsg.sender) === myId ? firstMsg.recipient : firstMsg.sender;
         setSelectedFriend(friendData);
       }
       
       // Mark messages as read AFTER they've been loaded and displayed
       // Check if there are any unread messages from the friend
-      const currentUserId = user?._id || user?.id;
+      const currentUserId = getUserId(user);
       const hasUnreadFromFriend = messagesData.some(m => 
-        m.sender?._id === fId && m.recipient?._id === currentUserId && !m.isRead
+        getUserId(m.sender) === fId && getUserId(m.recipient) === currentUserId && !m.isRead
       );
       
       if (hasUnreadFromFriend) {
         // Notify sender via socket that messages were read
         if (socket) {
           const unreadMessageIds = messagesData
-            .filter(m => m.sender?._id === fId && !m.isRead)
+            .filter(m => getUserId(m.sender) === fId && !m.isRead)
             .map(m => m._id);
           socket.emit('dm:read', { senderId: fId, messageIds: unreadMessageIds });
         }
@@ -400,6 +401,7 @@ const MessagesPage = () => {
 
   // Normalize IDs across Mongo-style (_id) and Prisma-style (id)
   const getUserId = (u) => u?._id || u?.id || null;
+  const getUserName = (u) => u?.username || u?.email || 'Unknown';
 
   // Validate ID format (support Mongo ObjectId + Prisma cuid/uuid)
   // We only require a non-empty string here because Prisma IDs are not 24-hex.
@@ -518,7 +520,7 @@ const MessagesPage = () => {
           <UserProfileDialog 
             open={profileDialogOpen}
             onClose={() => setProfileDialogOpen(false)}
-            userId={selectedFriend?._id}
+            userId={getUserId(selectedFriend)}
           />
           <Box sx={{ 
             height: '100dvh', // Use dynamic viewport height for mobile keyboard support
@@ -546,15 +548,20 @@ const MessagesPage = () => {
                 onClick={() => setProfileDialogOpen(true)}
               >
                 <Box sx={{ position: 'relative' }}>
-                  <Avatar src={avatars[selectedFriend._id] || selectedFriend.avatar} sx={{ width: 44, height: 44 }}>{selectedFriend.username[0]}</Avatar>
-                  <OnlineIndicator isOnline={onlineUsers.has(selectedFriend._id)} size={14} />
+                  <Avatar
+                    src={avatars[getUserId(selectedFriend)] || selectedFriend?.avatar}
+                    sx={{ width: 44, height: 44 }}
+                  >
+                    {getUserName(selectedFriend)?.[0]}
+                  </Avatar>
+                  <OnlineIndicator isOnline={onlineUsers.has(getUserId(selectedFriend))} size={14} />
                 </Box>
                 <Box>
                   <Typography variant="h6" fontWeight="bold" sx={{ lineHeight: 1.2 }}>
-                    {selectedFriend.username}
+                    {getUserName(selectedFriend)}
                   </Typography>
-                  <Typography variant="caption" color={onlineUsers.has(selectedFriend._id) ? 'success.main' : 'text.secondary'}>
-                    {onlineUsers.has(selectedFriend._id) ? 'Online' : 'Offline'}
+                  <Typography variant="caption" color={onlineUsers.has(getUserId(selectedFriend)) ? 'success.main' : 'text.secondary'}>
+                    {onlineUsers.has(getUserId(selectedFriend)) ? 'Online' : 'Offline'}
                   </Typography>
                 </Box>
               </Box>
@@ -584,9 +591,10 @@ const MessagesPage = () => {
                   <Box sx={{ flexGrow: 1 }} /> {/* Pushes messages to bottom */}
                   {messages.map((msg, idx) => {
                     // Skip messages with missing sender data
-                    if (!msg?.sender?._id) return null;
-                    const senderId = String(msg.sender._id);
-                    const currentUserId = String(user?._id || user?.id || '');
+                    const senderRawId = getUserId(msg.sender);
+                    if (!senderRawId) return null;
+                    const senderId = String(senderRawId);
+                    const currentUserId = String(getUserId(user) || '');
                     const isOwn = senderId === currentUserId;
                     // Enable tap-to-reply
                     const handleReply = () => setReplyTo({ _id: msg._id, message: msg.message, sender: msg.sender });
@@ -741,7 +749,7 @@ const MessagesPage = () => {
         <UserProfileDialog 
           open={profileDialogOpen}
           onClose={() => setProfileDialogOpen(false)}
-          userId={selectedFriend?._id}
+          userId={getUserId(selectedFriend)}
         />
         <Container maxWidth="md" sx={{ mt: isMobile ? 2 : 4, mb: isMobile ? 10 : 4, px: isMobile ? 1 : 3 }}>
         <Paper>
@@ -770,19 +778,19 @@ const MessagesPage = () => {
           ) : (
             <List sx={{ p: 0 }}>
               {conversations.map((conv, idx) => (
-                <React.Fragment key={conv.friend._id}>
+                <React.Fragment key={getUserId(conv.friend)}>
                   {idx > 0 && <Divider />}
                   <ListItem button onClick={() => handleSelectConversation(conv.friend)}>
                     <ListItemAvatar>
                       <Badge badgeContent={conv.unreadCount} color="error">
                         <Box sx={{ position: 'relative' }}>
-                          <Avatar src={avatars[conv.friend._id] || conv.friend.avatar}>{conv.friend.username[0]}</Avatar>
-                          <OnlineIndicator isOnline={onlineUsers.has(conv.friend._id)} />
+                          <Avatar src={avatars[getUserId(conv.friend)] || conv.friend.avatar}>{getUserName(conv.friend)?.[0]}</Avatar>
+                          <OnlineIndicator isOnline={onlineUsers.has(getUserId(conv.friend))} />
                         </Box>
                       </Badge>
                     </ListItemAvatar>
                     <ListItemText
-                      primary={conv.friend.username}
+                      primary={getUserName(conv.friend)}
                       secondary={
                         conv.lastMessage ? (
                           <Typography variant="body2" noWrap>
@@ -813,7 +821,7 @@ const MessagesPage = () => {
       <UserProfileDialog 
         open={profileDialogOpen}
         onClose={() => setProfileDialogOpen(false)}
-        userId={selectedFriend?._id}
+        userId={getUserId(selectedFriend)}
       />
       <Container maxWidth="lg" sx={{ mt: 2, mb: 2, height: 'calc(100vh - 100px)' }}>
       <Paper sx={{ height: '100%', display: 'flex', overflow: 'hidden' }}>
@@ -845,21 +853,21 @@ const MessagesPage = () => {
               <List sx={{ p: 0 }}>
                 {conversations.map((conv) => (
                   <ListItem
-                    key={conv.friend._id}
+                    key={getUserId(conv.friend)}
                     button
-                    selected={selectedFriend?._id === conv.friend._id}
+                    selected={getUserId(selectedFriend) === getUserId(conv.friend)}
                     onClick={() => handleSelectConversation(conv.friend)}
                   >
                     <ListItemAvatar>
                       <Badge badgeContent={conv.unreadCount} color="error">
                         <Box sx={{ position: 'relative' }}>
-                          <Avatar src={avatars[conv.friend._id] || conv.friend.avatar}>{conv.friend.username[0]}</Avatar>
-                          <OnlineIndicator isOnline={onlineUsers.has(conv.friend._id)} />
+                          <Avatar src={avatars[getUserId(conv.friend)] || conv.friend.avatar}>{getUserName(conv.friend)?.[0]}</Avatar>
+                          <OnlineIndicator isOnline={onlineUsers.has(getUserId(conv.friend))} />
                         </Box>
                       </Badge>
                     </ListItemAvatar>
                     <ListItemText
-                      primary={conv.friend.username}
+                      primary={getUserName(conv.friend)}
                       secondary={
                         conv.lastMessage ? (
                           <Typography variant="body2" noWrap>
@@ -894,15 +902,15 @@ const MessagesPage = () => {
                 onClick={() => setProfileDialogOpen(true)}
               >
                 <Box sx={{ position: 'relative' }}>
-                  <Avatar src={avatars[selectedFriend._id] || selectedFriend.avatar}>{selectedFriend.username[0]}</Avatar>
-                  <OnlineIndicator isOnline={onlineUsers.has(selectedFriend._id)} />
+                  <Avatar src={avatars[getUserId(selectedFriend)] || selectedFriend?.avatar}>{getUserName(selectedFriend)?.[0]}</Avatar>
+                  <OnlineIndicator isOnline={onlineUsers.has(getUserId(selectedFriend))} />
                 </Box>
                 <Box>
                   <Typography variant="h6" fontWeight="bold" sx={{ lineHeight: 1.2 }}>
-                    {selectedFriend.username}
+                    {getUserName(selectedFriend)}
                   </Typography>
-                  <Typography variant="caption" color={onlineUsers.has(selectedFriend._id) ? 'success.main' : 'text.secondary'}>
-                    {onlineUsers.has(selectedFriend._id) ? 'Online' : 'Offline'}
+                  <Typography variant="caption" color={onlineUsers.has(getUserId(selectedFriend)) ? 'success.main' : 'text.secondary'}>
+                    {onlineUsers.has(getUserId(selectedFriend)) ? 'Online' : 'Offline'}
                   </Typography>
                 </Box>
               </Box>
@@ -931,9 +939,10 @@ const MessagesPage = () => {
                     <Box sx={{ flexGrow: 1 }} /> {/* Pushes messages to bottom */}
                     {messages.map((msg, idx) => {
                       // Skip messages with missing sender data
-                      if (!msg?.sender?._id) return null;
-                      const senderId = String(msg.sender._id);
-                      const currentUserId = String(user?._id || user?.id || '');
+                      const senderRawId = getUserId(msg.sender);
+                      if (!senderRawId) return null;
+                      const senderId = String(senderRawId);
+                      const currentUserId = String(getUserId(user) || '');
                       const isOwn = senderId === currentUserId;
                       return (
                         <Box
