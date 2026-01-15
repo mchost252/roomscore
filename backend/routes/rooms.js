@@ -44,6 +44,7 @@ router.get('/', protect, async (req, res, next) => {
     
     if (type === 'public') {
       // Get public rooms that user is NOT a member of
+      const t0 = Date.now();
       const rooms = await prisma.room.findMany({
         where: {
           isPrivate: false,
@@ -58,15 +59,25 @@ router.get('/', protect, async (req, res, next) => {
         include: {
           owner: { select: { id: true, username: true } },
           members: {
-            include: {
+            select: {
+              id: true,
+              userId: true,
+              role: true,
+              points: true,
+              status: true,
+              joinedAt: true,
               user: { select: { id: true, username: true, avatar: true } }
             }
           },
-          tasks: true
+          tasks: {
+            where: { isActive: true },
+            select: { id: true, isActive: true }
+          }
         },
         orderBy: { createdAt: 'desc' },
         take: 50
       });
+      logger.info(`GET /api/rooms?type=public returned ${rooms.length} rooms in ${Date.now() - t0}ms for user ${req.user.id}`);
       
       return res.json({
         success: true,
@@ -76,6 +87,7 @@ router.get('/', protect, async (req, res, next) => {
     }
     
     // Get user's rooms (owned or member)
+    const t0 = Date.now();
     const rooms = await prisma.room.findMany({
       where: {
         isActive: true,
@@ -87,14 +99,35 @@ router.get('/', protect, async (req, res, next) => {
       include: {
         owner: { select: { id: true, username: true } },
         members: {
-          include: {
+          select: {
+            id: true,
+            userId: true,
+            role: true,
+            points: true,
+            status: true,
+            joinedAt: true,
             user: { select: { id: true, username: true, avatar: true } }
           }
         },
-        tasks: true
+        // Only fetch active tasks and only the fields the frontend needs
+        tasks: {
+          where: { isActive: true },
+          select: {
+            id: true,
+            roomId: true,
+            title: true,
+            description: true,
+            taskType: true,
+            points: true,
+            isActive: true,
+            createdAt: true
+          }
+        }
       },
-      orderBy: { updatedAt: 'desc' }
+      orderBy: { updatedAt: 'desc' },
+      take: 50
     });
+    logger.info(`GET /api/rooms returned ${rooms.length} rooms in ${Date.now() - t0}ms for user ${req.user.id}`);
 
     // Get today's date for task completion status
     const today = new Date();
@@ -102,13 +135,16 @@ router.get('/', protect, async (req, res, next) => {
 
     // Get all task completions for today for this user across all their rooms
     const roomIds = rooms.map(r => r.id);
-    const userCompletions = await prisma.taskCompletion.findMany({
-      where: {
-        userId: req.user.id,
-        roomId: { in: roomIds },
-        completionDate: todayStr
-      }
-    });
+    const userCompletions = roomIds.length === 0
+      ? []
+      : await prisma.taskCompletion.findMany({
+          where: {
+            userId: req.user.id,
+            roomId: { in: roomIds },
+            completionDate: todayStr
+          },
+          select: { taskId: true }
+        });
 
     // Create a Set of completed task IDs for quick lookup
     const completedTaskIds = new Set(userCompletions.map(c => c.taskId));

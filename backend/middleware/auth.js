@@ -113,7 +113,13 @@ exports.isRoomMember = async (req, res, next) => {
       where: { id: roomId },
       include: {
         members: {
-          include: {
+          select: {
+            id: true,
+            userId: true,
+            role: true,
+            points: true,
+            status: true,
+            joinedAt: true,
             user: {
               select: {
                 id: true,
@@ -124,7 +130,20 @@ exports.isRoomMember = async (req, res, next) => {
             }
           }
         },
-        tasks: true,
+        // Only active tasks and only fields needed by UI
+        tasks: {
+          where: { isActive: true },
+          select: {
+            id: true,
+            roomId: true,
+            title: true,
+            description: true,
+            taskType: true,
+            points: true,
+            isActive: true,
+            createdAt: true
+          }
+        },
         owner: {
           select: {
             id: true,
