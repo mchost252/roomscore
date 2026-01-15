@@ -226,9 +226,11 @@ const AppLayout = ({ children }) => {
               >
                 <ListItemIcon
                   sx={{
-                    minWidth: isExpanded ? 40 : 0,
+                    minWidth: 0,
+                    width: 48,
                     justifyContent: 'center',
                     color: 'inherit',
+                    flexShrink: 0,
                   }}
                 >
                   <item.icon sx={{ fontSize: 24 }} />
@@ -286,9 +288,11 @@ const AppLayout = ({ children }) => {
               >
                 <ListItemIcon
                   sx={{
-                    minWidth: isExpanded ? 40 : 0,
+                    minWidth: 0,
+                    width: 48,
                     justifyContent: 'center',
                     color: 'inherit',
+                    flexShrink: 0,
                   }}
                 >
                   <Add sx={{ fontSize: 24 }} />
@@ -341,7 +345,7 @@ const AppLayout = ({ children }) => {
               },
             }}
           >
-            <ListItemIcon sx={{ minWidth: 40, color: 'inherit' }}>
+            <ListItemIcon sx={{ minWidth: 0, width: 48, justifyContent: 'center', color: 'inherit', flexShrink: 0 }}>
               {isDark ? <Brightness7 /> : <Brightness4 />}
             </ListItemIcon>
             <ListItemText 
@@ -386,7 +390,7 @@ const AppLayout = ({ children }) => {
               },
             }}
           >
-            <ListItemIcon sx={{ minWidth: 40 }}>
+            <ListItemIcon sx={{ minWidth: 0, width: 48, justifyContent: 'center', flexShrink: 0 }}>
               <Avatar
                 src={user?.avatar}
                 alt={user?.username}
@@ -464,7 +468,7 @@ const AppLayout = ({ children }) => {
               },
             }}
           >
-            <ListItemIcon sx={{ minWidth: 40, color: 'inherit' }}>
+            <ListItemIcon sx={{ minWidth: 0, width: 48, justifyContent: 'center', color: 'inherit', flexShrink: 0 }}>
               <Logout sx={{ fontSize: 20 }} />
             </ListItemIcon>
             <ListItemText 

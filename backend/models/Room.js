@@ -155,6 +155,23 @@ const roomSchema = new mongoose.Schema({
       default: false
     }
   },
+  // Room streak tracking
+  roomStreak: {
+    type: Number,
+    default: 0
+  },
+  longestRoomStreak: {
+    type: Number,
+    default: 0
+  },
+  lastRoomActivityDate: {
+    type: Date,
+    default: null
+  },
+  lastStreakCheckDate: {
+    type: Date,
+    default: null
+  },
   isActive: {
     type: Boolean,
     default: true
@@ -275,6 +292,28 @@ roomSchema.statics.calculateExpiryDate = function(duration) {
     default:
       return new Date(now.setMonth(now.getMonth() + 1));
   }
+};
+
+// Method to increment room streak
+roomSchema.methods.incrementRoomStreak = function() {
+  this.roomStreak += 1;
+  if (this.roomStreak > this.longestRoomStreak) {
+    this.longestRoomStreak = this.roomStreak;
+  }
+  this.lastRoomActivityDate = new Date();
+  this.lastStreakCheckDate = new Date();
+};
+
+// Method to reset room streak
+roomSchema.methods.resetRoomStreak = function() {
+  this.roomStreak = 0;
+  this.lastStreakCheckDate = new Date();
+};
+
+// Method to maintain room streak (keeps it alive)
+roomSchema.methods.maintainRoomStreak = function() {
+  this.lastRoomActivityDate = new Date();
+  this.lastStreakCheckDate = new Date();
 };
 
 module.exports = mongoose.model('Room', roomSchema);

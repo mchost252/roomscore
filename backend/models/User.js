@@ -48,6 +48,14 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  lastStreakCheckDate: {
+    type: Date,
+    default: null
+  },
+  streakFrozen: {
+    type: Boolean,
+    default: false
+  },
   isVerified: {
     type: Boolean,
     default: false
@@ -137,6 +145,28 @@ userSchema.methods.toPublicProfile = function() {
     longestStreak: this.longestStreak,
     isVerified: this.isVerified
   };
+};
+
+// Method to increment streak
+userSchema.methods.incrementStreak = function() {
+  this.currentStreak += 1;
+  if (this.currentStreak > this.longestStreak) {
+    this.longestStreak = this.currentStreak;
+  }
+  this.lastActiveDate = new Date();
+  this.lastStreakCheckDate = new Date();
+};
+
+// Method to reset streak
+userSchema.methods.resetStreak = function() {
+  this.currentStreak = 0;
+  this.lastStreakCheckDate = new Date();
+};
+
+// Method to maintain streak (keeps it alive without incrementing)
+userSchema.methods.maintainStreak = function() {
+  this.lastActiveDate = new Date();
+  this.lastStreakCheckDate = new Date();
 };
 
 module.exports = mongoose.model('User', userSchema);

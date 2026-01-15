@@ -887,6 +887,16 @@ const RoomDetailPage = () => {
                   size="small"
                   sx={{ height: { xs: 20, md: 24 }, fontSize: { xs: '0.65rem', md: '0.75rem' } }}
                 />
+                {room.roomStreak > 0 && (
+                  <Tooltip title={`Orbit stable for ${room.roomStreak} day${room.roomStreak > 1 ? 's' : ''}${room.longestRoomStreak > room.roomStreak ? ` (Best: ${room.longestRoomStreak})` : ''}`}>
+                    <Chip 
+                      label={`🌟 ${room.roomStreak} day${room.roomStreak > 1 ? 's' : ''}`}
+                      size="small"
+                      color="warning"
+                      sx={{ height: { xs: 20, md: 24 }, fontSize: { xs: '0.65rem', md: '0.75rem' } }}
+                    />
+                  </Tooltip>
+                )}
               </Box>
             </Box>
           </Box>

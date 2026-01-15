@@ -5,8 +5,10 @@ const TaskCompletion = require('../models/TaskCompletion');
 const UserRoomProgress = require('../models/UserRoomProgress');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
+const ChatMessage = require('../models/ChatMessage');
 const NotificationService = require('../services/notificationService');
 const PushNotificationService = require('../services/pushNotificationService');
+const TaskValidationService = require('../services/taskValidationService');
 const { protect, isRoomMember } = require('../middleware/auth');
 const { validate, createTaskSchema, updateTaskSchema } = require('../middleware/validation');
 const logger = require('../utils/logger');
@@ -411,6 +413,58 @@ router.post('/:roomId/tasks/:taskId/complete', protect, isRoomMember, async (req
       pointsAwarded: task.points,
       completionDate: today
     });
+
+    // Check if this is a valid task completion for streak tracking
+    const timezone = req.room.settings.timezone || 'UTC';
+    const isValidForStreak = TaskValidationService.isValidTaskCompletion(
+      task.createdAt,
+      new Date(),
+      timezone
+    );
+
+    // Update user streak if this is their first valid task today
+    if (isValidForStreak) {
+      const user = await User.findById(req.user.id);
+      const allUserCompletions = await TaskCompletion.find({
+        userId: req.user.id,
+        roomId: req.params.roomId
+      });
+      
+      // Add current completion to the list for validation
+      allUserCompletions.push(completion);
+      
+      const hasValidTasksToday = TaskValidationService.hasValidTasksToday(
+        allUserCompletions,
+        timezone
+      );
+      
+      // If this is the first valid task today, update streak
+      if (hasValidTasksToday) {
+        const hadValidTasksYesterday = TaskValidationService.hasValidTasksYesterday(
+          allUserCompletions,
+          timezone
+        );
+        
+        // Increment or maintain streak based on yesterday's activity
+        if (user.currentStreak === 0 || hadValidTasksYesterday) {
+          user.incrementStreak();
+          await user.save();
+          
+          // Create system message for streak milestone
+          if (user.currentStreak % 7 === 0 && user.currentStreak > 0) {
+            await ChatMessage.create({
+              roomId: req.params.roomId,
+              message: `🔥 ${req.user.username} reached a ${user.currentStreak}-day streak!`,
+              isSystemMessage: true
+            });
+          }
+        }
+        
+        // Update room streak
+        req.room.incrementRoomStreak();
+        await req.room.save();
+      }
+    }
 
     // Update room member points
     await req.room.updateMemberPoints(req.user.id, task.points);

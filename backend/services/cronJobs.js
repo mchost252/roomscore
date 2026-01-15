@@ -3,6 +3,9 @@ const NotificationService = require('./notificationService');
 const PushNotificationService = require('./pushNotificationService');
 const ChatMessage = require('../models/ChatMessage');
 const Room = require('../models/Room');
+const User = require('../models/User');
+const TaskCompletion = require('../models/TaskCompletion');
+const TaskValidationService = require('./taskValidationService');
 const logger = require('../utils/logger');
 
 // Send scheduled notifications every 5 minutes
@@ -196,6 +199,107 @@ cron.schedule('0 9 * * *', async () => {
     logger.info(`Sent ${warnedCount} room expiry warnings`);
   } catch (error) {
     logger.error('Error in room expiry warning job:', error);
+  }
+});
+
+// Update user and room streaks daily at midnight
+cron.schedule('0 0 * * *', async () => {
+  try {
+    logger.info('Running daily streak update job...');
+    
+    const rooms = await Room.find({ isActive: true });
+    let usersUpdated = 0;
+    let roomsUpdated = 0;
+    
+    for (const room of rooms) {
+      const timezone = room.settings.timezone || 'UTC';
+      let roomHadActivityYesterday = false;
+      
+      // Process each member's streak
+      for (const member of room.members) {
+        try {
+          const user = await User.findById(member.userId);
+          if (!user) continue;
+          
+          // Get yesterday's task completions for this user in this room
+          const taskCompletions = await TaskCompletion.find({
+            userId: user._id,
+            roomId: room._id
+          });
+          
+          // Check if user had valid tasks yesterday
+          const hadValidTasksYesterday = TaskValidationService.hasValidTasksYesterday(
+            taskCompletions,
+            timezone
+          );
+          
+          if (hadValidTasksYesterday) {
+            // User completed valid tasks - increment streak
+            user.incrementStreak();
+            await user.save();
+            usersUpdated++;
+            roomHadActivityYesterday = true;
+            
+            logger.info(`✅ User ${user.username} streak: ${user.currentStreak}`);
+          } else {
+            // Check if user should lose their streak
+            // Only reset if they had a streak and missed yesterday
+            if (user.currentStreak > 0 && !user.streakFrozen) {
+              user.resetStreak();
+              await user.save();
+              usersUpdated++;
+              
+              logger.info(`❌ User ${user.username} streak reset (no valid tasks yesterday)`);
+              
+              // Create system message in room
+              await ChatMessage.create({
+                roomId: room._id,
+                message: `💫 ${user.username}'s streak was reset`,
+                isSystemMessage: true
+              });
+            }
+          }
+        } catch (userError) {
+          logger.error(`Error processing streak for user ${member.userId}:`, userError);
+        }
+      }
+      
+      // Update room streak
+      if (roomHadActivityYesterday) {
+        room.incrementRoomStreak();
+        await room.save();
+        roomsUpdated++;
+        
+        logger.info(`✅ Room ${room.name} streak: ${room.roomStreak}`);
+        
+        // Create system message
+        await ChatMessage.create({
+          roomId: room._id,
+          message: `🌟 Room streak preserved! Day ${room.roomStreak}`,
+          isSystemMessage: true
+        });
+      } else {
+        // Check if room should lose streak
+        if (room.roomStreak > 0) {
+          room.resetRoomStreak();
+          await room.save();
+          roomsUpdated++;
+          
+          logger.info(`❌ Room ${room.name} streak reset (no activity yesterday)`);
+          
+          // Create system message
+          await ChatMessage.create({
+            roomId: room._id,
+            message: `💫 Orbit dimmed - no activity yesterday`,
+            isSystemMessage: true
+          });
+        }
+      }
+    }
+    
+    logger.info(`Streak update complete: ${usersUpdated} users, ${roomsUpdated} rooms updated`);
+  } catch (error) {
+    logger.error('Error in daily streak update job:', error);
   }
 });
 
