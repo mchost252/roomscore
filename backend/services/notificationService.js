@@ -1,37 +1,46 @@
-const Notification = require('../models/Notification');
+const { prisma } = require('../config/database');
 const { getIO } = require('../socket/io');
 const logger = require('../utils/logger');
 
 class NotificationService {
   // Create a notification
-  static async createNotification({ userId, type, title, message, relatedRoom, relatedTask, data }) {
+  static async createNotification({ recipientId, userId, type, title, message, roomId, data }) {
     try {
-      // Ensure userId is a string (ObjectId), not an object
-      const userIdString = userId._id ? userId._id.toString() : userId.toString();
+      // Support both recipientId and userId for backward compatibility
+      const targetUserId = recipientId || userId;
       
-      // Ensure relatedRoom and relatedTask are strings if provided
-      const relatedRoomString = relatedRoom ? (relatedRoom._id ? relatedRoom._id.toString() : relatedRoom.toString()) : null;
-      const relatedTaskString = relatedTask ? (relatedTask._id ? relatedTask._id.toString() : relatedTask.toString()) : null;
+      // Ensure userId is a string
+      const userIdString = targetUserId?._id ? targetUserId._id.toString() : 
+                          (typeof targetUserId === 'object' ? targetUserId.toString() : targetUserId);
       
-      const notification = await Notification.create({
-        userId: userIdString,
-        type,
-        title,
-        message,
-        relatedRoom: relatedRoomString,
-        relatedTask: relatedTaskString,
-        data,
-        sentAt: new Date()
+      if (!userIdString) {
+        logger.warn('No userId provided for notification');
+        return null;
+      }
+
+      const notification = await prisma.notification.create({
+        data: {
+          userId: userIdString,
+          type,
+          title,
+          message,
+          data: data || null,
+          read: false
+        }
       });
 
       logger.info(`Notification created for user ${userIdString}: ${type}`);
 
-      // Emit socket events for new notification and updated unread count
+      // Emit socket events
       try {
         const io = getIO();
         if (io) {
-          const unreadCount = await Notification.countDocuments({ userId: userIdString, isRead: false });
-          io.to(`user:${userIdString}`).emit('notification:new', { notification });
+          const unreadCount = await prisma.notification.count({
+            where: { userId: userIdString, read: false }
+          });
+          io.to(`user:${userIdString}`).emit('notification:new', { 
+            notification: { ...notification, _id: notification.id, isRead: notification.read }
+          });
           io.to(`user:${userIdString}`).emit('notification:unreadCount', { unreadCount });
         }
       } catch (emitErr) {
@@ -41,105 +50,53 @@ class NotificationService {
       return notification;
     } catch (error) {
       logger.error('Error creating notification:', error);
-      throw error;
-    }
-  }
-
-  // Schedule a notification
-  static async scheduleNotification({ userId, type, title, message, scheduledFor, relatedRoom, relatedTask, data }) {
-    try {
-      // Ensure userId, relatedRoom, and relatedTask are strings (same as createNotification)
-      const userIdString = userId._id ? userId._id.toString() : userId.toString();
-      const relatedRoomString = relatedRoom ? (relatedRoom._id ? relatedRoom._id.toString() : relatedRoom.toString()) : null;
-      const relatedTaskString = relatedTask ? (relatedTask._id ? relatedTask._id.toString() : relatedTask.toString()) : null;
-      
-      const notification = await Notification.create({
-        userId: userIdString,
-        type,
-        title,
-        message,
-        scheduledFor,
-        relatedRoom: relatedRoomString,
-        relatedTask: relatedTaskString,
-        data
-      });
-
-      logger.info(`Notification scheduled for user ${userIdString} at ${scheduledFor}`);
-      return notification;
-    } catch (error) {
-      logger.error('Error scheduling notification:', error);
-      throw error;
-    }
-  }
-
-  // Send pending scheduled notifications
-  static async sendScheduledNotifications() {
-    try {
-      const now = new Date();
-      const pendingNotifications = await Notification.find({
-        scheduledFor: { $lte: now },
-        sentAt: null
-      });
-
-      for (const notification of pendingNotifications) {
-        notification.sentAt = now;
-        await notification.save();
-        
-        // Here you could emit socket event or send push notification
-        logger.info(`Scheduled notification sent to user ${notification.userId}`);
-      }
-
-      return pendingNotifications.length;
-    } catch (error) {
-      logger.error('Error sending scheduled notifications:', error);
-      throw error;
+      // Don't throw - notifications should not break main functionality
+      return null;
     }
   }
 
   // Notify task reminder
   static async notifyTaskReminder(userId, task, room) {
     return this.createNotification({
-      userId,
+      recipientId: userId,
       type: 'task_reminder',
       title: 'Task Reminder',
       message: `Don't forget to complete "${task.title}" in ${room.name}`,
-      relatedRoom: room._id,
-      relatedTask: task._id
+      roomId: room.id || room._id
     });
   }
 
   // Notify task deadline
   static async notifyTaskDeadline(userId, task, room) {
     return this.createNotification({
-      userId,
+      recipientId: userId,
       type: 'task_deadline',
       title: 'Task Deadline Approaching',
       message: `Task "${task.title}" deadline is approaching in ${room.name}`,
-      relatedRoom: room._id,
-      relatedTask: task._id
+      roomId: room.id || room._id
     });
   }
 
   // Notify achievement
   static async notifyAchievement(userId, achievementTitle, achievementMessage, room) {
     return this.createNotification({
-      userId,
+      recipientId: userId,
       type: 'achievement',
       title: achievementTitle,
       message: achievementMessage,
-      relatedRoom: room._id
+      roomId: room?.id || room?._id
     });
   }
 
   // Notify room invite
   static async notifyRoomInvite(userId, room, invitedBy) {
     return this.createNotification({
-      userId,
+      recipientId: userId,
       type: 'room_invite',
       title: 'Room Invitation',
       message: `${invitedBy.username} invited you to join ${room.name}`,
-      relatedRoom: room._id,
-      data: { invitedBy: invitedBy._id }
+      roomId: room.id || room._id,
+      data: { invitedBy: invitedBy.id || invitedBy._id }
     });
   }
 
@@ -148,14 +105,14 @@ class NotificationService {
     const notifications = [];
     for (const userId of userIds) {
       const notification = await this.createNotification({
-        userId,
+        recipientId: userId,
         type: 'member_joined',
         title: 'New Member',
         message: `${newMember.username} joined ${room.name}`,
-        relatedRoom: room._id,
-        data: { newMemberId: newMember._id }
+        roomId: room.id || room._id,
+        data: { newMemberId: newMember.id || newMember._id }
       });
-      notifications.push(notification);
+      if (notification) notifications.push(notification);
     }
     return notifications;
   }
@@ -166,16 +123,18 @@ class NotificationService {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - daysOld);
 
-      const result = await Notification.deleteMany({
-        createdAt: { $lt: cutoffDate },
-        isRead: true
+      const result = await prisma.notification.deleteMany({
+        where: {
+          createdAt: { lt: cutoffDate },
+          read: true
+        }
       });
 
-      logger.info(`Cleaned up ${result.deletedCount} old notifications`);
-      return result.deletedCount;
+      logger.info(`Cleaned up ${result.count} old notifications`);
+      return result.count;
     } catch (error) {
       logger.error('Error cleaning up notifications:', error);
-      throw error;
+      return 0;
     }
   }
 }

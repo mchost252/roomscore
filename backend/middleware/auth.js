@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const { prisma } = require('../config/database');
 
 // Verify JWT token
 exports.protect = async (req, res, next) => {
@@ -22,23 +22,33 @@ exports.protect = async (req, res, next) => {
       // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       
-      // Get user from token
-      req.user = await User.findById(decoded.id).select('-password');
+      // Get user from token (exclude password)
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.id },
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          avatar: true,
+          timezone: true,
+          onboardingCompleted: true,
+          streak: true,
+          longestStreak: true,
+          totalTasksCompleted: true,
+          lastActive: true,
+          createdAt: true,
+          updatedAt: true
+        }
+      });
       
-      if (!req.user) {
+      if (!user) {
         return res.status(401).json({
           success: false,
           message: 'User not found'
         });
       }
 
-      if (!req.user.isActive) {
-        return res.status(401).json({
-          success: false,
-          message: 'Account is deactivated'
-        });
-      }
-
+      req.user = user;
       next();
     } catch (err) {
       return res.status(401).json({
@@ -51,23 +61,27 @@ exports.protect = async (req, res, next) => {
   }
 };
 
-// Check if user is admin
+// Check if user is admin (for future use)
 exports.isAdmin = (req, res, next) => {
-  if (req.user && req.user.isAdmin) {
-    next();
-  } else {
-    res.status(403).json({
-      success: false,
-      message: 'Access denied. Admin privileges required.'
-    });
-  }
+  // For now, no admin field in Prisma schema - can be added later
+  res.status(403).json({
+    success: false,
+    message: 'Access denied. Admin privileges required.'
+  });
 };
 
 // Check if user is room owner
 exports.isRoomOwner = async (req, res, next) => {
   try {
-    const Room = require('../models/Room');
-    const room = await Room.findById(req.params.id || req.params.roomId);
+    const roomId = req.params.id || req.params.roomId;
+    
+    const room = await prisma.room.findUnique({
+      where: { id: roomId },
+      include: {
+        members: true,
+        tasks: true
+      }
+    });
     
     if (!room) {
       return res.status(404).json({
@@ -76,7 +90,7 @@ exports.isRoomOwner = async (req, res, next) => {
       });
     }
 
-    if (room.owner.toString() !== req.user.id) {
+    if (room.ownerId !== req.user.id) {
       return res.status(403).json({
         success: false,
         message: 'Only room owner can perform this action'
@@ -93,8 +107,33 @@ exports.isRoomOwner = async (req, res, next) => {
 // Check if user is room member
 exports.isRoomMember = async (req, res, next) => {
   try {
-    const Room = require('../models/Room');
-    const room = await Room.findById(req.params.id || req.params.roomId);
+    const roomId = req.params.id || req.params.roomId;
+    
+    const room = await prisma.room.findUnique({
+      where: { id: roomId },
+      include: {
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                username: true,
+                avatar: true,
+                streak: true
+              }
+            }
+          }
+        },
+        tasks: true,
+        owner: {
+          select: {
+            id: true,
+            username: true,
+            avatar: true
+          }
+        }
+      }
+    });
     
     if (!room) {
       return res.status(404).json({
@@ -103,11 +142,9 @@ exports.isRoomMember = async (req, res, next) => {
       });
     }
 
-    const isMember = room.members.some(member => 
-      member.userId.toString() === req.user.id
-    );
+    const isMember = room.members.some(member => member.userId === req.user.id);
 
-    if (!isMember && room.owner.toString() !== req.user.id) {
+    if (!isMember && room.ownerId !== req.user.id) {
       return res.status(403).json({
         success: false,
         message: 'You must be a member of this room'

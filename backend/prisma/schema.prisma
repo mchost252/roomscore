@@ -1,0 +1,282 @@
+// Prisma Schema for Krios - PostgreSQL (Neon)
+// Migration from MongoDB/Mongoose
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== USER ====================
+model User {
+  id                    String    @id @default(cuid())
+  email                 String    @unique
+  password              String?
+  username              String    @unique
+  googleId              String?   @unique
+  avatar                String?
+  timezone              String    @default("UTC")
+  onboardingCompleted   Boolean   @default(false)
+  pushSubscription      Json?
+  lastActive            DateTime  @default(now())
+  streak                Int       @default(0)
+  longestStreak         Int       @default(0)
+  lastStreakDate        DateTime?
+  totalTasksCompleted   Int       @default(0)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  // Relations
+  ownedRooms            Room[]              @relation("RoomOwner")
+  roomMemberships       RoomMember[]
+  taskCompletions       TaskCompletion[]
+  chatMessages          ChatMessage[]
+  sentAppreciations     Appreciation[]      @relation("AppreciationFrom")
+  receivedAppreciations Appreciation[]      @relation("AppreciationTo")
+  sentNudges            Nudge[]
+  sentFriendRequests    Friend[]            @relation("FriendRequestFrom")
+  receivedFriendRequests Friend[]           @relation("FriendRequestTo")
+  notifications         Notification[]
+  sentDirectMessages    DirectMessage[]     @relation("DirectMessageFrom")
+  receivedDirectMessages DirectMessage[]    @relation("DirectMessageTo")
+  personalTasks         PersonalTask[]
+  userRoomProgress      UserRoomProgress[]
+
+  @@index([email])
+  @@index([username])
+  @@index([googleId])
+}
+
+// ==================== ROOM ====================
+model Room {
+  id              String    @id @default(cuid())
+  name            String
+  description     String?
+  joinCode        String    @unique
+  isPrivate       Boolean   @default(false)
+  maxMembers      Int       @default(10)
+  streak          Int       @default(0)
+  longestStreak   Int       @default(0)
+  lastActivityDate DateTime?
+  ownerId         String
+  startDate       DateTime  @default(now())
+  endDate         DateTime?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  owner           User            @relation("RoomOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members         RoomMember[]
+  tasks           RoomTask[]
+  taskCompletions TaskCompletion[]
+  chatMessages    ChatMessage[]
+  appreciations   Appreciation[]
+  nudges          Nudge[]
+  userRoomProgress UserRoomProgress[]
+
+  @@index([joinCode])
+  @@index([ownerId])
+  @@index([isActive])
+}
+
+// ==================== ROOM MEMBER (Junction Table) ====================
+model RoomMember {
+  id        String   @id @default(cuid())
+  roomId    String
+  userId    String
+  role      String   @default("member") // owner, admin, member
+  points    Int      @default(0)
+  status    String   @default("active") // active, pending, kicked
+  joinedAt  DateTime @default(now())
+
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@index([roomId])
+  @@index([userId])
+}
+
+// ==================== ROOM TASK ====================
+model RoomTask {
+  id          String   @id @default(cuid())
+  roomId      String
+  title       String
+  description String?
+  taskType    String   @default("daily") // daily, weekly, custom
+  points      Int      @default(10)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  room        Room             @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  completions TaskCompletion[]
+
+  @@index([roomId])
+}
+
+// ==================== TASK COMPLETION ====================
+model TaskCompletion {
+  id            String   @id @default(cuid())
+  roomId        String
+  taskId        String
+  userId        String
+  completedAt   DateTime @default(now())
+  pointsAwarded Int      @default(10)
+  completionDate String  // YYYY-MM-DD format for easy querying
+
+  room          Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  task          RoomTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, userId, completionDate])
+  @@index([roomId])
+  @@index([userId])
+  @@index([completionDate])
+}
+
+// ==================== CHAT MESSAGE ====================
+model ChatMessage {
+  id        String   @id @default(cuid())
+  roomId    String
+  userId    String?
+  content   String
+  type      String   @default("user") // user, system
+  createdAt DateTime @default(now())
+
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([roomId])
+  @@index([createdAt])
+}
+
+// ==================== APPRECIATION ====================
+model Appreciation {
+  id         String   @id @default(cuid())
+  roomId     String
+  fromUserId String
+  toUserId   String
+  type       String   // star, fire, shield
+  createdAt  DateTime @default(now())
+
+  room       Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  fromUser   User     @relation("AppreciationFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser     User     @relation("AppreciationTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@index([roomId])
+  @@index([toUserId])
+  @@index([createdAt])
+}
+
+// ==================== NUDGE ====================
+model Nudge {
+  id        String   @id @default(cuid())
+  roomId    String
+  senderId  String
+  message   String   @default("Your orbit is waiting – don't forget today's tasks.")
+  createdAt DateTime @default(now())
+
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender    User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([roomId])
+  @@index([senderId])
+  @@index([createdAt])
+}
+
+// ==================== FRIEND ====================
+model Friend {
+  id         String   @id @default(cuid())
+  fromUserId String
+  toUserId   String
+  status     String   @default("pending") // pending, accepted, rejected
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  fromUser   User     @relation("FriendRequestFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser     User     @relation("FriendRequestTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@unique([fromUserId, toUserId])
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@index([status])
+}
+
+// ==================== NOTIFICATION ====================
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String   // friend_request, room_invite, nudge, appreciation, system
+  title     String
+  message   String
+  data      Json?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([read])
+  @@index([createdAt])
+}
+
+// ==================== DIRECT MESSAGE ====================
+model DirectMessage {
+  id         String   @id @default(cuid())
+  fromUserId String
+  toUserId   String
+  content    String
+  read       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  fromUser   User     @relation("DirectMessageFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser     User     @relation("DirectMessageTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@index([createdAt])
+}
+
+// ==================== PERSONAL TASK ====================
+model PersonalTask {
+  id          String    @id @default(cuid())
+  userId      String
+  title       String
+  description String?
+  taskType    String    @default("daily") // daily, weekly, one-time
+  isCompleted Boolean   @default(false)
+  completedAt DateTime?
+  dueDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isCompleted])
+}
+
+// ==================== USER ROOM PROGRESS ====================
+model UserRoomProgress {
+  id                   String    @id @default(cuid())
+  userId               String
+  roomId               String
+  tasksCompletedToday  Int       @default(0)
+  lastCompletionDate   DateTime?
+  currentStreak        Int       @default(0)
+  longestStreak        Int       @default(0)
+  totalPoints          Int       @default(0)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room                 Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roomId])
+  @@index([userId])
+  @@index([roomId])
+}

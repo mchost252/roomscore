@@ -1,8 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { protect, isRoomMember } = require('../middleware/auth');
-const Room = require('../models/Room');
-const Appreciation = require('../models/Appreciation');
+const { prisma } = require('../config/database');
 const logger = require('../utils/logger');
 
 const DAILY_LIMIT = 3; // Maximum appreciations per day per room
@@ -30,10 +29,7 @@ router.post('/:roomId', protect, isRoomMember, async (req, res) => {
     }
     
     // Check if recipient is a room member
-    const room = await Room.findById(roomId);
-    const isMember = room.members.some(m => 
-      m.userId.toString() === toUserId || m.userId._id?.toString() === toUserId
-    );
+    const isMember = req.room.members.some(m => m.userId === toUserId);
     
     if (!isMember) {
       return res.status(400).json({
@@ -43,32 +39,88 @@ router.post('/:roomId', protect, isRoomMember, async (req, res) => {
     }
     
     // Check daily limit
-    const canGive = await Appreciation.canGiveAppreciation(roomId, req.user.id, DAILY_LIMIT);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
     
-    if (!canGive) {
+    const usedToday = await prisma.appreciation.count({
+      where: {
+        roomId,
+        fromUserId: req.user.id,
+        createdAt: {
+          gte: today,
+          lt: tomorrow
+        }
+      }
+    });
+    
+    if (usedToday >= DAILY_LIMIT) {
       return res.status(400).json({
         success: false,
         message: `You can only give ${DAILY_LIMIT} appreciations per day per room`
       });
     }
     
+    // Check if already gave this type to this user today
+    const existingAppreciation = await prisma.appreciation.findFirst({
+      where: {
+        roomId,
+        fromUserId: req.user.id,
+        toUserId,
+        type,
+        createdAt: {
+          gte: today,
+          lt: tomorrow
+        }
+      }
+    });
+    
+    if (existingAppreciation) {
+      return res.status(400).json({
+        success: false,
+        message: 'You have already given this appreciation today'
+      });
+    }
+    
     // Record appreciation
-    const appreciation = await Appreciation.recordAppreciation(
-      roomId,
-      req.user.id,
-      toUserId,
-      type
-    );
+    const appreciation = await prisma.appreciation.create({
+      data: {
+        roomId,
+        fromUserId: req.user.id,
+        toUserId,
+        type
+      }
+    });
     
     // Get updated stats for the recipient
-    const stats = await Appreciation.getUserStats(roomId, toUserId);
+    const stats = await prisma.appreciation.groupBy({
+      by: ['type'],
+      where: {
+        roomId,
+        toUserId
+      },
+      _count: {
+        type: true
+      }
+    });
+    
+    const formattedStats = {
+      star: 0,
+      fire: 0,
+      shield: 0
+    };
+    
+    stats.forEach(s => {
+      formattedStats[s.type] = s._count.type;
+    });
     
     // Emit socket event
     const io = req.app.get('io');
     io.to(roomId).emit('appreciation:given', {
-      appreciation,
+      appreciation: { ...appreciation, _id: appreciation.id },
       toUserId,
-      stats
+      stats: formattedStats
     });
     
     logger.info(`Appreciation (${type}) given in room ${roomId} from ${req.user.id} to ${toUserId}`);
@@ -76,20 +128,12 @@ router.post('/:roomId', protect, isRoomMember, async (req, res) => {
     res.json({
       success: true,
       message: 'Appreciation given successfully',
-      appreciation,
-      stats
+      appreciation: { ...appreciation, _id: appreciation.id },
+      stats: formattedStats
     });
     
   } catch (error) {
     logger.error('Error giving appreciation:', error);
-    
-    if (error.message === 'You have already given this appreciation today') {
-      return res.status(400).json({
-        success: false,
-        message: error.message
-      });
-    }
-    
     res.status(500).json({
       success: false,
       message: 'Failed to give appreciation'
@@ -102,11 +146,30 @@ router.get('/:roomId/user/:userId', protect, isRoomMember, async (req, res) => {
   try {
     const { roomId, userId } = req.params;
     
-    const stats = await Appreciation.getUserStats(roomId, userId);
+    const stats = await prisma.appreciation.groupBy({
+      by: ['type'],
+      where: {
+        roomId,
+        toUserId: userId
+      },
+      _count: {
+        type: true
+      }
+    });
+    
+    const formattedStats = {
+      star: 0,
+      fire: 0,
+      shield: 0
+    };
+    
+    stats.forEach(s => {
+      formattedStats[s.type] = s._count.type;
+    });
     
     res.json({
       success: true,
-      stats
+      stats: formattedStats
     });
     
   } catch (error) {
@@ -123,7 +186,22 @@ router.get('/:roomId/remaining', protect, isRoomMember, async (req, res) => {
   try {
     const { roomId } = req.params;
     
-    const usedToday = await Appreciation.getDailyCount(roomId, req.user.id);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    const usedToday = await prisma.appreciation.count({
+      where: {
+        roomId,
+        fromUserId: req.user.id,
+        createdAt: {
+          gte: today,
+          lt: tomorrow
+        }
+      }
+    });
+    
     const remaining = Math.max(0, DAILY_LIMIT - usedToday);
     
     res.json({

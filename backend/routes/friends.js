@@ -1,8 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth');
-const Friend = require('../models/Friend');
-const User = require('../models/User');
+const { prisma } = require('../config/database');
 const NotificationService = require('../services/notificationService');
 const PushNotificationService = require('../services/pushNotificationService');
 const logger = require('../utils/logger');
@@ -20,17 +19,21 @@ router.post('/request', protect, async (req, res, next) => {
     }
 
     // Check if recipient exists
-    const recipient = await User.findById(recipientId);
+    const recipient = await prisma.user.findUnique({
+      where: { id: recipientId }
+    });
     if (!recipient) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
     // Check if friendship already exists (in either direction)
-    const existing = await Friend.findOne({
-      $or: [
-        { requester: requesterId, recipient: recipientId },
-        { requester: recipientId, recipient: requesterId }
-      ]
+    const existing = await prisma.friend.findFirst({
+      where: {
+        OR: [
+          { fromUserId: requesterId, toUserId: recipientId },
+          { fromUserId: recipientId, toUserId: requesterId }
+        ]
+      }
     });
 
     if (existing) {
@@ -43,19 +46,20 @@ router.post('/request', protect, async (req, res, next) => {
     }
 
     // Create friend request
-    const friendRequest = await Friend.create({
-      requester: requesterId,
-      recipient: recipientId,
-      status: 'pending'
+    const friendRequest = await prisma.friend.create({
+      data: {
+        fromUserId: requesterId,
+        toUserId: recipientId,
+        status: 'pending'
+      }
     });
 
     // Send in-app notification
     await NotificationService.createNotification({
-      userId: recipientId,
+      recipientId,
       type: 'friend_request',
       title: 'New Friend Request',
       message: `${req.user.username} sent you a friend request`,
-      relatedRoom: null,
       data: { requesterId }
     });
 
@@ -73,12 +77,11 @@ router.post('/request', protect, async (req, res, next) => {
         title: 'New Friend Request',
         message: `${req.user.username} sent you a friend request`,
         requesterId,
-        requestId: friendRequest._id
+        requestId: friendRequest.id
       });
       
-      // Also emit specific friend request event for UI updates
       io.to(`user:${recipientId}`).emit('friend:request', {
-        request: friendRequest,
+        request: { ...friendRequest, _id: friendRequest.id },
         requester: {
           _id: requesterId,
           username: req.user.username
@@ -86,7 +89,7 @@ router.post('/request', protect, async (req, res, next) => {
       });
     }
 
-    res.json({ success: true, friendRequest });
+    res.json({ success: true, friendRequest: { ...friendRequest, _id: friendRequest.id } });
   } catch (error) {
     next(error);
   }
@@ -97,14 +100,16 @@ router.post('/request', protect, async (req, res, next) => {
 // @access  Private
 router.put('/accept/:requestId', protect, async (req, res, next) => {
   try {
-    const friendRequest = await Friend.findById(req.params.requestId);
+    const friendRequest = await prisma.friend.findUnique({
+      where: { id: req.params.requestId }
+    });
 
     if (!friendRequest) {
       return res.status(404).json({ success: false, message: 'Friend request not found' });
     }
 
     // Only recipient can accept
-    if (friendRequest.recipient.toString() !== req.user.id) {
+    if (friendRequest.toUserId !== req.user.id) {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
@@ -112,36 +117,36 @@ router.put('/accept/:requestId', protect, async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Request already processed' });
     }
 
-    friendRequest.status = 'accepted';
-    await friendRequest.save();
+    const updated = await prisma.friend.update({
+      where: { id: req.params.requestId },
+      data: { status: 'accepted' }
+    });
 
     // Notify requester with in-app notification
     await NotificationService.createNotification({
-      userId: friendRequest.requester,
+      recipientId: friendRequest.fromUserId,
       type: 'friend_accepted',
       title: 'Friend Request Accepted',
-      message: `${req.user.username} accepted your friend request`,
-      relatedRoom: null
+      message: `${req.user.username} accepted your friend request`
     });
 
     // Send push notification
     PushNotificationService.notifyFriendAccepted(
-      friendRequest.requester.toString(),
+      friendRequest.fromUserId,
       req.user.username
     ).catch(err => logger.error('Push notification error for friend acceptance:', err));
 
-    // Emit socket event for real-time notification
+    // Emit socket event
     const io = req.app.get('io');
     if (io) {
-      io.to(`user:${friendRequest.requester}`).emit('notification', {
+      io.to(`user:${friendRequest.fromUserId}`).emit('notification', {
         type: 'friend_accepted',
         title: 'Friend Request Accepted',
         message: `${req.user.username} accepted your friend request`,
         friendId: req.user.id
       });
       
-      // Also emit specific friend accepted event for UI updates
-      io.to(`user:${friendRequest.requester}`).emit('friend:accepted', {
+      io.to(`user:${friendRequest.fromUserId}`).emit('friend:accepted', {
         friend: {
           _id: req.user.id,
           username: req.user.username
@@ -149,7 +154,7 @@ router.put('/accept/:requestId', protect, async (req, res, next) => {
       });
     }
 
-    res.json({ success: true, friendRequest });
+    res.json({ success: true, friendRequest: { ...updated, _id: updated.id } });
   } catch (error) {
     next(error);
   }
@@ -160,19 +165,23 @@ router.put('/accept/:requestId', protect, async (req, res, next) => {
 // @access  Private
 router.put('/reject/:requestId', protect, async (req, res, next) => {
   try {
-    const friendRequest = await Friend.findById(req.params.requestId);
+    const friendRequest = await prisma.friend.findUnique({
+      where: { id: req.params.requestId }
+    });
 
     if (!friendRequest) {
       return res.status(404).json({ success: false, message: 'Friend request not found' });
     }
 
     // Only recipient can reject
-    if (friendRequest.recipient.toString() !== req.user.id) {
+    if (friendRequest.toUserId !== req.user.id) {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
-    friendRequest.status = 'rejected';
-    await friendRequest.save();
+    await prisma.friend.update({
+      where: { id: req.params.requestId },
+      data: { status: 'rejected' }
+    });
 
     res.json({ success: true, message: 'Friend request rejected' });
   } catch (error) {
@@ -187,38 +196,32 @@ router.get('/', protect, async (req, res, next) => {
   try {
     const userId = req.user.id;
 
-    // Run two parallel queries instead of $or - often faster
-    // Don't populate avatar - it's too large and causes slow queries
-    const [asRequester, asRecipient] = await Promise.all([
-      Friend.find({ requester: userId, status: 'accepted' })
-        .populate('recipient', 'username _id totalPoints currentStreak')
-        .select('recipient createdAt')
-        .lean()
-        .maxTimeMS(5000),
-      Friend.find({ recipient: userId, status: 'accepted' })
-        .populate('requester', 'username _id totalPoints currentStreak')
-        .select('requester createdAt')
-        .lean()
-        .maxTimeMS(5000)
-    ]);
+    // Get friendships where user is either sender or receiver
+    const friendships = await prisma.friend.findMany({
+      where: {
+        status: 'accepted',
+        OR: [
+          { fromUserId: userId },
+          { toUserId: userId }
+        ]
+      },
+      include: {
+        fromUser: { select: { id: true, username: true, streak: true, totalTasksCompleted: true } },
+        toUser: { select: { id: true, username: true, streak: true, totalTasksCompleted: true } }
+      }
+    });
 
     // Extract friend data
-    const friends = [
-      ...asRequester.map(f => ({
-        _id: f.recipient._id,
-        username: f.recipient.username,
-        totalPoints: f.recipient.totalPoints || 0,
-        currentStreak: f.recipient.currentStreak || 0,
+    const friends = friendships.map(f => {
+      const friend = f.fromUserId === userId ? f.toUser : f.fromUser;
+      return {
+        _id: friend.id,
+        username: friend.username,
+        totalPoints: friend.totalTasksCompleted || 0,
+        currentStreak: friend.streak || 0,
         friendsSince: f.createdAt
-      })),
-      ...asRecipient.map(f => ({
-        _id: f.requester._id,
-        username: f.requester.username,
-        totalPoints: f.requester.totalPoints || 0,
-        currentStreak: f.requester.currentStreak || 0,
-        friendsSince: f.createdAt
-      }))
-    ];
+      };
+    });
 
     res.json({ success: true, friends });
   } catch (error) {
@@ -231,15 +234,24 @@ router.get('/', protect, async (req, res, next) => {
 // @access  Private
 router.get('/requests', protect, async (req, res, next) => {
   try {
-    const requests = await Friend.find({
-      recipient: req.user.id,
-      status: 'pending'
-    })
-      .populate('requester', 'username email')
-      .lean()
-      .maxTimeMS(10000);
+    const requests = await prisma.friend.findMany({
+      where: {
+        toUserId: req.user.id,
+        status: 'pending'
+      },
+      include: {
+        fromUser: { select: { id: true, username: true, email: true } }
+      }
+    });
 
-    res.json({ success: true, requests });
+    // Format for frontend compatibility
+    const formattedRequests = requests.map(r => ({
+      ...r,
+      _id: r.id,
+      requester: { ...r.fromUser, _id: r.fromUser.id }
+    }));
+
+    res.json({ success: true, requests: formattedRequests });
   } catch (error) {
     next(error);
   }
@@ -253,19 +265,23 @@ router.delete('/:friendId', protect, async (req, res, next) => {
     const userId = req.user.id;
     const friendId = req.params.friendId;
 
-    const friendship = await Friend.findOne({
-      $or: [
-        { requester: userId, recipient: friendId },
-        { requester: friendId, recipient: userId }
-      ],
-      status: 'accepted'
+    const friendship = await prisma.friend.findFirst({
+      where: {
+        status: 'accepted',
+        OR: [
+          { fromUserId: userId, toUserId: friendId },
+          { fromUserId: friendId, toUserId: userId }
+        ]
+      }
     });
 
     if (!friendship) {
       return res.status(404).json({ success: false, message: 'Friendship not found' });
     }
 
-    await friendship.deleteOne();
+    await prisma.friend.delete({
+      where: { id: friendship.id }
+    });
 
     res.json({ success: true, message: 'Friend removed' });
   } catch (error) {
@@ -284,16 +300,29 @@ router.get('/search', protect, async (req, res, next) => {
       return res.json({ success: true, users: [] });
     }
 
-    const users = await User.find({
-      _id: { $ne: req.user.id }, // Exclude self
-      username: { $regex: query, $options: 'i' }
-    })
-      .select('username totalPoints currentStreak')
-      .limit(10)
-      .lean()
-      .maxTimeMS(10000);
+    const users = await prisma.user.findMany({
+      where: {
+        id: { not: req.user.id },
+        username: { contains: query, mode: 'insensitive' }
+      },
+      select: {
+        id: true,
+        username: true,
+        streak: true,
+        totalTasksCompleted: true
+      },
+      take: 10
+    });
 
-    res.json({ success: true, users });
+    // Format for frontend compatibility
+    const formattedUsers = users.map(u => ({
+      ...u,
+      _id: u.id,
+      totalPoints: u.totalTasksCompleted || 0,
+      currentStreak: u.streak || 0
+    }));
+
+    res.json({ success: true, users: formattedUsers });
   } catch (error) {
     next(error);
   }

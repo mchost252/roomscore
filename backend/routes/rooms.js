@@ -1,15 +1,39 @@
 const express = require('express');
 const router = express.Router();
-const Room = require('../models/Room');
-const User = require('../models/User');
-const ChatMessage = require('../models/ChatMessage');
-const TaskCompletion = require('../models/TaskCompletion');
-const UserRoomProgress = require('../models/UserRoomProgress');
+const { prisma } = require('../config/database');
+const { nanoid } = require('nanoid');
 const NotificationService = require('../services/notificationService');
 const PushNotificationService = require('../services/pushNotificationService');
 const { protect, isRoomOwner, isRoomMember } = require('../middleware/auth');
 const { validate, createRoomSchema, updateRoomSchema, joinRoomSchema, sendMessageSchema } = require('../middleware/validation');
 const logger = require('../utils/logger');
+
+// Helper to generate join code
+const generateJoinCode = () => nanoid(8).toUpperCase();
+
+// Helper to calculate expiry date
+const calculateExpiryDate = (duration) => {
+  const now = new Date();
+  switch (duration) {
+    case '1_week': return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    case '2_weeks': return new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+    case '1_month': return new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    default: return new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  }
+};
+
+// Helper to format room response
+const formatRoomResponse = (room) => ({
+  ...room,
+  _id: room.id, // For frontend compatibility
+  owner: room.owner ? { ...room.owner, _id: room.owner.id } : { _id: room.ownerId },
+  members: room.members?.map(m => ({
+    ...m,
+    _id: m.id,
+    userId: m.user ? { ...m.user, _id: m.user.id } : { _id: m.userId }
+  })) || [],
+  tasks: room.tasks?.map(t => ({ ...t, _id: t.id })) || []
+});
 
 // @route   GET /api/rooms
 // @desc    Get all rooms for current user
@@ -18,70 +42,86 @@ router.get('/', protect, async (req, res, next) => {
   try {
     const { type } = req.query;
     
-    let query = { isActive: true };
-    
     if (type === 'public') {
       // Get public rooms that user is NOT a member of
-      // Don't populate avatar - too slow
-      const rooms = await Room.find({
-        isPublic: true,
-        isActive: true,
-        owner: { $ne: req.user.id },
-        'members.userId': { $ne: req.user.id }
-      })
-      .populate('owner', 'username _id')
-      .populate('members.userId', 'username _id avatar')
-      .sort({ createdAt: -1 })
-      .limit(50)
-      .lean()
-      .maxTimeMS(15000);
+      const rooms = await prisma.room.findMany({
+        where: {
+          isPrivate: false,
+          isActive: true,
+          NOT: {
+            OR: [
+              { ownerId: req.user.id },
+              { members: { some: { userId: req.user.id } } }
+            ]
+          }
+        },
+        include: {
+          owner: { select: { id: true, username: true } },
+          members: {
+            include: {
+              user: { select: { id: true, username: true, avatar: true } }
+            }
+          },
+          tasks: true
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 50
+      });
       
       return res.json({
         success: true,
         count: rooms.length,
-        rooms
+        rooms: rooms.map(formatRoomResponse)
       });
     }
     
     // Get user's rooms (owned or member)
-    // Don't populate avatar - too slow
-    const rooms = await Room.find({
-      $or: [
-        { owner: req.user.id },
-        { 'members.userId': req.user.id }
-      ],
-      isActive: true
-    })
-    .populate('owner', 'username _id')
-    .populate('members.userId', 'username _id avatar')
-    .sort({ updatedAt: -1 })
-    .lean()
-    .maxTimeMS(15000);
+    const rooms = await prisma.room.findMany({
+      where: {
+        isActive: true,
+        OR: [
+          { ownerId: req.user.id },
+          { members: { some: { userId: req.user.id } } }
+        ]
+      },
+      include: {
+        owner: { select: { id: true, username: true } },
+        members: {
+          include: {
+            user: { select: { id: true, username: true, avatar: true } }
+          }
+        },
+        tasks: true
+      },
+      orderBy: { updatedAt: 'desc' }
+    });
 
     // Get today's date for task completion status
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+    const todayStr = today.toISOString().split('T')[0];
 
     // Get all task completions for today for this user across all their rooms
-    const roomIds = rooms.map(r => r._id);
-    const userCompletions = await TaskCompletion.find({
-      userId: req.user.id,
-      roomId: { $in: roomIds },
-      completionDate: { $gte: today, $lt: tomorrow }
-    }).lean();
+    const roomIds = rooms.map(r => r.id);
+    const userCompletions = await prisma.taskCompletion.findMany({
+      where: {
+        userId: req.user.id,
+        roomId: { in: roomIds },
+        completionDate: todayStr
+      }
+    });
 
     // Create a Set of completed task IDs for quick lookup
-    const completedTaskIds = new Set(userCompletions.map(c => c.taskId.toString()));
+    const completedTaskIds = new Set(userCompletions.map(c => c.taskId));
 
     // Add isCompleted status to each task in each room
-    const roomsWithTaskStatus = rooms.map(room => ({
-      ...room,
-      tasks: (room.tasks || []).map(task => ({
+    const roomsWithTaskStatus = rooms.map(room => {
+      const formatted = formatRoomResponse(room);
+      formatted.tasks = formatted.tasks.map(task => ({
         ...task,
-        isCompleted: completedTaskIds.has(task._id.toString())
-      }))
-    }));
+        isCompleted: completedTaskIds.has(task.id)
+      }));
+      return formatted;
+    });
 
     res.json({
       success: true,
@@ -98,41 +138,56 @@ router.get('/', protect, async (req, res, next) => {
 // @access  Private
 router.post('/', protect, validate(createRoomSchema), async (req, res, next) => {
   try {
-    const { name, description, isPublic, maxMembers, settings, duration, requireApproval } = req.body;
+    const { name, description, isPublic, maxMembers, tasks, duration } = req.body;
 
     // Calculate expiry date based on duration (max 1 month)
-    const expiresAt = Room.calculateExpiryDate(duration || '1_month');
+    const endDate = calculateExpiryDate(duration || '1_month');
+    const joinCode = generateJoinCode();
 
-    const room = await Room.create({
-      name,
-      description,
-      owner: req.user.id,
-      isPublic: isPublic || false,
-      maxMembers: maxMembers || 50,
-      duration: duration || '1_month',
-      expiresAt,
-      settings: {
-        ...settings,
-        requireApproval: requireApproval || false
+    const room = await prisma.room.create({
+      data: {
+        name,
+        description: description || null,
+        ownerId: req.user.id,
+        joinCode,
+        isPrivate: !isPublic,
+        maxMembers: maxMembers || 50,
+        endDate,
+        members: {
+          create: {
+            userId: req.user.id,
+            role: 'owner',
+            points: 0
+          }
+        },
+        tasks: tasks && tasks.length > 0 ? {
+          create: tasks.map(task => ({
+            title: task.title,
+            description: task.description || null,
+            taskType: task.taskType || 'daily',
+            points: task.points || 10
+          }))
+        } : undefined
       },
-      members: [{
-        userId: req.user.id,
-        role: 'owner',
-        points: 0
-      }]
+      include: {
+        owner: { select: { id: true, username: true } },
+        members: {
+          include: {
+            user: { select: { id: true, username: true, avatar: true } }
+          }
+        },
+        tasks: true
+      }
     });
-
-    await room.populate('owner', 'username _id');
-    await room.populate('members.userId', 'username _id avatar');
 
     // Emit socket event
     const io = req.app.get('io');
-    io.emit('room:created', { room });
+    io.emit('room:created', { room: formatRoomResponse(room) });
 
-    logger.info(`Room created: ${room.name} by ${req.user.email}, expires: ${expiresAt}`);
+    logger.info(`Room created: ${room.name} by ${req.user.email}, expires: ${endDate}`);
     res.status(201).json({
       success: true,
-      room
+      room: formatRoomResponse(room)
     });
   } catch (error) {
     next(error);
@@ -144,12 +199,9 @@ router.post('/', protect, validate(createRoomSchema), async (req, res, next) => 
 // @access  Private (must be member)
 router.get('/:id', protect, isRoomMember, async (req, res, next) => {
   try {
-    await req.room.populate('owner', 'username _id');
-    await req.room.populate('members.userId', 'username _id avatar');
-
     res.json({
       success: true,
-      room: req.room
+      room: formatRoomResponse(req.room)
     });
   } catch (error) {
     next(error);
@@ -161,30 +213,36 @@ router.get('/:id', protect, isRoomMember, async (req, res, next) => {
 // @access  Private (owner only)
 router.put('/:id', protect, isRoomOwner, validate(updateRoomSchema), async (req, res, next) => {
   try {
-    const { name, description, isPublic, maxMembers, settings } = req.body;
+    const { name, description, isPublic, maxMembers } = req.body;
 
-    const updateFields = {};
-    if (name) updateFields.name = name;
-    if (description !== undefined) updateFields.description = description;
-    if (isPublic !== undefined) updateFields.isPublic = isPublic;
-    if (maxMembers) updateFields.maxMembers = maxMembers;
-    if (settings) updateFields.settings = { ...req.room.settings, ...settings };
+    const updateData = {};
+    if (name) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
+    if (isPublic !== undefined) updateData.isPrivate = !isPublic;
+    if (maxMembers) updateData.maxMembers = maxMembers;
 
-    const room = await Room.findByIdAndUpdate(
-      req.params.id,
-      updateFields,
-      { new: true, runValidators: true }
-    ).populate('owner', 'username _id')
-     .populate('members.userId', 'username _id avatar');
+    const room = await prisma.room.update({
+      where: { id: req.params.id },
+      data: updateData,
+      include: {
+        owner: { select: { id: true, username: true } },
+        members: {
+          include: {
+            user: { select: { id: true, username: true, avatar: true } }
+          }
+        },
+        tasks: true
+      }
+    });
 
     // Emit socket event
     const io = req.app.get('io');
-    io.to(room._id.toString()).emit('room:updated', { room });
+    io.to(room.id).emit('room:updated', { room: formatRoomResponse(room) });
 
     logger.info(`Room updated: ${room.name}`);
     res.json({
       success: true,
-      room
+      room: formatRoomResponse(room)
     });
   } catch (error) {
     next(error);
@@ -198,12 +256,13 @@ router.delete('/:id', protect, isRoomOwner, async (req, res, next) => {
   try {
     // Get all room members (exclude owner)
     const roomMembers = req.room.members
-      .map(m => m.userId.toString())
-      .filter(userId => userId !== req.user.id);
+      .filter(m => m.userId !== req.user.id)
+      .map(m => m.userId);
 
-    req.room.isActive = false;
-    req.room.deletedAt = new Date();
-    await req.room.save();
+    await prisma.room.update({
+      where: { id: req.params.id },
+      data: { isActive: false }
+    });
 
     // Notify members about room disbanding
     if (roomMembers.length > 0) {
@@ -215,7 +274,7 @@ router.delete('/:id', protect, isRoomOwner, async (req, res, next) => {
 
     // Emit socket event
     const io = req.app.get('io');
-    io.to(req.room._id.toString()).emit('room:deleted', { roomId: req.room._id });
+    io.to(req.room.id).emit('room:deleted', { roomId: req.room.id });
 
     logger.info(`Room deleted: ${req.room.name}`);
     res.json({
@@ -228,28 +287,31 @@ router.delete('/:id', protect, isRoomOwner, async (req, res, next) => {
 });
 
 // @route   POST /api/rooms/join
-// @desc    Join a room with code or invite link
+// @desc    Join a room with code
 // @access  Private
 router.post('/join', protect, validate(joinRoomSchema), async (req, res, next) => {
   try {
-    const { joinCode, inviteLink } = req.body;
+    const { joinCode } = req.body;
 
-    let room;
-    if (joinCode) {
-      room = await Room.findOne({ joinCode: joinCode.toUpperCase(), isActive: true });
-    } else if (inviteLink) {
-      room = await Room.findOne({ inviteLink, isActive: true });
-    }
+    const room = await prisma.room.findFirst({
+      where: { 
+        joinCode: joinCode.toUpperCase(), 
+        isActive: true 
+      },
+      include: {
+        members: true
+      }
+    });
 
     if (!room) {
       return res.status(404).json({
         success: false,
-        message: 'Room not found with provided code or link'
+        message: 'Room not found with provided code'
       });
     }
 
     // Check if room has expired
-    if (room.expiresAt && new Date() > room.expiresAt) {
+    if (room.endDate && new Date() > room.endDate) {
       return res.status(400).json({
         success: false,
         message: 'This room has expired and is no longer accepting members'
@@ -257,8 +319,8 @@ router.post('/join', protect, validate(joinRoomSchema), async (req, res, next) =
     }
 
     // Check if already a member
-    const isMember = room.members.some(m => m.userId.toString() === req.user.id);
-    const isOwner = room.owner.toString() === req.user.id;
+    const isMember = room.members.some(m => m.userId === req.user.id);
+    const isOwner = room.ownerId === req.user.id;
 
     if (isMember || isOwner) {
       return res.status(400).json({
@@ -267,83 +329,60 @@ router.post('/join', protect, validate(joinRoomSchema), async (req, res, next) =
       });
     }
 
-    // Check if already in pending list
-    const isPending = room.pendingMembers?.some(m => m.userId.toString() === req.user.id);
-    if (isPending) {
+    // Check room capacity
+    if (room.members.length >= room.maxMembers) {
       return res.status(400).json({
         success: false,
-        message: 'Your request to join is pending approval'
-      });
-    }
-
-    // If room requires approval, add to pending list instead
-    if (room.settings?.requireApproval) {
-      await room.addPendingMember(req.user.id);
-      
-      // Notify room owner about the join request
-      try {
-        await NotificationService.createNotification({
-          userId: room.owner,
-          type: 'join_request',
-          title: `Join Request for ${room.name}`,
-          message: `${req.user.username} wants to join your room`,
-          relatedRoom: room._id,
-          data: { requesterId: req.user.id }
-        });
-      } catch (err) {
-        logger.error('Error creating join request notification:', err);
-      }
-
-      // Emit socket event to owner
-      const io = req.app.get('io');
-      io.to(`user:${room.owner}`).emit('notification', {
-        type: 'join_request',
-        title: `Join Request for ${room.name}`,
-        message: `${req.user.username} wants to join your room`,
-        roomId: room._id.toString(),
-        requesterId: req.user.id
-      });
-
-      io.to(`user:${room.owner}`).emit('room:joinRequest', {
-        roomId: room._id,
-        user: req.user.toPublicProfile()
-      });
-
-      logger.info(`User ${req.user.email} requested to join room: ${room.name}`);
-      return res.json({
-        success: true,
-        pending: true,
-        message: 'Your request to join has been sent to the room owner for approval'
+        message: 'Room has reached maximum capacity'
       });
     }
 
     // Get existing members before adding new one (for notifications)
-    const existingMembers = room.members
-      .map(m => m.userId.toString())
-      .filter(userId => userId !== req.user.id);
+    const existingMembers = room.members.map(m => m.userId);
 
-    // Add member directly (no approval required)
-    await room.addMember(req.user.id);
-    await room.populate('owner', 'username _id');
-    await room.populate('members.userId', 'username _id avatar');
-
-    // Create system message
-    await ChatMessage.create({
-      roomId: room._id,
-      userId: req.user.id,
-      message: `${req.user.username} joined the room`,
-      messageType: 'system'
+    // Add member
+    await prisma.roomMember.create({
+      data: {
+        roomId: room.id,
+        userId: req.user.id,
+        role: 'member',
+        points: 0
+      }
     });
 
-    // Create in-app notifications for existing members (don't fail if notification fails)
+    // Create system message
+    await prisma.chatMessage.create({
+      data: {
+        roomId: room.id,
+        userId: req.user.id,
+        content: `${req.user.username} joined the room`,
+        type: 'system'
+      }
+    });
+
+    // Get updated room
+    const updatedRoom = await prisma.room.findUnique({
+      where: { id: room.id },
+      include: {
+        owner: { select: { id: true, username: true } },
+        members: {
+          include: {
+            user: { select: { id: true, username: true, avatar: true } }
+          }
+        },
+        tasks: true
+      }
+    });
+
+    // Create notifications for existing members
     for (const memberId of existingMembers) {
       try {
         await NotificationService.createNotification({
-          userId: memberId,
+          recipientId: memberId,
           type: 'member_joined',
           title: `New Member in ${room.name}`,
           message: `${req.user.username} joined the room`,
-          relatedRoom: room._id
+          roomId: room.id
         });
       } catch (err) {
         logger.error('Error creating notification:', err);
@@ -356,42 +395,23 @@ router.post('/join', protect, validate(joinRoomSchema), async (req, res, next) =
         existingMembers,
         req.user.username,
         room.name,
-        room._id.toString()
+        room.id
       ).catch(err => logger.error('Push notification error:', err));
     }
 
     // Emit socket event
     const io = req.app.get('io');
-    io.to(room._id.toString()).emit('member:joined', {
-      roomId: room._id,
-      user: req.user.toPublicProfile()
-    });
-
-    // Emit notification event to existing members
-    existingMembers.forEach(memberId => {
-      io.to(`user:${memberId}`).emit('notification', {
-        type: 'member_joined',
-        title: `New Member in ${room.name}`,
-        message: `${req.user.username} joined the room`,
-        roomId: room._id.toString()
-      });
+    io.to(room.id).emit('member:joined', {
+      roomId: room.id,
+      user: { id: req.user.id, _id: req.user.id, username: req.user.username, avatar: req.user.avatar }
     });
 
     logger.info(`User ${req.user.email} joined room: ${room.name}`);
     res.json({
       success: true,
-      room
+      room: formatRoomResponse(updatedRoom)
     });
   } catch (error) {
-    if (error.message.includes('already a member')) {
-      return res.status(400).json({ success: false, message: error.message });
-    }
-    if (error.message.includes('maximum capacity')) {
-      return res.status(400).json({ success: false, message: error.message });
-    }
-    if (error.message.includes('Already requested')) {
-      return res.status(400).json({ success: false, message: error.message });
-    }
     next(error);
   }
 });
@@ -401,7 +421,7 @@ router.post('/join', protect, validate(joinRoomSchema), async (req, res, next) =
 // @access  Private
 router.delete('/:id/leave', protect, isRoomMember, async (req, res, next) => {
   try {
-    if (req.room.owner.toString() === req.user.id) {
+    if (req.room.ownerId === req.user.id) {
       return res.status(400).json({
         success: false,
         message: 'Room owner cannot leave. Please transfer ownership or delete the room.'
@@ -410,72 +430,64 @@ router.delete('/:id/leave', protect, isRoomMember, async (req, res, next) => {
 
     // Get remaining members before removal (for notifications)
     const remainingMembers = req.room.members
-      .map(m => m.userId.toString())
-      .filter(userId => userId !== req.user.id);
+      .filter(m => m.userId !== req.user.id)
+      .map(m => m.userId);
 
-    await req.room.removeMember(req.user.id);
+    // Remove member
+    await prisma.roomMember.deleteMany({
+      where: {
+        roomId: req.room.id,
+        userId: req.user.id
+      }
+    });
     
     // Delete all task completions for this user in this room
-    await TaskCompletion.deleteMany({
-      userId: req.user.id,
-      roomId: req.room._id
+    await prisma.taskCompletion.deleteMany({
+      where: {
+        userId: req.user.id,
+        roomId: req.room.id
+      }
     });
     
     // Delete user room progress
-    await UserRoomProgress.deleteOne({
-      userId: req.user.id,
-      roomId: req.room._id
+    await prisma.userRoomProgress.deleteMany({
+      where: {
+        userId: req.user.id,
+        roomId: req.room.id
+      }
     });
 
     // Create system message
-    await ChatMessage.create({
-      roomId: req.room._id,
-      userId: req.user.id,
-      message: `${req.user.username} left the room`,
-      messageType: 'system'
+    await prisma.chatMessage.create({
+      data: {
+        roomId: req.room.id,
+        userId: req.user.id,
+        content: `${req.user.username} left the room`,
+        type: 'system'
+      }
     });
 
-    // Create in-app notifications for remaining members (don't fail if notification fails)
+    // Create notifications for remaining members
     for (const memberId of remainingMembers) {
       try {
         await NotificationService.createNotification({
-          userId: memberId,
+          recipientId: memberId,
           type: 'member_left',
           title: `Member Left ${req.room.name}`,
           message: `${req.user.username} left the room`,
-          relatedRoom: req.room._id
+          roomId: req.room.id
         });
       } catch (err) {
         logger.error('Error creating notification:', err);
       }
     }
 
-    // Send push notifications
-    if (remainingMembers.length > 0) {
-      PushNotificationService.notifyMemberLeft(
-        remainingMembers,
-        req.user.username,
-        req.room.name,
-        req.room._id.toString()
-      ).catch(err => logger.error('Push notification error:', err));
-    }
-
     // Emit socket event
     const io = req.app.get('io');
-    io.to(req.room._id.toString()).emit('member:left', {
-      roomId: req.room._id,
+    io.to(req.room.id).emit('member:left', {
+      roomId: req.room.id,
       userId: req.user.id,
       username: req.user.username
-    });
-
-    // Emit notification event to remaining members
-    remainingMembers.forEach(memberId => {
-      io.to(`user:${memberId}`).emit('notification', {
-        type: 'member_left',
-        title: `Member Left ${req.room.name}`,
-        message: `${req.user.username} left the room`,
-        roomId: req.room._id.toString()
-      });
     });
 
     logger.info(`User ${req.user.email} left room: ${req.room.name}`);
@@ -502,38 +514,53 @@ router.delete('/:id/members/:userId', protect, isRoomOwner, async (req, res, nex
       });
     }
 
-    await req.room.removeMember(userId);
+    const removedUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, username: true }
+    });
 
-    const removedUser = await User.findById(userId);
+    // Remove member
+    await prisma.roomMember.deleteMany({
+      where: {
+        roomId: req.room.id,
+        userId: userId
+      }
+    });
     
     // Delete all task completions for this user in this room
-    await TaskCompletion.deleteMany({
-      userId: userId,
-      roomId: req.room._id
+    await prisma.taskCompletion.deleteMany({
+      where: {
+        userId: userId,
+        roomId: req.room.id
+      }
     });
     
     // Delete user room progress
-    await UserRoomProgress.deleteOne({
-      userId: userId,
-      roomId: req.room._id
+    await prisma.userRoomProgress.deleteMany({
+      where: {
+        userId: userId,
+        roomId: req.room.id
+      }
     });
 
     // Create system message
     if (removedUser) {
-      await ChatMessage.create({
-        roomId: req.room._id,
-        userId: req.user.id,
-        message: `${removedUser.username} was removed from the room`,
-        messageType: 'system'
+      await prisma.chatMessage.create({
+        data: {
+          roomId: req.room.id,
+          userId: req.user.id,
+          content: `${removedUser.username} was removed from the room`,
+          type: 'system'
+        }
       });
     }
 
     // Emit socket event
     const io = req.app.get('io');
-    io.to(req.room._id.toString()).emit('member:kicked', {
-      roomId: req.room._id,
-      userId,
-      username: removedUser ? (removedUser.username || removedUser.email) : 'User'
+    io.to(req.room.id).emit('member:kicked', {
+      roomId: req.room.id,
+      oderId: userId,
+      username: removedUser?.username || 'User'
     });
 
     logger.info(`User ${userId} removed from room: ${req.room.name}`);
@@ -551,11 +578,23 @@ router.delete('/:id/members/:userId', protect, isRoomOwner, async (req, res, nex
 // @access  Private (must be member)
 router.get('/:id/leaderboard', protect, isRoomMember, async (req, res, next) => {
   try {
-    const leaderboard = await req.room.getLeaderboard();
+    const leaderboard = await prisma.roomMember.findMany({
+      where: { roomId: req.room.id },
+      include: {
+        user: { select: { id: true, username: true, avatar: true } }
+      },
+      orderBy: { points: 'desc' }
+    });
 
     res.json({
       success: true,
-      leaderboard
+      leaderboard: leaderboard.map(m => ({
+        _id: m.id,
+        oderId: m.userId,
+        user: { ...m.user, _id: m.user.id },
+        points: m.points,
+        role: m.role
+      }))
     });
   } catch (error) {
     next(error);
@@ -567,45 +606,52 @@ router.get('/:id/leaderboard', protect, isRoomMember, async (req, res, next) => 
 // @access  Private (must be member)
 router.post('/:id/chat', protect, isRoomMember, validate(sendMessageSchema), async (req, res, next) => {
   try {
-    const { message, replyTo } = req.body;
+    const { message } = req.body;
 
-    const chatMessage = await ChatMessage.create({
-      roomId: req.params.id,
-      userId: req.user.id,
-      message,
-      messageType: 'text',
-      replyTo: replyTo || null
+    const chatMessage = await prisma.chatMessage.create({
+      data: {
+        roomId: req.params.id,
+        userId: req.user.id,
+        content: message,
+        type: 'user'
+      },
+      include: {
+        user: { select: { id: true, username: true } }
+      }
     });
 
-    await chatMessage.populate('userId', 'username _id');
-    if (chatMessage.replyTo) {
-      await chatMessage.populate('replyTo', 'message userId createdAt');
-    }
+    // Format for frontend compatibility
+    const formattedMessage = {
+      ...chatMessage,
+      _id: chatMessage.id,
+      message: chatMessage.content,
+      userId: { ...chatMessage.user, _id: chatMessage.user.id }
+    };
 
     // Get room members (exclude sender)
     const roomMembers = req.room.members
-      .map(m => m.userId.toString())
-      .filter(userId => userId !== req.user.id);
+      .filter(m => m.userId !== req.user.id)
+      .map(m => m.userId);
 
     // Truncate message for notification preview
     const messagePreview = message.length > 50 ? message.substring(0, 50) + '...' : message;
 
-    // Create in-app notifications for all members (don't fail if notification fails)
+    // Create notifications for all members
     for (const memberId of roomMembers) {
       try {
         await NotificationService.createNotification({
-          userId: memberId,
+          recipientId: memberId,
           type: 'new_chat',
           title: `${req.user.username} in ${req.room.name}`,
           message: messagePreview,
-          relatedRoom: req.params.id
+          roomId: req.params.id
         });
       } catch (err) {
         logger.error('Error creating notification:', err);
       }
     }
 
-    // Send push notifications (only if there are members)
+    // Send push notifications
     if (roomMembers.length > 0) {
       PushNotificationService.notifyNewChat(
         roomMembers,
@@ -618,21 +664,11 @@ router.post('/:id/chat', protect, isRoomMember, validate(sendMessageSchema), asy
 
     // Emit socket event
     const io = req.app.get('io');
-    io.to(req.params.id).emit('chat:message', { message: chatMessage });
-
-    // Emit notification event to members
-    roomMembers.forEach(memberId => {
-      io.to(`user:${memberId}`).emit('notification', {
-        type: 'new_chat',
-        title: `${req.user.username} in ${req.room.name}`,
-        message: messagePreview,
-        roomId: req.params.id
-      });
-    });
+    io.to(req.params.id).emit('chat:message', { message: formattedMessage });
 
     res.status(201).json({
       success: true,
-      message: chatMessage
+      message: formattedMessage
     });
   } catch (error) {
     next(error);
@@ -646,204 +682,76 @@ router.get('/:id/chat', protect, isRoomMember, async (req, res, next) => {
   try {
     const { limit = 50, before } = req.query;
 
-    const query = {
-      roomId: req.params.id,
-      isDeleted: false
+    const whereClause = {
+      roomId: req.params.id
     };
 
     if (before) {
-      query.createdAt = { $lt: new Date(before) };
+      whereClause.createdAt = { lt: new Date(before) };
     }
 
-    const messages = await ChatMessage.find(query)
-      .populate('userId', 'username _id')
-      .populate('replyTo', 'message userId createdAt')
-      .sort({ createdAt: -1 })
-      .limit(parseInt(limit));
+    const messages = await prisma.chatMessage.findMany({
+      where: whereClause,
+      include: {
+        user: { select: { id: true, username: true } }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: parseInt(limit)
+    });
+
+    // Format and reverse for chronological order
+    const formattedMessages = messages.reverse().map(m => ({
+      ...m,
+      _id: m.id,
+      message: m.content,
+      messageType: m.type,
+      userId: m.user ? { ...m.user, _id: m.user.id } : null
+    }));
 
     res.json({
       success: true,
-      count: messages.length,
-      messages: messages.reverse()
+      count: formattedMessages.length,
+      messages: formattedMessages
     });
   } catch (error) {
-    next(error);
-  }
-});
-
-// @route   GET /api/rooms/:id/pending-members
-// @desc    Get pending member requests (owner only)
-// @access  Private (owner only)
-router.get('/:id/pending-members', protect, isRoomOwner, async (req, res, next) => {
-  try {
-    await req.room.populate('pendingMembers.userId', 'username email _id avatar');
-    
-    res.json({
-      success: true,
-      pendingMembers: req.room.pendingMembers || []
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// @route   PUT /api/rooms/:id/approve-member/:userId
-// @desc    Approve a pending member
-// @access  Private (owner only)
-router.put('/:id/approve-member/:userId', protect, isRoomOwner, async (req, res, next) => {
-  try {
-    const { userId } = req.params;
-    
-    await req.room.approvePendingMember(userId);
-    await req.room.populate('owner', 'username _id');
-    await req.room.populate('members.userId', 'username _id avatar');
-
-    const approvedUser = await User.findById(userId);
-    
-    // Create system message
-    if (approvedUser) {
-      await ChatMessage.create({
-        roomId: req.room._id,
-        userId: userId,
-        message: `${approvedUser.username} joined the room`,
-        messageType: 'system'
-      });
-    }
-
-    // Notify the approved user
-    try {
-      await NotificationService.createNotification({
-        userId: userId,
-        type: 'join_approved',
-        title: `Welcome to ${req.room.name}!`,
-        message: `Your request to join ${req.room.name} has been approved`,
-        relatedRoom: req.room._id
-      });
-    } catch (err) {
-      logger.error('Error creating approval notification:', err);
-    }
-
-    // Emit socket events
-    const io = req.app.get('io');
-    
-    // Notify approved user
-    io.to(`user:${userId}`).emit('notification', {
-      type: 'join_approved',
-      title: `Welcome to ${req.room.name}!`,
-      message: `Your request to join ${req.room.name} has been approved`,
-      roomId: req.room._id.toString()
-    });
-
-    io.to(`user:${userId}`).emit('room:joinApproved', {
-      room: req.room
-    });
-
-    // Notify room members
-    if (approvedUser) {
-      io.to(req.room._id.toString()).emit('member:joined', {
-        roomId: req.room._id,
-        user: approvedUser.toPublicProfile()
-      });
-    }
-
-    logger.info(`User ${userId} approved to join room: ${req.room.name}`);
-    res.json({
-      success: true,
-      message: 'Member approved successfully',
-      room: req.room
-    });
-  } catch (error) {
-    if (error.message.includes('not found in pending')) {
-      return res.status(404).json({ success: false, message: error.message });
-    }
-    if (error.message.includes('maximum capacity')) {
-      return res.status(400).json({ success: false, message: error.message });
-    }
-    next(error);
-  }
-});
-
-// @route   PUT /api/rooms/:id/reject-member/:userId
-// @desc    Reject a pending member
-// @access  Private (owner only)
-router.put('/:id/reject-member/:userId', protect, isRoomOwner, async (req, res, next) => {
-  try {
-    const { userId } = req.params;
-    
-    await req.room.rejectPendingMember(userId);
-
-    // Notify the rejected user
-    try {
-      await NotificationService.createNotification({
-        userId: userId,
-        type: 'join_rejected',
-        title: `Request Declined`,
-        message: `Your request to join ${req.room.name} was not approved`,
-        relatedRoom: req.room._id
-      });
-    } catch (err) {
-      logger.error('Error creating rejection notification:', err);
-    }
-
-    // Emit socket event
-    const io = req.app.get('io');
-    io.to(`user:${userId}`).emit('notification', {
-      type: 'join_rejected',
-      title: `Request Declined`,
-      message: `Your request to join ${req.room.name} was not approved`,
-      roomId: req.room._id.toString()
-    });
-
-    io.to(`user:${userId}`).emit('room:joinRejected', {
-      roomId: req.room._id
-    });
-
-    logger.info(`User ${userId} rejected from room: ${req.room.name}`);
-    res.json({
-      success: true,
-      message: 'Member request rejected'
-    });
-  } catch (error) {
-    if (error.message.includes('not found in pending')) {
-      return res.status(404).json({ success: false, message: error.message });
-    }
     next(error);
   }
 });
 
 // @route   PUT /api/rooms/:id/settings
-// @desc    Update room settings (including requireApproval)
+// @desc    Update room settings
 // @access  Private (owner only)
 router.put('/:id/settings', protect, isRoomOwner, async (req, res, next) => {
   try {
-    const { requireApproval, allowMemberTaskCreation, timezone } = req.body;
+    const { isPublic } = req.body;
 
-    const updateFields = {};
-    if (typeof requireApproval === 'boolean') {
-      updateFields['settings.requireApproval'] = requireApproval;
-    }
-    if (typeof allowMemberTaskCreation === 'boolean') {
-      updateFields['settings.allowMemberTaskCreation'] = allowMemberTaskCreation;
-    }
-    if (timezone) {
-      updateFields['settings.timezone'] = timezone;
+    const updateData = {};
+    if (typeof isPublic === 'boolean') {
+      updateData.isPrivate = !isPublic;
     }
 
-    const room = await Room.findByIdAndUpdate(
-      req.params.id,
-      { $set: updateFields },
-      { new: true, runValidators: true }
-    ).populate('owner', 'username _id')
-     .populate('members.userId', 'username _id avatar');
+    const room = await prisma.room.update({
+      where: { id: req.params.id },
+      data: updateData,
+      include: {
+        owner: { select: { id: true, username: true } },
+        members: {
+          include: {
+            user: { select: { id: true, username: true, avatar: true } }
+          }
+        },
+        tasks: true
+      }
+    });
 
     // Emit socket event
     const io = req.app.get('io');
-    io.to(room._id.toString()).emit('room:updated', { room });
+    io.to(room.id).emit('room:updated', { room: formatRoomResponse(room) });
 
     logger.info(`Room settings updated: ${room.name}`);
     res.json({
       success: true,
-      room
+      room: formatRoomResponse(room)
     });
   } catch (error) {
     next(error);

@@ -1,6 +1,5 @@
 require('dotenv').config();
 const express = require('express');
-const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -9,6 +8,7 @@ const { Server } = require('socket.io');
 const logger = require('./utils/logger');
 const passport = require('passport');
 const session = require('express-session');
+const { prisma, connectDatabase } = require('./config/database');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -97,28 +97,22 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// Database connection
-console.log('🔌 Attempting MongoDB connection...');
-console.log('📋 MongoDB URI:', process.env.MONGODB_URI ? 'Set (hidden for security)' : 'NOT SET!');
+// Database connection (PostgreSQL via Prisma)
+console.log('🔌 Attempting PostgreSQL connection...');
+console.log('📋 DATABASE_URL:', process.env.DATABASE_URL ? 'Set (hidden for security)' : 'NOT SET!');
 
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/roomscore', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-  serverSelectionTimeoutMS: 10000, // Timeout after 10 seconds instead of hanging forever
-  maxPoolSize: 10, // Maintain up to 10 socket connections
-  minPoolSize: 2, // Keep at least 2 connections ready
-  socketTimeoutMS: 20000, // Close sockets after 20 seconds of inactivity
-  family: 4 // Use IPv4, skip trying IPv6
-})
-.then(() => {
-  console.log('✅ MongoDB connected successfully');
-  logger.info('MongoDB connected successfully');
-})
-.catch((err) => {
-  console.error('❌ MongoDB connection error:', err.message);
-  logger.error('MongoDB connection error:', err);
-  // Don't exit - let app run for health checks
-});
+connectDatabase()
+  .then(() => {
+    logger.info('PostgreSQL connected successfully');
+  })
+  .catch((err) => {
+    console.error('❌ PostgreSQL connection error:', err.message);
+    logger.error('PostgreSQL connection error:', err);
+    // Don't exit - let app run for health checks
+  });
+
+// Make prisma accessible to routes
+app.set('prisma', prisma);
 
 // Make io accessible to routes and services
 app.set('io', io);

@@ -1,16 +1,26 @@
 const express = require('express');
 const router = express.Router();
 const passport = require('passport');
-const User = require('../models/User');
+const bcrypt = require('bcryptjs');
+const { prisma } = require('../config/database');
 const { protect } = require('../middleware/auth');
-const TaskCompletion = require('../models/TaskCompletion');
-const UserRoomProgress = require('../models/UserRoomProgress');
-const Room = require('../models/Room');
-const ChatMessage = require('../models/ChatMessage');
-const Notification = require('../models/Notification');
 const { validate, registerSchema, loginSchema, updateProfileSchema } = require('../middleware/validation');
 const { sendTokenResponse, verifyRefreshToken, generateToken } = require('../utils/jwt');
 const logger = require('../utils/logger');
+
+// Helper to convert user to public profile
+const toPublicProfile = (user) => ({
+  id: user.id,
+  email: user.email,
+  username: user.username,
+  avatar: user.avatar,
+  timezone: user.timezone,
+  onboardingCompleted: user.onboardingCompleted,
+  streak: user.streak,
+  longestStreak: user.longestStreak,
+  totalTasksCompleted: user.totalTasksCompleted,
+  createdAt: user.createdAt
+});
 
 // @route   POST /api/auth/register
 // @desc    Register a new user
@@ -20,20 +30,34 @@ router.post('/register', validate(registerSchema), async (req, res, next) => {
     const { email, password, username } = req.body;
 
     // Check if user exists
-    let user = await User.findOne({ email });
-    if (user) {
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: email.toLowerCase() },
+          { username: username }
+        ]
+      }
+    });
+
+    if (existingUser) {
+      const field = existingUser.email === email.toLowerCase() ? 'email' : 'username';
       return res.status(400).json({
         success: false,
-        message: 'User already exists with this email'
+        message: `User already exists with this ${field}`
       });
     }
 
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
     // Create user
-    user = await User.create({
-      email,
-      password,
-      username,
-      isVerified: false
+    const user = await prisma.user.create({
+      data: {
+        email: email.toLowerCase(),
+        password: hashedPassword,
+        username
+      }
     });
 
     logger.info(`New user registered: ${email}`);
@@ -51,7 +75,10 @@ router.post('/login', validate(loginSchema), async (req, res, next) => {
     const { email, password } = req.body;
 
     // Check for user
-    const user = await User.findOne({ email }).select('+password');
+    const user = await prisma.user.findUnique({
+      where: { email: email.toLowerCase() }
+    });
+
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -60,18 +87,18 @@ router.post('/login', validate(loginSchema), async (req, res, next) => {
     }
 
     // Check if password matches
-    const isMatch = await user.comparePassword(password);
+    if (!user.password) {
+      return res.status(401).json({
+        success: false,
+        message: 'Please use Google login for this account'
+      });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
-      });
-    }
-
-    if (!user.isActive) {
-      return res.status(401).json({
-        success: false,
-        message: 'Account is deactivated'
       });
     }
 
@@ -122,15 +149,18 @@ router.post('/refresh', async (req, res, next) => {
       });
     }
 
-    const user = await User.findById(decoded.id);
-    if (!user || !user.isActive) {
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.id }
+    });
+
+    if (!user) {
       return res.status(401).json({
         success: false,
         message: 'User not found or inactive'
       });
     }
 
-    const newToken = generateToken(user._id);
+    const newToken = generateToken(user.id);
     res.json({
       success: true,
       token: newToken
@@ -147,7 +177,7 @@ router.get('/profile', protect, async (req, res, next) => {
   try {
     res.json({
       success: true,
-      user: req.user.toPublicProfile()
+      user: toPublicProfile(req.user)
     });
   } catch (error) {
     next(error);
@@ -159,24 +189,23 @@ router.get('/profile', protect, async (req, res, next) => {
 // @access  Private
 router.put('/profile', protect, validate(updateProfileSchema), async (req, res, next) => {
   try {
-    const { username, avatar, bio, notificationSettings } = req.body;
+    const { username, avatar, timezone, onboardingCompleted } = req.body;
 
-    const updateFields = {};
-    if (username) updateFields.username = username;
-    if (avatar !== undefined) updateFields.avatar = avatar;
-    if (bio !== undefined) updateFields.bio = bio;
-    if (notificationSettings) updateFields.notificationSettings = notificationSettings;
+    const updateData = {};
+    if (username) updateData.username = username;
+    if (avatar !== undefined) updateData.avatar = avatar;
+    if (timezone !== undefined) updateData.timezone = timezone;
+    if (onboardingCompleted !== undefined) updateData.onboardingCompleted = onboardingCompleted;
 
-    const user = await User.findByIdAndUpdate(
-      req.user.id,
-      updateFields,
-      { new: true, runValidators: true }
-    );
+    const user = await prisma.user.update({
+      where: { id: req.user.id },
+      data: updateData
+    });
 
     logger.info(`User profile updated: ${user.email}`);
     res.json({
       success: true,
-      user: user.toPublicProfile()
+      user: toPublicProfile(user)
     });
   } catch (error) {
     next(error);
@@ -201,28 +230,10 @@ router.delete('/account', protect, async (req, res, next) => {
   try {
     const userId = req.user.id;
 
-    // Remove user from all rooms
-    await Room.updateMany(
-      { 'members.userId': userId },
-      { $pull: { members: { userId } } }
-    );
-
-    // If user is owner of any rooms, mark them inactive (simple safe behavior)
-    await Room.updateMany(
-      { owner: userId },
-      { $set: { isActive: false, deletedAt: new Date() } }
-    );
-
-    // Delete related records
-    await Promise.all([
-      TaskCompletion.deleteMany({ userId }),
-      UserRoomProgress.deleteMany({ userId }),
-      ChatMessage.deleteMany({ userId }),
-      Notification.deleteMany({ userId })
-    ]);
-
-    // Finally delete the user
-    await User.findByIdAndDelete(userId);
+    // Delete user (cascades will handle related data due to onDelete: Cascade in schema)
+    await prisma.user.delete({
+      where: { id: userId }
+    });
 
     logger.info(`User account deleted: ${userId}`);
     res.json({ success: true, message: 'Account deleted' });
@@ -236,7 +247,10 @@ router.delete('/account', protect, async (req, res, next) => {
 // @access  Private
 router.get('/avatar/:userId', protect, async (req, res, next) => {
   try {
-    const user = await User.findById(req.params.userId).select('avatar').lean();
+    const user = await prisma.user.findUnique({
+      where: { id: req.params.userId },
+      select: { avatar: true }
+    });
     
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
