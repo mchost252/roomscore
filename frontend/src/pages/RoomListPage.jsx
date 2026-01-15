@@ -251,6 +251,7 @@ const RoomListPage = () => {
           height: '100%',
           cursor: 'pointer',
           transition: 'transform 0.2s, box-shadow 0.2s',
+          overflow: 'hidden',
           '&:hover': {
             transform: 'translateY(-4px)',
             boxShadow: 6
@@ -258,10 +259,34 @@ const RoomListPage = () => {
         }}
         onClick={handleCardClick}
       >
-        <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+        {/* Gradient Header */}
+        <Box 
+          sx={{ 
+            background: (theme) => theme.palette.mode === 'dark'
+              ? 'linear-gradient(135deg, rgba(59,130,246,0.15) 0%, rgba(99,102,241,0.15) 50%, rgba(139,92,246,0.15) 100%)'
+              : 'linear-gradient(135deg, rgba(59,130,246,0.08) 0%, rgba(99,102,241,0.08) 50%, rgba(139,92,246,0.08) 100%)',
+            borderBottom: (theme) => theme.palette.mode === 'dark'
+              ? '1px solid rgba(96,165,250,0.2)'
+              : '1px solid rgba(59,130,246,0.15)',
+            p: 2,
+            pb: 1.5
+          }}
+        >
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <Box sx={{ flex: 1 }}>
-              <Typography variant="h6" fontWeight="bold" gutterBottom>
+              <Typography 
+                variant="h6" 
+                fontWeight="bold" 
+                gutterBottom
+                sx={{
+                  background: (theme) => theme.palette.mode === 'dark'
+                    ? 'linear-gradient(135deg, #60A5FA 0%, #818CF8 50%, #A78BFA 100%)'
+                    : 'linear-gradient(135deg, #3B82F6 0%, #6366F1 50%, #8B5CF6 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text'
+                }}
+              >
                 {room.name}
               </Typography>
               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
@@ -274,6 +299,9 @@ const RoomListPage = () => {
               </Box>
             </Box>
           </Box>
+        </Box>
+
+        <CardContent sx={{ pt: 2 }}>
 
           {room.description && (
             <Typography 

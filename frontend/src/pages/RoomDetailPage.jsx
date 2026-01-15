@@ -42,7 +42,11 @@ import {
   CalendarToday,
   TrendingUp,
   Delete,
-  Edit
+  Edit,
+  NotificationsActive,
+  Star,
+  Whatshot,
+  Shield
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
@@ -78,6 +82,10 @@ const RoomDetailPage = () => {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
   const [showRoomIntro, setShowRoomIntro] = useState(false);
+  const [canNudge, setCanNudge] = useState(false);
+  const [nudging, setNudging] = useState(false);
+  const [appreciationRemaining, setAppreciationRemaining] = useState(3);
+  const [appreciating, setAppreciating] = useState(false);
   const [newTask, setNewTask] = useState({
     title: '',
     description: '',
@@ -105,6 +113,70 @@ const RoomDetailPage = () => {
       try { leaveRoom(roomId); } catch {}
     };
   }, [roomId]);
+
+  // Function to refresh nudge status
+  const refreshNudgeStatus = useCallback(async () => {
+    if (!roomId) return;
+    try {
+      const response = await api.get(`/nudges/${roomId}/can-send`);
+      setCanNudge(response.data.canSend);
+    } catch (err) {
+      console.error('Error checking nudge status:', err);
+    }
+  }, [roomId]);
+
+  // Check if user can send nudge on load
+  useEffect(() => {
+    if (room) refreshNudgeStatus();
+  }, [roomId, room, refreshNudgeStatus]);
+
+  // Handle nudge
+  const handleNudge = async () => {
+    try {
+      setNudging(true);
+      await api.post(`/nudges/${roomId}`);
+      setSuccess('✨ Nudge sent to the room!');
+      setCanNudge(false);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to send nudge');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setNudging(false);
+    }
+  };
+
+  // Check appreciation remaining
+  useEffect(() => {
+    const checkAppreciationRemaining = async () => {
+      if (!roomId) return;
+      try {
+        const response = await api.get(`/appreciations/${roomId}/remaining`);
+        setAppreciationRemaining(response.data.remaining);
+      } catch (err) {
+        console.error('Error checking appreciation remaining:', err);
+      }
+    };
+    if (room) checkAppreciationRemaining();
+  }, [roomId, room]);
+
+  // Handle appreciation
+  const handleAppreciation = async (toUserId, type) => {
+    if (appreciating) return;
+    try {
+      setAppreciating(true);
+      await api.post(`/appreciations/${roomId}`, { toUserId, type });
+      setAppreciationRemaining(prev => prev - 1);
+      const emoji = type === 'star' ? '⭐' : type === 'fire' ? '🔥' : '🛡️';
+      setSuccess(`${emoji} Appreciation sent!`);
+      setTimeout(() => setSuccess(null), 2000);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to send appreciation');
+      setTimeout(() => setError(null), 3000);
+    } finally {
+      setAppreciating(false);
+    }
+  };
 
   // Listen for app foreground event to refresh data (mobile sync)
   useEffect(() => {
@@ -471,7 +543,8 @@ const RoomDetailPage = () => {
           // Invalidate cache for fresh data next time
           invalidateCache(`/rooms/${roomId}`);
           invalidateCache('/rooms');
-          // Don't reload room details - socket events will sync the data
+          // Refresh nudge status - user can now nudge after completing a task
+          refreshNudgeStatus();
         })
         .catch(err => {
           // Rollback on error
@@ -863,14 +936,38 @@ const RoomDetailPage = () => {
       {/* Show content as soon as room data is available */}
       {room && (<>
       {/* Header */}
-      <Paper sx={{ p: { xs: 2, md: 3 }, mb: { xs: 2, md: 3 } }}>
+      <Paper 
+        sx={{ 
+          p: { xs: 2, md: 3 }, 
+          mb: { xs: 2, md: 3 },
+          background: (theme) => theme.palette.mode === 'dark'
+            ? 'linear-gradient(135deg, rgba(59,130,246,0.08) 0%, rgba(99,102,241,0.08) 50%, rgba(139,92,246,0.08) 100%)'
+            : 'linear-gradient(135deg, rgba(59,130,246,0.05) 0%, rgba(99,102,241,0.05) 50%, rgba(139,92,246,0.05) 100%)',
+          borderTop: (theme) => theme.palette.mode === 'dark'
+            ? '2px solid rgba(96,165,250,0.3)'
+            : '2px solid rgba(59,130,246,0.2)'
+        }}
+      >
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, md: 2 }, flex: 1, minWidth: 0 }}>
             <IconButton onClick={() => navigate('/rooms')} size="small">
               <ArrowBack sx={{ fontSize: { xs: 20, md: 24 } }} />
             </IconButton>
             <Box sx={{ minWidth: 0, flex: 1 }}>
-              <Typography variant="h4" fontWeight="bold" sx={{ fontSize: { xs: '1.2rem', md: '2.125rem' }, wordBreak: 'break-word' }}>
+              <Typography 
+                variant="h4" 
+                fontWeight="bold" 
+                sx={{ 
+                  fontSize: { xs: '1.2rem', md: '2.125rem' }, 
+                  wordBreak: 'break-word',
+                  background: (theme) => theme.palette.mode === 'dark'
+                    ? 'linear-gradient(135deg, #60A5FA 0%, #818CF8 50%, #A78BFA 100%)'
+                    : 'linear-gradient(135deg, #3B82F6 0%, #6366F1 50%, #8B5CF6 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text'
+                }}
+              >
                 {room.name}
               </Typography>
               <Box sx={{ display: 'flex', gap: 0.5, mt: 0.5, flexWrap: 'wrap' }}>
@@ -1925,6 +2022,11 @@ const RoomDetailPage = () => {
         onSendMessage={handleSendMessageFromDrawer}
         currentUser={user}
         roomName={room?.name || 'Room Chat'}
+        roomMembers={room?.members || []}
+        onSendAppreciation={handleAppreciation}
+        appreciationRemaining={appreciationRemaining}
+        onSendNudge={handleNudge}
+        canNudge={canNudge}
       />
     </Box>
   );

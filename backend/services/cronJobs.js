@@ -5,8 +5,8 @@ const ChatMessage = require('../models/ChatMessage');
 const Room = require('../models/Room');
 const User = require('../models/User');
 const TaskCompletion = require('../models/TaskCompletion');
-const TaskValidationService = require('./taskValidationService');
 const logger = require('../utils/logger');
+const moment = require('moment-timezone');
 
 // Send scheduled notifications every 5 minutes
 cron.schedule('*/5 * * * *', async () => {
@@ -215,31 +215,30 @@ cron.schedule('0 0 * * *', async () => {
       const timezone = room.settings.timezone || 'UTC';
       let roomHadActivityYesterday = false;
       
+      // Get yesterday's boundaries
+      const yesterday = moment().tz(timezone).subtract(1, 'day');
+      const startOfYesterday = yesterday.clone().startOf('day').toDate();
+      const endOfYesterday = yesterday.clone().endOf('day').toDate();
+      
       // Process each member's streak
       for (const member of room.members) {
         try {
           const user = await User.findById(member.userId);
           if (!user) continue;
           
-          // Get yesterday's task completions for this user in this room
-          const taskCompletions = await TaskCompletion.find({
+          // Check if user completed any tasks yesterday in this room
+          const completionsYesterday = await TaskCompletion.countDocuments({
             userId: user._id,
-            roomId: room._id
+            roomId: room._id,
+            completedAt: {
+              $gte: startOfYesterday,
+              $lte: endOfYesterday
+            }
           });
           
-          // Check if user had valid tasks yesterday
-          const hadValidTasksYesterday = TaskValidationService.hasValidTasksYesterday(
-            taskCompletions,
-            timezone
-          );
-          
-          if (hadValidTasksYesterday) {
-            // User completed valid tasks - increment streak
-            user.incrementStreak();
-            await user.save();
-            usersUpdated++;
+          if (completionsYesterday > 0) {
+            // User completed tasks - already incremented in real-time, just mark activity
             roomHadActivityYesterday = true;
-            
             logger.info(`✅ User ${user.username} streak: ${user.currentStreak}`);
           } else {
             // Check if user should lose their streak
@@ -249,7 +248,7 @@ cron.schedule('0 0 * * *', async () => {
               await user.save();
               usersUpdated++;
               
-              logger.info(`❌ User ${user.username} streak reset (no valid tasks yesterday)`);
+              logger.info(`❌ User ${user.username} streak reset (no tasks yesterday)`);
               
               // Create system message in room
               await ChatMessage.create({
@@ -266,18 +265,8 @@ cron.schedule('0 0 * * *', async () => {
       
       // Update room streak
       if (roomHadActivityYesterday) {
-        room.incrementRoomStreak();
-        await room.save();
-        roomsUpdated++;
-        
+        // Room streak already updated in real-time
         logger.info(`✅ Room ${room.name} streak: ${room.roomStreak}`);
-        
-        // Create system message
-        await ChatMessage.create({
-          roomId: room._id,
-          message: `🌟 Room streak preserved! Day ${room.roomStreak}`,
-          isSystemMessage: true
-        });
       } else {
         // Check if room should lose streak
         if (room.roomStreak > 0) {

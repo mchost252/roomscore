@@ -15,13 +15,28 @@ import {
   useMediaQuery,
   Popover,
   Tooltip,
-  InputAdornment
+  InputAdornment,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  List,
+  ListItem,
+  ListItemAvatar,
+  ListItemText,
+  ListItemButton,
+  Chip
 } from '@mui/material';
 import {
   Send as SendIcon,
   Close as CloseIcon,
   Chat as ChatIcon,
-  EmojiEmotions
+  EmojiEmotions,
+  Star,
+  Whatshot,
+  Shield,
+  NotificationsActive
 } from '@mui/icons-material';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -31,7 +46,12 @@ const ChatDrawer = ({
   messages = [], 
   onSendMessage, 
   currentUser,
-  roomName = 'Room Chat'
+  roomName = 'Room Chat',
+  roomMembers = [],
+  onSendAppreciation,
+  appreciationRemaining = 3,
+  onSendNudge,
+  canNudge = false
 }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -39,6 +59,9 @@ const ChatDrawer = ({
   const [emojiAnchor, setEmojiAnchor] = useState(null);
   const [replyTo, setReplyTo] = useState(null);
   const messagesEndRef = useRef(null);
+  const [appreciationDialogOpen, setAppreciationDialogOpen] = useState(false);
+  const [selectedAppreciationType, setSelectedAppreciationType] = useState(null);
+  const [quickAppreciateUser, setQuickAppreciateUser] = useState(null);
   const chatContainerRef = useRef(null);
   
   const quickEmojis = ['👍', '❤️', '😂', '🔥', '🎉'];
@@ -61,6 +84,34 @@ const ChatDrawer = ({
   const handleEmojiClick = (emoji) => {
     setMessage(prev => prev + emoji);
     setEmojiAnchor(null);
+  };
+
+  // Handle appreciation dialog opening
+  const handleAppreciationClick = () => {
+    setSelectedAppreciationType(null);
+    setAppreciationDialogOpen(true);
+  };
+
+  // Handle appreciation type selection
+  const handleAppreciationTypeSelect = (type) => {
+    setSelectedAppreciationType(type);
+  };
+
+  // Handle member selection for appreciation
+  const handleMemberSelect = (memberId) => {
+    if (selectedAppreciationType && onSendAppreciation) {
+      onSendAppreciation(memberId, selectedAppreciationType);
+      setAppreciationDialogOpen(false);
+      setSelectedAppreciationType(null);
+    }
+  };
+
+  // Quick appreciation from chat message
+  const handleQuickAppreciate = (userId, type) => {
+    if (onSendAppreciation) {
+      onSendAppreciation(userId, type);
+      setQuickAppreciateUser(null);
+    }
   };
 
   const handleKeyPress = (e) => {
@@ -322,9 +373,51 @@ const ChatDrawer = ({
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
-                  <IconButton size="small" onClick={(e) => setEmojiAnchor(e.currentTarget)}>
-                    <EmojiEmotions />
-                  </IconButton>
+                  <Box sx={{ display: 'flex', gap: 0.25, alignItems: 'center' }}>
+                    <Tooltip title="Emoji">
+                      <IconButton 
+                        size="small" 
+                        onClick={(e) => setEmojiAnchor(e.currentTarget)}
+                        sx={{ color: 'text.secondary' }}
+                      >
+                        <EmojiEmotions fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    {appreciationRemaining > 0 && (
+                      <Tooltip title={`Send appreciation (${appreciationRemaining} left today)`}>
+                        <IconButton 
+                          size="small" 
+                          onClick={handleAppreciationClick}
+                          sx={{ 
+                            color: 'warning.main',
+                            '&:hover': { bgcolor: 'warning.50' }
+                          }}
+                        >
+                          <Badge 
+                            badgeContent={appreciationRemaining} 
+                            color="primary"
+                            sx={{ '& .MuiBadge-badge': { fontSize: '0.6rem', minWidth: 14, height: 14 } }}
+                          >
+                            <Star fontSize="small" />
+                          </Badge>
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                    {canNudge && (
+                      <Tooltip title="Nudge room - remind everyone to complete tasks">
+                        <IconButton 
+                          size="small" 
+                          onClick={onSendNudge}
+                          sx={{ 
+                            color: 'info.main',
+                            '&:hover': { bgcolor: 'info.50' }
+                          }}
+                        >
+                          <NotificationsActive fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                  </Box>
                 </InputAdornment>
               )
             }}
@@ -390,6 +483,128 @@ const ChatDrawer = ({
             ))}
           </Box>
         </Popover>
+
+        {/* Appreciation Dialog */}
+        <Dialog 
+          open={appreciationDialogOpen} 
+          onClose={() => setAppreciationDialogOpen(false)}
+          maxWidth="xs"
+          fullWidth
+        >
+          <DialogTitle>
+            {selectedAppreciationType ? 'Select Member' : 'Choose Appreciation'}
+          </DialogTitle>
+          <DialogContent>
+            {!selectedAppreciationType ? (
+              // Step 1: Select appreciation type
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+                <Button
+                  variant="outlined"
+                  size="large"
+                  startIcon={<Star />}
+                  onClick={() => handleAppreciationTypeSelect('star')}
+                  sx={{ 
+                    justifyContent: 'flex-start',
+                    py: 2,
+                    borderColor: 'warning.main',
+                    color: 'warning.main',
+                    '&:hover': {
+                      borderColor: 'warning.dark',
+                      bgcolor: 'warning.50'
+                    }
+                  }}
+                >
+                  <Box sx={{ textAlign: 'left', flex: 1 }}>
+                    <Typography variant="body1" fontWeight="bold">⭐ Star</Typography>
+                    <Typography variant="caption" color="text.secondary">Good effort / appreciated</Typography>
+                  </Box>
+                </Button>
+                <Button
+                  variant="outlined"
+                  size="large"
+                  startIcon={<Whatshot />}
+                  onClick={() => handleAppreciationTypeSelect('fire')}
+                  sx={{ 
+                    justifyContent: 'flex-start',
+                    py: 2,
+                    borderColor: 'error.main',
+                    color: 'error.main',
+                    '&:hover': {
+                      borderColor: 'error.dark',
+                      bgcolor: 'error.50'
+                    }
+                  }}
+                >
+                  <Box sx={{ textAlign: 'left', flex: 1 }}>
+                    <Typography variant="body1" fontWeight="bold">🔥 Fire</Typography>
+                    <Typography variant="caption" color="text.secondary">You really showed up today</Typography>
+                  </Box>
+                </Button>
+                <Button
+                  variant="outlined"
+                  size="large"
+                  startIcon={<Shield />}
+                  onClick={() => handleAppreciationTypeSelect('shield')}
+                  sx={{ 
+                    justifyContent: 'flex-start',
+                    py: 2,
+                    borderColor: 'info.main',
+                    color: 'info.main',
+                    '&:hover': {
+                      borderColor: 'info.dark',
+                      bgcolor: 'info.50'
+                    }
+                  }}
+                >
+                  <Box sx={{ textAlign: 'left', flex: 1 }}>
+                    <Typography variant="body1" fontWeight="bold">🛡️ Shield</Typography>
+                    <Typography variant="caption" color="text.secondary">Reliable / kept the streak alive</Typography>
+                  </Box>
+                </Button>
+              </Box>
+            ) : (
+              // Step 2: Select member
+              <List sx={{ pt: 0 }}>
+                {roomMembers
+                  .filter(member => {
+                    const memberId = member.userId?._id || member.userId;
+                    return memberId !== currentUser?.id;
+                  })
+                  .map((member) => {
+                    const memberId = member.userId?._id || member.userId;
+                    const memberData = member.userId;
+                    return (
+                      <ListItemButton
+                        key={memberId}
+                        onClick={() => handleMemberSelect(memberId)}
+                        sx={{ borderRadius: 1, mb: 0.5 }}
+                      >
+                        <ListItemAvatar>
+                          <Avatar src={memberData?.avatar}>
+                            {memberData?.username?.[0]?.toUpperCase()}
+                          </Avatar>
+                        </ListItemAvatar>
+                        <ListItemText 
+                          primary={memberData?.username || 'Unknown'} 
+                          secondary={`${member.points || 0} points`}
+                        />
+                      </ListItemButton>
+                    );
+                  })}
+              </List>
+            )}
+          </DialogContent>
+          <DialogActions>
+            {selectedAppreciationType && (
+              <Button onClick={() => setSelectedAppreciationType(null)}>
+                Back
+              </Button>
+            )}
+            <Button onClick={() => setAppreciationDialogOpen(false)}>
+              Cancel
+            </Button>
+          </DialogActions>
+        </Dialog>
       </Box>
     </Drawer>
   );

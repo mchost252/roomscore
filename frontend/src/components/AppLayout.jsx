@@ -602,18 +602,19 @@ const AppLayout = ({ children }) => {
               <MenuIcon />
             </IconButton>
             
-            <Box
-              component="img"
-              src="/icon-192x192.png"
-              alt="Krios"
+            <Typography
+              variant="h6"
               onClick={() => navigate('/dashboard')}
               sx={{
-                width: 32,
-                height: 32,
-                borderRadius: 1,
+                fontWeight: 700,
                 cursor: 'pointer',
+                background: 'linear-gradient(135deg, #60A5FA 0%, #F59E0B 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
               }}
-            />
+            >
+              Krios
+            </Typography>
           </Box>
 
           {/* Right side - Notifications + Profile */}

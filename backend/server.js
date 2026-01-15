@@ -18,6 +18,8 @@ const notificationRoutes = require('./routes/notifications');
 const pushRoutes = require('./routes/push');
 const friendRoutes = require('./routes/friends');
 const directMessageRoutes = require('./routes/directMessages');
+const nudgeRoutes = require('./routes/nudges');
+const appreciationRoutes = require('./routes/appreciations');
 
 // Import socket handler and cron jobs
 const socketHandler = require('./socket/socketHandler');
@@ -130,6 +132,8 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/push', pushRoutes);
 app.use('/api/friends', friendRoutes);
 app.use('/api/direct-messages', directMessageRoutes);
+app.use('/api/nudges', nudgeRoutes);
+app.use('/api/appreciations', appreciationRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

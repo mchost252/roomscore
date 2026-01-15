@@ -109,30 +109,30 @@ const ConstellationProgressRing = ({ progress, size = 60 }) => {
   const circumference = radius * 2 * Math.PI;
   const offset = circumference - (progress / 100) * circumference;
   
-  // Generate constellation dots based on progress
-  const dotCount = 8;
-  const dots = [];
-  for (let i = 0; i < dotCount; i++) {
-    const angle = (i / dotCount) * 2 * Math.PI - Math.PI / 2;
-    const x = size / 2 + (radius - 2) * Math.cos(angle);
-    const y = size / 2 + (radius - 2) * Math.sin(angle);
-    const isActive = (i / dotCount) * 100 <= progress;
-    dots.push({ x, y, isActive });
-  }
-
   return (
     <Box sx={{ position: 'relative', width: size, height: size }}>
       <svg width={size} height={size}>
+        {/* Outer glow circle */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius + 2}
+          fill="none"
+          stroke={isDark ? 'rgba(96,165,250,0.1)' : 'rgba(59,130,246,0.1)'}
+          strokeWidth={1}
+        />
+        
         {/* Background circle */}
         <circle
           cx={size / 2}
           cy={size / 2}
           r={radius}
           fill="none"
-          stroke={isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}
+          stroke={isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}
           strokeWidth={strokeWidth}
         />
-        {/* Progress arc with gradient */}
+        
+        {/* Progress arc with smooth gradient */}
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -144,26 +144,38 @@ const ConstellationProgressRing = ({ progress, size = 60 }) => {
           strokeDasharray={circumference}
           strokeDashoffset={offset}
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
-          style={{ transition: 'stroke-dashoffset 0.5s ease' }}
+          style={{ transition: 'stroke-dashoffset 0.6s cubic-bezier(0.4, 0, 0.2, 1)' }}
         />
-        {/* Gradient definition */}
+        
+        {/* Gradient definition - more vibrant */}
         <defs>
-          <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#60A5FA" />
-            <stop offset="100%" stopColor="#F59E0B" />
+          <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor={isDark ? '#60A5FA' : '#3B82F6'} />
+            <stop offset="50%" stopColor={isDark ? '#8B5CF6' : '#6366F1'} />
+            <stop offset="100%" stopColor={isDark ? '#EC4899' : '#F59E0B'} />
           </linearGradient>
+          
+          {/* Glow filter for active state */}
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+            <feMerge>
+              <feMergeNode in="coloredBlur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
         </defs>
-        {/* Constellation dots */}
-        {dots.map((dot, i) => (
+        
+        {/* End cap circle for progress */}
+        {progress > 0 && (
           <circle
-            key={i}
-            cx={dot.x}
-            cy={dot.y}
-            r={dot.isActive ? 3 : 2}
-            fill={dot.isActive ? (i % 2 === 0 ? '#60A5FA' : '#F59E0B') : (isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)')}
-            style={{ transition: 'all 0.3s ease' }}
+            cx={size / 2 + radius * Math.cos((progress / 100) * 2 * Math.PI - Math.PI / 2)}
+            cy={size / 2 + radius * Math.sin((progress / 100) * 2 * Math.PI - Math.PI / 2)}
+            r={strokeWidth / 2 + 1}
+            fill={isDark ? '#60A5FA' : '#3B82F6'}
+            filter="url(#glow)"
+            style={{ transition: 'all 0.6s cubic-bezier(0.4, 0, 0.2, 1)' }}
           />
-        ))}
+        )}
       </svg>
       {/* Center percentage */}
       <Box
