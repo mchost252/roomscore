@@ -47,7 +47,7 @@ const ERROR_MESSAGES = {
   },
   INVALID_CREDENTIALS: {
     title: 'Wrong Coordinates',
-    message: 'Those credentials don\'t match our star charts. Please check and try again.',
+    message: 'That email or password doesn\'t match our records. Please check and try again, or sign up if you\'re new here!',
     icon: '🧭'
   },
 
@@ -173,6 +173,48 @@ export const getErrorMessage = (error, context = '') => {
   // If it's a string error code, look it up directly
   if (typeof error === 'string') {
     return ERROR_MESSAGES[error] || ERROR_MESSAGES.UNKNOWN_ERROR;
+  }
+
+  // Handle string messages from backend
+  if (typeof error === 'string') {
+    const lowerError = error.toLowerCase();
+    
+    // Check for specific backend messages
+    if (lowerError.includes('invalid credentials') || lowerError.includes('wrong password')) {
+      return ERROR_MESSAGES.INVALID_CREDENTIALS;
+    }
+    if (lowerError.includes('user not found') || lowerError.includes('no account')) {
+      return {
+        title: 'Account Not Found',
+        message: 'No account exists with this email. Would you like to sign up instead?',
+        icon: '👤'
+      };
+    }
+    if (lowerError.includes('email already') || lowerError.includes('already registered')) {
+      return {
+        title: 'Email Already Registered',
+        message: 'An account with this email already exists. Try signing in instead.',
+        icon: '📧'
+      };
+    }
+    if (lowerError.includes('username already') || lowerError.includes('username taken')) {
+      return {
+        title: 'Username Taken',
+        message: 'This username is already in use. Please choose a different one.',
+        icon: '👤'
+      };
+    }
+    if (lowerError.includes('network') || lowerError.includes('cannot reach')) {
+      return ERROR_MESSAGES.NETWORK_ERROR;
+    }
+    
+    // Check if it matches a known error code
+    const upperError = error.toUpperCase().replace(/ /g, '_');
+    if (ERROR_MESSAGES[upperError]) {
+      return ERROR_MESSAGES[upperError];
+    }
+    
+    return ERROR_MESSAGES.UNKNOWN_ERROR;
   }
 
   // Handle Axios errors
