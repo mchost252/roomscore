@@ -123,9 +123,9 @@ const MessagesPage = () => {
     if (!socket) return;
 
     const handleNewDirectMessage = (message) => {
-      const senderId = message.sender._id;
-      const recipientId = message.recipient._id;
-      const currentUserId = user?._id || user?.id;
+      const senderId = getUserId(message.sender);
+      const recipientId = getUserId(message.recipient);
+      const currentUserId = getUserId(user);
       
       // Confirm delivery to sender (we received it)
       if (senderId !== currentUserId) {
@@ -136,13 +136,14 @@ const MessagesPage = () => {
       }
       
       // If we're viewing this conversation, add the message and mark as read
+      const selectedFriendId = getUserId(selectedFriend);
       if (selectedFriend && 
-          (senderId === selectedFriend._id || recipientId === selectedFriend._id)) {
+          (senderId === selectedFriendId || recipientId === selectedFriendId)) {
         setMessages(prev => [...prev, message]);
         scrollToBottom();
         
         // Mark message as read immediately if from friend and notify sender
-        if (senderId === selectedFriend._id) {
+        if (senderId === selectedFriendId) {
           socket.emit('dm:read', { 
             senderId: senderId, 
             messageIds: [message._id] 
@@ -155,14 +156,14 @@ const MessagesPage = () => {
       // Update conversations list in real-time
       setConversations(prev => {
         const friendId = senderId === currentUserId ? recipientId : senderId;
-        const existingIdx = prev.findIndex(c => c.friend._id === friendId);
+        const existingIdx = prev.findIndex(c => getUserId(c.friend) === friendId);
         
         if (existingIdx >= 0) {
           const updated = [...prev];
           const conv = { ...updated[existingIdx] };
           conv.lastMessage = message;
           // Only increment unread if message is from friend and we're not viewing that chat
-          if (senderId !== currentUserId && selectedFriend?._id !== friendId) {
+          if (senderId !== currentUserId && getUserId(selectedFriend) !== friendId) {
             conv.unreadCount = (conv.unreadCount || 0) + 1;
           }
           updated.splice(existingIdx, 1);
@@ -194,7 +195,7 @@ const MessagesPage = () => {
     // Handle read receipts - update message status
     const handleDmRead = ({ readBy, messageIds, readAt }) => {
       setMessages(prev => prev.map(msg => {
-        if (messageIds.includes(msg._id) || (msg.recipient?._id === readBy && !msg.isRead)) {
+        if (messageIds.includes(msg._id) || (getUserId(msg.recipient) === readBy && !msg.isRead)) {
           return { ...msg, isRead: true, readAt };
         }
         return msg;
@@ -249,7 +250,7 @@ const MessagesPage = () => {
       try {
         const cacheData = conversationsData.map(c => ({
           friend: {
-            _id: String(c.friend._id), // Ensure ID is string for proper serialization
+            _id: String(getUserId(c.friend)), // Ensure ID is string for proper serialization
             username: c.friend.username
             // avatar excluded - too large
           },
@@ -266,7 +267,7 @@ const MessagesPage = () => {
       
       // Load avatars on-demand after conversations are loaded
       if (conversationsData.length > 0) {
-        const userIds = conversationsData.map(c => String(c.friend._id));
+        const userIds = conversationsData.map(c => String(getUserId(c.friend)));
         const avatarMap = await fetchAvatars(userIds);
         const avatarObj = {};
         avatarMap.forEach((avatar, id) => {
@@ -397,15 +398,20 @@ const MessagesPage = () => {
     }
   };
 
-  // Validate MongoDB ObjectId format (24 hex characters)
-  const isValidObjectId = (id) => /^[a-fA-F0-9]{24}$/.test(id);
+  // Normalize IDs across Mongo-style (_id) and Prisma-style (id)
+  const getUserId = (u) => u?._id || u?.id || null;
+
+  // Validate ID format (support Mongo ObjectId + Prisma cuid/uuid)
+  // We only require a non-empty string here because Prisma IDs are not 24-hex.
+  const isValidUserId = (id) => typeof id === 'string' && id.trim().length > 0;
 
   // Get the reliable friend ID - prefer URL param over cached selectedFriend
   const getReliableFriendId = () => {
-    // URL param is always reliable
-    if (friendId && isValidObjectId(friendId)) return friendId;
-    // Fall back to selectedFriend._id only if valid
-    if (selectedFriend?._id && isValidObjectId(selectedFriend._id)) return selectedFriend._id;
+    // URL param is the primary source
+    if (isValidUserId(friendId)) return friendId;
+    // Fall back to selectedFriend id
+    const sid = getUserId(selectedFriend);
+    if (isValidUserId(sid)) return sid;
     return null;
   };
 
@@ -429,8 +435,8 @@ const MessagesPage = () => {
       _id: tempId,
       message: messageText,
       createdAt: new Date().toISOString(),
-      sender: { _id: user._id || user.id, username: user.username },
-      recipient: { _id: reliableFriendId },
+      sender: { _id: getUserId(user), id: getUserId(user), username: user.username },
+      recipient: { _id: reliableFriendId, id: reliableFriendId },
       replyTo: replyToId ? { _id: replyToId } : null
     };
     
@@ -455,19 +461,20 @@ const MessagesPage = () => {
   };
 
   const handleSelectConversation = (friend) => {
+    const fid = getUserId(friend);
     // Clear unread count immediately in UI
     setConversations(prev => prev.map(c => 
-      c.friend._id === friend._id ? { ...c, unreadCount: 0 } : c
+      getUserId(c.friend) === fid ? { ...c, unreadCount: 0 } : c
     ));
     
     // NOTE: Don't mark messages as read here - let loadMessages handle it
     // after messages are actually loaded and displayed to the user
     
     if (isMobile) {
-      navigate(`/messages/${friend._id}`);
+      navigate(`/messages/${fid}`);
     } else {
       setSelectedFriend(friend);
-      loadMessages(friend._id);
+      loadMessages(fid);
     }
   };
 
