@@ -62,6 +62,16 @@ const ERROR_MESSAGES = {
     message: 'This constellation has reached its maximum stars. Try joining another orbit!',
     icon: '✨'
   },
+  ALREADY_MEMBER: {
+    title: 'Already Aboard',
+    message: 'You\'re already a member of this room! Check your "My Rooms" tab.',
+    icon: '🛸'
+  },
+  JOIN_REQUEST_PENDING: {
+    title: 'Request Sent',
+    message: 'Your join request has been sent! The room owner will review it soon.',
+    icon: '📨'
+  },
   ROOM_EXPIRED: {
     title: 'Orbit Completed',
     message: 'This room\'s journey has ended. The stars have moved on to new adventures.',
@@ -198,6 +208,15 @@ export const getErrorMessage = (error, context = '') => {
         message: 'This username is already in use. Please choose a different one.',
         icon: '👤'
       };
+    }
+    if (lowerError.includes('already a member') || lowerError.includes('already member')) {
+      return ERROR_MESSAGES.ALREADY_MEMBER;
+    }
+    if (lowerError.includes('maximum capacity') || lowerError.includes('room is full')) {
+      return ERROR_MESSAGES.ROOM_FULL;
+    }
+    if (lowerError.includes('expired') || lowerError.includes('no longer accepting')) {
+      return ERROR_MESSAGES.ROOM_EXPIRED;
     }
     if (lowerError.includes('network') || lowerError.includes('cannot reach')) {
       return ERROR_MESSAGES.NETWORK_ERROR;

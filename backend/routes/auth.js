@@ -14,6 +14,7 @@ const toPublicProfile = (user) => ({
   email: user.email,
   username: user.username,
   avatar: user.avatar,
+  bio: user.bio,
   timezone: user.timezone,
   onboardingCompleted: user.onboardingCompleted,
   streak: user.streak,
@@ -189,11 +190,12 @@ router.get('/profile', protect, async (req, res, next) => {
 // @access  Private
 router.put('/profile', protect, validate(updateProfileSchema), async (req, res, next) => {
   try {
-    const { username, avatar, timezone, onboardingCompleted } = req.body;
+    const { username, avatar, bio, timezone, onboardingCompleted } = req.body;
 
     const updateData = {};
     if (username) updateData.username = username;
     if (avatar !== undefined) updateData.avatar = avatar;
+    if (bio !== undefined) updateData.bio = bio;
     if (timezone !== undefined) updateData.timezone = timezone;
     if (onboardingCompleted !== undefined) updateData.onboardingCompleted = onboardingCompleted;
 

@@ -33,6 +33,7 @@ const toPublicProfile = (user) => ({
   email: user.email,
   username: user.username,
   avatar: user.avatar,
+  bio: user.bio,
   timezone: user.timezone,
   onboardingCompleted: user.onboardingCompleted,
   streak: user.streak,

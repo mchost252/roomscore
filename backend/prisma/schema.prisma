@@ -18,6 +18,7 @@ model User {
   username              String    @unique
   googleId              String?   @unique
   avatar                String?
+  bio                   String?
   timezone              String    @default("UTC")
   onboardingCompleted   Boolean   @default(false)
   pushSubscription      Json?
