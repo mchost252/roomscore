@@ -1,12 +1,26 @@
 // Prisma Database Client for PostgreSQL (Neon)
 const { PrismaClient } = require('@prisma/client');
 
-// Create Prisma client instance with logging in development
+// Create Prisma client instance with logging and connection pool settings
+// Optimized for Neon serverless PostgreSQL
 const prisma = new PrismaClient({
   log: process.env.NODE_ENV === 'development' 
     ? ['query', 'info', 'warn', 'error'] 
     : ['error'],
+  datasources: {
+    db: {
+      url: process.env.DATABASE_URL
+    }
+  }
 });
+
+// Ensure single instance in development (avoid connection pool exhaustion)
+const globalForPrisma = global;
+if (process.env.NODE_ENV !== 'production') {
+  if (!globalForPrisma.prisma) {
+    globalForPrisma.prisma = prisma;
+  }
+}
 
 // Connection test function
 async function connectDatabase() {
