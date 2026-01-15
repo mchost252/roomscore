@@ -12,6 +12,7 @@ import {
 } from '@mui/material';
 import { Visibility, VisibilityOff, Login as LoginIcon } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
+import { getErrorMessage } from '../utils/errorMessages';
 
 // Floating particle component for constellation effect
 const FloatingParticle = ({ delay, duration, size, left, top, color }) => (
@@ -111,7 +112,8 @@ const LoginPage = () => {
     if (result.success) {
       navigate('/dashboard');
     } else {
-      setError(result.message);
+      const { icon, message } = getErrorMessage(result.error || result.message, 'auth');
+      setError(`${icon} ${message}`);
     }
 
     setLoading(false);

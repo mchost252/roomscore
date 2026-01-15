@@ -34,6 +34,7 @@ import { useNavigate } from 'react-router-dom';
 import api, { invalidateCache } from '../utils/api';
 import cacheManager from '../utils/cache';
 import OnboardingModal from '../components/OnboardingModal';
+import { getErrorMessage } from '../utils/errorMessages';
 import WhatsNewCard from '../components/WhatsNewCard';
 
 // Stat Card Component
@@ -490,7 +491,8 @@ const DashboardPage = () => {
     } catch (err) {
       console.error('Error loading dashboard:', err);
       if (!silentRefresh && rooms.length === 0) {
-        setError('Failed to load dashboard data');
+        const { icon, message } = getErrorMessage(err);
+        setError(`${icon} ${message}`);
       }
     }
   };

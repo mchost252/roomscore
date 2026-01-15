@@ -55,6 +55,7 @@ import { format, parseISO } from 'date-fns';
 import api, { invalidateCache } from '../utils/api';
 import ChatDrawer from '../components/ChatDrawer';
 import TaskTypeSelector from '../components/TaskTypeSelector';
+import { getErrorMessage } from '../utils/errorMessages';
 
 const RoomDetailPage = () => {
   const { roomId } = useParams();
@@ -139,7 +140,8 @@ const RoomDetailPage = () => {
       setCanNudge(false);
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to send nudge');
+      const { icon, message } = getErrorMessage(err, 'nudge');
+      setError(`${icon} ${message}`);
       setTimeout(() => setError(null), 5000);
     } finally {
       setNudging(false);
@@ -171,7 +173,8 @@ const RoomDetailPage = () => {
       setSuccess(`${emoji} Appreciation sent!`);
       setTimeout(() => setSuccess(null), 2000);
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to send appreciation');
+      const { icon, message } = getErrorMessage(err, 'appreciation');
+      setError(`${icon} ${message}`);
       setTimeout(() => setError(null), 3000);
     } finally {
       setAppreciating(false);
@@ -473,7 +476,8 @@ const RoomDetailPage = () => {
     } catch (err) {
       console.error('Error loading room:', err);
       if (!silentRefresh) {
-        setError(err.response?.data?.message || 'Failed to load room details');
+        const { icon, message } = getErrorMessage(err, 'room');
+        setError(`${icon} ${message}`);
       }
     }
   }, [roomId]);
@@ -569,13 +573,15 @@ const RoomDetailPage = () => {
               return member;
             })
           }));
-          setError('Failed to complete task. Please try again.');
+          const { icon, message } = getErrorMessage(err, 'task');
+          setError(`${icon} ${message}`);
           setTimeout(() => setError(null), 5000);
         });
       
     } catch (err) {
       console.error('Error completing task:', err);
-      setError(err.response?.data?.message || 'Failed to complete task');
+      const { icon, message } = getErrorMessage(err, 'task');
+      setError(`${icon} ${message}`);
       setTimeout(() => setError(null), 5000);
     }
   };
@@ -658,13 +664,15 @@ const RoomDetailPage = () => {
               return member;
             })
           }));
-          setError(err.response?.data?.message || 'Failed to uncomplete task');
+          const { icon, message } = getErrorMessage(err, 'task');
+          setError(`${icon} ${message}`);
           setTimeout(() => setError(null), 5000);
         });
       
     } catch (err) {
       console.error('Error uncompleting task:', err);
-      setError(err.response?.data?.message || 'Failed to uncomplete task');
+      const { icon, message } = getErrorMessage(err, 'task');
+      setError(`${icon} ${message}`);
       setTimeout(() => setError(null), 5000);
     }
   };
@@ -709,7 +717,8 @@ const RoomDetailPage = () => {
       
       // Remove optimistic message and show error
       setChatMessages(prev => prev.filter(msg => msg._id !== optimisticMessage._id));
-      setError('Failed to send message');
+      const { icon, message } = getErrorMessage(err);
+      setError(`${icon} ${message}`);
       setTimeout(() => setError(null), 5000);
     }
   };
@@ -765,7 +774,8 @@ const RoomDetailPage = () => {
       
       // Remove optimistic message and show error
       setChatMessages(prev => prev.filter(msg => msg._id !== optimisticMessage._id));
-      setError('Failed to send message');
+      const { icon, message } = getErrorMessage(err);
+      setError(`${icon} ${message}`);
       setTimeout(() => setError(null), 5000);
     }
   };
@@ -832,7 +842,8 @@ const RoomDetailPage = () => {
       loadRoomDetails();
     } catch (err) {
       console.error('Error approving member:', err);
-      setError(err.response?.data?.message || 'Failed to approve member');
+      const { icon, message } = getErrorMessage(err);
+      setError(`${icon} ${message}`);
       setTimeout(() => setError(null), 5000);
     }
   };
@@ -854,7 +865,8 @@ const RoomDetailPage = () => {
       }));
     } catch (err) {
       console.error('Error rejecting member:', err);
-      setError(err.response?.data?.message || 'Failed to reject request');
+      const { icon, message } = getErrorMessage(err);
+      setError(`${icon} ${message}`);
       setTimeout(() => setError(null), 5000);
     }
   };

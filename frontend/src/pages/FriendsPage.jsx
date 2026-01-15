@@ -30,6 +30,7 @@ import { useNavigate } from 'react-router-dom';
 import { useDeviceType } from '../hooks/useDeviceType';
 import { fetchAvatars, getCachedAvatar } from '../hooks/useAvatar';
 import api from '../utils/api';
+import { getErrorMessage } from '../utils/errorMessages';
 
 const FriendsPage = () => {
   const navigate = useNavigate();
@@ -179,7 +180,8 @@ const FriendsPage = () => {
       }
     } catch (err) {
       console.error('Error searching users:', err);
-      setError('Failed to search users');
+      const { icon, message } = getErrorMessage(err, 'user');
+      setError(`${icon} ${message}`);
       setTimeout(() => setError(null), 3000);
     } finally {
       setLoading(false);
@@ -194,7 +196,8 @@ const FriendsPage = () => {
       setSearchResults([]);
       setSearchQuery('');
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to send request');
+      const { icon, message } = getErrorMessage(err, 'friend');
+      setError(`${icon} ${message}`);
       setTimeout(() => setError(null), 3000);
     }
   };
@@ -207,7 +210,8 @@ const FriendsPage = () => {
       loadFriends();
       loadRequests();
     } catch (err) {
-      setError('Failed to accept request');
+      const { icon, message } = getErrorMessage(err, 'friend');
+      setError(`${icon} ${message}`);
       setTimeout(() => setError(null), 3000);
     }
   };
@@ -217,7 +221,8 @@ const FriendsPage = () => {
       await api.put(`/friends/reject/${requestId}`);
       loadRequests();
     } catch (err) {
-      setError('Failed to reject request');
+      const { icon, message } = getErrorMessage(err, 'friend');
+      setError(`${icon} ${message}`);
       setTimeout(() => setError(null), 3000);
     }
   };
@@ -229,7 +234,8 @@ const FriendsPage = () => {
       setTimeout(() => setSuccess(null), 2000);
       loadFriends();
     } catch (err) {
-      setError('Failed to remove friend');
+      const { icon, message } = getErrorMessage(err, 'friend');
+      setError(`${icon} ${message}`);
       setTimeout(() => setError(null), 3000);
     }
   };

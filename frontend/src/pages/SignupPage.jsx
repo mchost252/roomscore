@@ -13,6 +13,7 @@ import {
 import { Visibility, VisibilityOff, PersonAdd } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import OnboardingModal from '../components/OnboardingModal';
+import { getErrorMessage } from '../utils/errorMessages';
 
 // Floating particle component for constellation effect
 const FloatingParticle = ({ delay, duration, size, left, top, color }) => (
@@ -133,7 +134,8 @@ const SignupPage = () => {
       localStorage.setItem('isNewUser', 'true');
       setShowOnboarding(true);
     } else {
-      setError(result.message);
+      const { icon, message } = getErrorMessage(result.error || result.message, 'auth');
+      setError(`${icon} ${message}`);
     }
 
     setLoading(false);

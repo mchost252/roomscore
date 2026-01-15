@@ -31,6 +31,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
+import { getErrorMessage } from '../utils/errorMessages';
 
 const CreateRoomPage = () => {
   const navigate = useNavigate();
@@ -156,10 +157,8 @@ const CreateRoomPage = () => {
       navigate(`/rooms/${roomId}`);
     } catch (err) {
       console.error('Error creating room:', err);
-      const errorMessage = err.response?.data?.errors 
-        ? err.response.data.errors.map(e => e.message).join(', ')
-        : err.response?.data?.message || 'Failed to create room';
-      setError(errorMessage);
+      const { icon, message } = getErrorMessage(err, 'room');
+      setError(`${icon} ${message}`);
       setLoading(false);
     }
   };

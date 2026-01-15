@@ -35,6 +35,7 @@ import { useSocket } from '../context/SocketContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import cacheManager from '../utils/cache';
+import { getErrorMessage } from '../utils/errorMessages';
 
 const RoomListPage = () => {
   const { user } = useAuth();
@@ -150,7 +151,8 @@ const RoomListPage = () => {
     } catch (err) {
       console.error('Error loading rooms:', err);
       if (!silentRefresh && myRooms.length === 0) {
-        setError(err.response?.data?.message || 'Failed to load rooms');
+        const { icon, message } = getErrorMessage(err, 'room');
+        setError(`${icon} ${message}`);
       }
     } finally {
       setLoading(false);
@@ -189,7 +191,8 @@ const RoomListPage = () => {
       }, 1000);
     } catch (err) {
       console.error('Error joining room:', err);
-      setError(err.response?.data?.message || 'Failed to join room');
+      const { icon, message } = getErrorMessage(err, 'room');
+      setError(`${icon} ${message}`);
     } finally {
       setJoiningRoom(false);
     }
@@ -237,7 +240,8 @@ const RoomListPage = () => {
             navigate(`/rooms/${room._id}`);
           }, 500);
         } catch (err) {
-          setError(err.response?.data?.message || 'Failed to join room');
+          const { icon, message } = getErrorMessage(err, 'room');
+          setError(`${icon} ${message}`);
           setTimeout(() => setError(null), 5000);
         } finally {
           setLoading(false);

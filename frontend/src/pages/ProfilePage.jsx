@@ -49,6 +49,7 @@ import { useTheme as useCustomTheme } from '../context/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import api from '../utils/api';
+import { getErrorMessage } from '../utils/errorMessages';
 
 const ProfilePage = () => {
   const { user, logout } = useAuth();
@@ -132,7 +133,8 @@ const ProfilePage = () => {
       setActivityHistory([]);
     } catch (err) {
       console.error('Error loading profile:', err);
-      setError('Failed to load profile data');
+      const { icon, message } = getErrorMessage(err);
+      setError(`${icon} ${message}`);
     } finally {
       setLoading(false);
     }
@@ -187,7 +189,8 @@ const ProfilePage = () => {
       window.location.reload();
     } catch (err) {
       console.error('Error updating profile:', err);
-      setError(err.response?.data?.message || 'Failed to update profile');
+      const { icon, message } = getErrorMessage(err);
+      setError(`${icon} ${message}`);
       setTimeout(() => setError(null), 5000);
     } finally {
       setLoading(false);
@@ -232,7 +235,8 @@ const ProfilePage = () => {
       setTimeout(() => setSuccess(null), 2000);
     } catch (err) {
       console.error('Error deleting notification:', err);
-      setError('Failed to delete notification');
+      const { icon, message } = getErrorMessage(err);
+      setError(`${icon} ${message}`);
       setTimeout(() => setError(null), 3000);
     }
   };
@@ -246,7 +250,8 @@ const ProfilePage = () => {
       setTimeout(() => setSuccess(null), 2000);
     } catch (err) {
       console.error('Error clearing notifications:', err);
-      setError('Failed to clear notifications');
+      const { icon, message } = getErrorMessage(err);
+      setError(`${icon} ${message}`);
       setTimeout(() => setError(null), 3000);
     }
   };
