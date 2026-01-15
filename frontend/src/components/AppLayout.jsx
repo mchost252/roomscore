@@ -638,8 +638,8 @@ const AppLayout = ({ children }) => {
             flex: 1,
             overflow: 'auto',
             p: { xs: 2, md: 3 },
-            pt: { xs: '64px', md: 3 }, // Fixed header height
-            pb: { xs: '72px', md: 3 }, // Bottom nav height
+            pt: { xs: 'calc(56px + 16px)', md: 3 }, // Header height (56px) + spacing (16px)
+            pb: { xs: 'calc(56px + 16px)', md: 3 }, // Bottom nav height (56px) + spacing (16px)
           }}
         >
           {children}

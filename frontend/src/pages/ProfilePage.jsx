@@ -307,6 +307,7 @@ const ProfilePage = () => {
       maxWidth: '100%', 
       overflowX: 'hidden',
       boxSizing: 'border-box',
+      px: { xs: 1, md: 0 }, // Add slight padding on mobile
     }}>
       {/* Header */}
       <Box sx={{ mb: { xs: 2, md: 4 } }}>
@@ -330,7 +331,7 @@ const ProfilePage = () => {
         </Alert>
       )}
 
-      <Grid container spacing={{ xs: 0, md: 3 }} sx={{ width: '100%', maxWidth: '100%', margin: 0, minHeight: 0 }}>
+      <Grid container spacing={{ xs: 1, md: 3 }} sx={{ width: '100%', maxWidth: '100%', margin: 0, minHeight: 0 }}>
         {/* Left Sidebar - Profile Info */}
         <Grid item xs={12} md={4} sx={{ maxWidth: '100%' }}>
           <Paper sx={{ p: { xs: 2, md: 3 }, textAlign: 'center', mb: { xs: 2, md: 3 } }}>
@@ -476,7 +477,7 @@ const ProfilePage = () => {
           {/* Overview Tab */}
           {tabValue === 0 && (
             <Box sx={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
-              <Grid container spacing={{ xs: 0.5, md: 3 }} sx={{ width: '100%', maxWidth: '100%', margin: 0 }}>
+              <Grid container spacing={{ xs: 1, md: 3 }} sx={{ width: '100%', maxWidth: '100%', margin: 0 }}>
                 {/* Stat Cards */}
                 <Grid item xs={6} sm={6} sx={{ maxWidth: '100%' }}>
                   <Card>
