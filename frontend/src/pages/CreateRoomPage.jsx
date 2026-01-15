@@ -31,7 +31,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
-import { getErrorMessage } from '../utils/errorMessages';
+import { getErrorMessage, ERROR_MESSAGES } from '../utils/errorMessages';
 
 const CreateRoomPage = () => {
   const navigate = useNavigate();
@@ -67,7 +67,7 @@ const CreateRoomPage = () => {
 
   const handleAddTask = () => {
     if (!newTask.title.trim()) {
-      setError('Task title is required');
+      setError({ isTimeout: false, text: '📝 Task title is required' });
       return;
     }
 
@@ -89,11 +89,11 @@ const CreateRoomPage = () => {
     if (activeStep === 0) {
       // Validate room details
       if (!roomData.name.trim()) {
-        setError('Room name is required');
+        setError({ isTimeout: false, text: '📝 Room name is required' });
         return;
       }
       if (roomData.maxMembers < 2 || roomData.maxMembers > 100) {
-        setError('Max members must be between 2 and 100');
+        setError({ isTimeout: false, text: '👥 Max members must be between 2 and 100' });
         return;
       }
     }
@@ -101,7 +101,7 @@ const CreateRoomPage = () => {
     if (activeStep === 1) {
       // Validate tasks
       if (tasks.length === 0) {
-        setError('Please add at least one task');
+        setError({ isTimeout: false, text: '📋 Please add at least one task to continue' });
         return;
       }
     }
@@ -157,8 +157,14 @@ const CreateRoomPage = () => {
       navigate(`/rooms/${roomId}`);
     } catch (err) {
       console.error('Error creating room:', err);
-      const { icon, message } = getErrorMessage(err, 'room');
-      setError(`${icon} ${message}`);
+      // Special handling for timeout - room might have been created
+      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        const { icon, message } = ERROR_MESSAGES.ROOM_CREATION_TIMEOUT;
+        setError({ isTimeout: true, text: `${icon} ${message}` });
+      } else {
+        const { icon, message } = getErrorMessage(err, 'room');
+        setError({ isTimeout: false, text: `${icon} ${message}` });
+      }
       setLoading(false);
     }
   };
@@ -524,8 +530,19 @@ const CreateRoomPage = () => {
 
       {/* Error Alert */}
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
-          {error}
+        <Alert 
+          severity={error.isTimeout ? "warning" : "error"} 
+          sx={{ mb: 3 }} 
+          onClose={() => setError(null)}
+          action={
+            error.isTimeout ? (
+              <Button color="inherit" size="small" onClick={() => navigate('/rooms')}>
+                Check My Rooms
+              </Button>
+            ) : null
+          }
+        >
+          {error.text || error}
         </Alert>
       )}
 

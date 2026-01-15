@@ -18,6 +18,11 @@ const ERROR_MESSAGES = {
     message: 'The stars are taking longer than usual to align. Please try again in a moment.',
     icon: '⏳'
   },
+  ROOM_CREATION_TIMEOUT: {
+    title: 'Orbit May Have Launched',
+    message: 'The creation took longer than expected. Your room might already exist – check "My Rooms" to see if it appeared!',
+    icon: '🚀'
+  },
   SERVER_ERROR: {
     title: 'Cosmic Turbulence',
     message: 'Our servers hit a small asteroid. We\'re working on it – please try again shortly.',
