@@ -259,6 +259,14 @@ const ProfilePage = () => {
       // relatedRoom can be either an object with _id or just an ID string
       const roomId = notification.relatedRoom._id || notification.relatedRoom;
       navigate(`/rooms/${roomId}`);
+      return;
+    }
+
+    // Direct messages
+    if (notification.type === 'direct_message') {
+      const senderId = notification.data?.senderId;
+      if (senderId) navigate(`/messages/${senderId}`);
+      else navigate('/messages');
     }
   };
 
@@ -739,14 +747,14 @@ const ProfilePage = () => {
                         bgcolor: notification.isRead ? 'transparent' : 'action.hover',
                         borderRadius: 1,
                         mb: 1,
-                        cursor: notification.relatedRoom ? 'pointer' : 'default',
+                        cursor: (notification.relatedRoom || notification.type === 'direct_message') ? 'pointer' : 'default',
                         flexDirection: 'column',
                         alignItems: 'flex-start',
                         '&:hover': notification.relatedRoom ? {
                           bgcolor: 'action.selected'
                         } : {}
                       }}
-                      onClick={() => notification.relatedRoom && handleNotificationClick(notification)}
+                      onClick={() => (notification.relatedRoom || notification.type === 'direct_message') && handleNotificationClick(notification)}
                     >
                       <ListItemText
                         sx={{ width: '100%', m: 0 }}
