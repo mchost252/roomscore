@@ -367,8 +367,9 @@ const DashboardPage = () => {
 
     if (user) {
       setStats({
-        totalPoints: user?.totalPoints || 0,
-        currentStreak: user?.currentStreak || 0,
+        // These are derived from server fields. totalPoints is computed from room membership points.
+        totalPoints: 0,
+        currentStreak: user?.streak || user?.currentStreak || 0,
         longestStreak: user?.longestStreak || 0,
         roomsJoined: 0
       });
