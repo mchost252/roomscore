@@ -435,6 +435,7 @@ const DashboardPage = () => {
     if (!socket) return;
 
     const handleTaskCompleted = (data) => {
+      const myId = getMyId();
       setRooms(prevRooms => 
         prevRooms.map(room => {
           if (room._id === data.roomId) {
@@ -452,7 +453,7 @@ const DashboardPage = () => {
         })
       );
       
-      if (data.userId === user?.id && data.points) {
+      if (data.userId === myId && data.points) {
         setStats(prev => ({
           ...prev,
           totalPoints: (prev?.totalPoints || 0) + data.points
@@ -461,6 +462,7 @@ const DashboardPage = () => {
     };
 
     const handleTaskUncompleted = (data) => {
+      const myId = getMyId();
       setRooms(prevRooms => 
         prevRooms.map(room => {
           if (room._id === data.roomId) {
@@ -486,7 +488,7 @@ const DashboardPage = () => {
       socket.off('task:completed', handleTaskCompleted);
       socket.off('task:uncompleted', handleTaskUncompleted);
     };
-  }, [socket, user?.id]);
+  }, [socket, user?._id, user?.id]);
 
   const loadDashboardData = async (silentRefresh = false) => {
     try {
