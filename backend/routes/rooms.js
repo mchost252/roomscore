@@ -652,7 +652,7 @@ router.post('/:id/chat', protect, isRoomMember, validate(sendMessageSchema), asy
         type: 'user'
       },
       include: {
-        user: { select: { id: true, username: true } }
+        user: { select: { id: true, username: true, avatar: true } }
       }
     });
 
@@ -660,8 +660,11 @@ router.post('/:id/chat', protect, isRoomMember, validate(sendMessageSchema), asy
     const formattedMessage = {
       ...chatMessage,
       _id: chatMessage.id,
+      roomId: req.params.id,
       message: chatMessage.content,
-      userId: { ...chatMessage.user, _id: chatMessage.user.id }
+      messageType: chatMessage.type,
+      type: chatMessage.type,
+      userId: chatMessage.user ? { ...chatMessage.user, _id: chatMessage.user.id } : null
     };
 
     // Get room members (exclude sender)
@@ -729,7 +732,7 @@ router.get('/:id/chat', protect, isRoomMember, async (req, res, next) => {
     const messages = await prisma.chatMessage.findMany({
       where: whereClause,
       include: {
-        user: { select: { id: true, username: true } }
+        user: { select: { id: true, username: true, avatar: true } }
       },
       orderBy: { createdAt: 'desc' },
       take: parseInt(limit)

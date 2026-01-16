@@ -255,6 +255,19 @@ const ChatDrawer = ({
             </Box>
           ) : (
             messages.map((msg, index) => {
+              // Render system messages (nudges, task completions, etc.) as compact center text
+              if (msg.messageType === 'system' || msg.type === 'system' || msg.isSystemMessage) {
+                return (
+                  <Slide key={msg._id || `sys-${index}`} direction="up" in={true} timeout={200}>
+                    <Box sx={{ textAlign: 'center', my: 0.5 }}>
+                      <Typography variant="caption" color="text.secondary">
+                        {msg.message}
+                      </Typography>
+                    </Box>
+                  </Slide>
+                );
+              }
+
               const isMine = isMyMessage(msg);
               const msgUserId = getUserId(msg.userId);
               const prevUserId = getUserId(messages[index - 1]?.userId);
@@ -298,15 +311,15 @@ const ChatDrawer = ({
                         alignItems: isMine ? 'flex-end' : 'flex-start'
                       }}
                     >
-                      {/* Sender Name (for others) */}
-                      {showAvatar && !isMine && (
+                      {/* Sender Name (always show badges if available) */}
+                      {(showAvatar || isMine) && (
                         <Typography
                           variant="caption"
                           color="text.secondary"
-                          sx={{ ml: 1, mb: 0.5 }}
+                          sx={{ ml: isMine ? 0 : 1, mb: 0.5 }}
                         >
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
-                            <span>{msg.userId?.username || 'Unknown'}</span>
+                            <span>{isMine ? 'You' : (msg.userId?.username || 'Unknown')}</span>
                             {getAppreciationDisplay(msg.userId).map((b) => (
                               <Chip
                                 key={b.type}

@@ -5,7 +5,7 @@ const { prisma } = require('../config/database');
 const logger = require('../utils/logger');
 const NotificationService = require('../services/notificationService');
 
-// Helper to get today's date string
+// Helper to get today's date string (UTC)
 const getTodayString = () => new Date().toISOString().split('T')[0];
 
 // Send nudge to room
@@ -30,11 +30,9 @@ router.post('/:roomId', protect, isRoomMember, async (req, res) => {
       });
     }
     
-    // Check if user has already sent a nudge today
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    // Check if user has already sent a nudge today (UTC)
+    const today = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()));
+    const tomorrow = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate() + 1));
     
     const existingNudge = await prisma.nudge.findFirst({
       where: {
@@ -76,8 +74,10 @@ router.post('/:roomId', protect, isRoomMember, async (req, res) => {
     const formattedMessage = {
       ...systemMessage,
       _id: systemMessage.id,
+      roomId,
       message: systemMessage.content,
       messageType: 'system',
+      type: 'system',
       isSystemMessage: true
     };
     
@@ -140,11 +140,9 @@ router.get('/:roomId/can-send', protect, isRoomMember, async (req, res) => {
     
     const hasCompletedTask = completionsToday > 0;
     
-    // Check if already sent nudge today
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    // Check if already sent nudge today (UTC)
+    const today = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()));
+    const tomorrow = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate() + 1));
     
     const existingNudge = await prisma.nudge.findFirst({
       where: {

@@ -1498,9 +1498,31 @@ const RoomDetailPage = () => {
                           )}
                           <Box sx={{ flex: 1 }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                              <Typography variant="caption" fontWeight="bold" color={isOwnMessage ? 'primary' : 'text.primary'}>
-                                {isOwnMessage ? 'You' : (msg.userId?.username || msg.userId?.email || 'Unknown')}
-                              </Typography>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
+                                <Typography variant="caption" fontWeight="bold" color={isOwnMessage ? 'primary' : 'text.primary'}>
+                                  {isOwnMessage ? 'You' : (msg.userId?.username || msg.userId?.email || 'Unknown')}
+                                </Typography>
+                                {/* Appreciation badges (emoji only for 1, emoji+count for >1) */}
+                                {(() => {
+                                  const uid = msg.userId?._id || msg.userId;
+                                  const s = appreciationStatsByUser?.[uid];
+                                  if (!s) return null;
+                                  const mapping = [
+                                    { emoji: '⭐', count: s.star || 0 },
+                                    { emoji: '🔥', count: s.fire || 0 },
+                                    { emoji: '🛡️', count: s.shield || 0 }
+                                  ].filter(x => x.count > 0);
+                                  return mapping.map((x, idx) => (
+                                    <Chip
+                                      key={`${uid}-${x.emoji}-${idx}`}
+                                      label={x.count === 1 ? x.emoji : `${x.emoji}${x.count}`}
+                                      size="small"
+                                      variant="outlined"
+                                      sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
+                                    />
+                                  ));
+                                })()}
+                              </Box>
                               <Typography variant="caption" color="text.secondary">
                                 {msg.createdAt ? format(parseISO(msg.createdAt), 'h:mm a') : ''}
                               </Typography>

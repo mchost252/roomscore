@@ -7,8 +7,9 @@ const NotificationService = require('../services/notificationService');
 
 const DAILY_LIMIT = 3; // Maximum appreciations per 24 hours per room
 
-// Rolling 24h window start
-const getWindowStart = () => new Date(Date.now() - 24 * 60 * 60 * 1000);
+// UTC day window (server time) so resets are consistent across devices.
+const getUtcDayStart = (d = new Date()) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+const getUtcNextDayStart = (d = new Date()) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1));
 
 // Give appreciation to a user
 router.post('/:roomId', protect, isRoomMember, async (req, res) => {
@@ -42,21 +43,22 @@ router.post('/:roomId', protect, isRoomMember, async (req, res) => {
       });
     }
     
-    // Check rolling 24h limit
-    const windowStart = getWindowStart();
-    
+    // Check UTC-day limit (consistent across devices)
+    const windowStart = getUtcDayStart();
+    const windowEnd = getUtcNextDayStart();
+
     const usedInWindow = await prisma.appreciation.count({
       where: {
         roomId,
         fromUserId: req.user.id,
-        createdAt: { gte: windowStart }
+        createdAt: { gte: windowStart, lt: windowEnd }
       }
     });
     
     if (usedInWindow >= DAILY_LIMIT) {
       return res.status(400).json({
         success: false,
-        message: `You can only give ${DAILY_LIMIT} appreciations per 24 hours per room`
+        message: `You can only give ${DAILY_LIMIT} appreciations per day (UTC) per room`
       });
     }
     
@@ -67,14 +69,14 @@ router.post('/:roomId', protect, isRoomMember, async (req, res) => {
         fromUserId: req.user.id,
         toUserId,
         type,
-        createdAt: { gte: windowStart }
+        createdAt: { gte: windowStart, lt: windowEnd }
       }
     });
     
     if (existingAppreciation) {
       return res.status(400).json({
         success: false,
-        message: 'You have already given this appreciation today'
+        message: 'You have already given this appreciation today (UTC)'
       });
     }
     
@@ -95,7 +97,7 @@ router.post('/:roomId', protect, isRoomMember, async (req, res) => {
       where: {
         roomId,
         toUserId,
-        createdAt: { gte: windowStart }
+        createdAt: { gte: windowStart, lt: windowEnd }
       },
       _count: {
         type: true
@@ -119,7 +121,9 @@ router.post('/:roomId', protect, isRoomMember, async (req, res) => {
       fromUserId: req.user.id,
       toUserId,
       type,
-      stats: formattedStats
+      stats: formattedStats,
+      windowStart,
+      windowEnd
     });
     
     // Create notification for recipient
@@ -142,7 +146,9 @@ router.post('/:roomId', protect, isRoomMember, async (req, res) => {
       success: true,
       message: 'Appreciation given successfully',
       appreciation: { ...appreciation, _id: appreciation.id },
-      stats: formattedStats
+      stats: formattedStats,
+      windowStart,
+      windowEnd
     });
     
   } catch (error) {
@@ -154,18 +160,19 @@ router.post('/:roomId', protect, isRoomMember, async (req, res) => {
   }
 });
 
-// Get appreciation stats for a user in a room (last 24h)
+// Get appreciation stats for a user in a room (current UTC day)
 router.get('/:roomId/user/:userId', protect, isRoomMember, async (req, res) => {
   try {
     const { roomId, userId } = req.params;
     
-    const windowStart = getWindowStart();
+    const windowStart = getUtcDayStart();
+    const windowEnd = getUtcNextDayStart();
     const stats = await prisma.appreciation.groupBy({
       by: ['type'],
       where: {
         roomId,
         toUserId: userId,
-        createdAt: { gte: windowStart }
+        createdAt: { gte: windowStart, lt: windowEnd }
       },
       _count: {
         type: true
@@ -184,7 +191,9 @@ router.get('/:roomId/user/:userId', protect, isRoomMember, async (req, res) => {
     
     res.json({
       success: true,
-      stats: formattedStats
+      stats: formattedStats,
+      windowStart,
+      windowEnd
     });
     
   } catch (error) {
@@ -201,13 +210,14 @@ router.get('/:roomId/user/:userId', protect, isRoomMember, async (req, res) => {
 router.get('/:roomId/sent', protect, isRoomMember, async (req, res) => {
   try {
     const { roomId } = req.params;
-    const windowStart = getWindowStart();
+    const windowStart = getUtcDayStart();
+    const windowEnd = getUtcNextDayStart();
 
     const sent = await prisma.appreciation.findMany({
       where: {
         roomId,
         fromUserId: req.user.id,
-        createdAt: { gte: windowStart }
+        createdAt: { gte: windowStart, lt: windowEnd }
       },
       select: {
         id: true,
@@ -220,6 +230,7 @@ router.get('/:roomId/sent', protect, isRoomMember, async (req, res) => {
     res.json({
       success: true,
       windowStart,
+      windowEnd,
       sent: sent.map(a => ({ ...a, _id: a.id }))
     });
   } catch (error) {
@@ -236,13 +247,14 @@ router.get('/:roomId/remaining', protect, isRoomMember, async (req, res) => {
   try {
     const { roomId } = req.params;
     
-    const windowStart = getWindowStart();
+    const windowStart = getUtcDayStart();
+    const windowEnd = getUtcNextDayStart();
 
     const usedInWindow = await prisma.appreciation.count({
       where: {
         roomId,
         fromUserId: req.user.id,
-        createdAt: { gte: windowStart }
+        createdAt: { gte: windowStart, lt: windowEnd }
       }
     });
 
@@ -253,7 +265,8 @@ router.get('/:roomId/remaining', protect, isRoomMember, async (req, res) => {
       dailyLimit: DAILY_LIMIT,
       usedInWindow,
       remaining,
-      windowStart
+      windowStart,
+      windowEnd
     });
     
   } catch (error) {

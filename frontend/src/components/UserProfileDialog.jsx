@@ -27,12 +27,17 @@ const UserProfileDialog = ({ open, onClose, userId }) => {
   const loadUserProfile = async () => {
     try {
       setLoading(true);
-      // Fetch user profile - we'll get it from friends list for now
+      // Fetch user profile
+      // Prefer friends list (includes streak/points), fallback to lightweight avatar endpoint
       const res = await api.get('/friends');
-      const friend = res.data.friends.find(f => f._id === userId);
+      const friend = (res.data.friends || []).find(f => f._id === userId || f.id === userId);
       if (friend) {
         setUser(friend);
+        return;
       }
+      // Fallback: try avatar endpoint so at least profile pic shows
+      const avatarRes = await api.get(`/auth/avatar/${userId}`);
+      setUser({ _id: userId, username: 'User', avatar: avatarRes.data.avatar || null });
     } catch (err) {
       console.error('Error loading user profile:', err);
     } finally {

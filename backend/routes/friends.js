@@ -206,8 +206,8 @@ router.get('/', protect, async (req, res, next) => {
         ]
       },
       include: {
-        fromUser: { select: { id: true, username: true, streak: true, totalTasksCompleted: true } },
-        toUser: { select: { id: true, username: true, streak: true, totalTasksCompleted: true } }
+        fromUser: { select: { id: true, username: true, avatar: true, bio: true, streak: true, longestStreak: true, totalTasksCompleted: true } },
+        toUser: { select: { id: true, username: true, avatar: true, bio: true, streak: true, longestStreak: true, totalTasksCompleted: true } }
       }
     });
 
@@ -217,8 +217,11 @@ router.get('/', protect, async (req, res, next) => {
       return {
         _id: friend.id,
         username: friend.username,
-        totalPoints: friend.totalTasksCompleted || 0,
+        avatar: friend.avatar || null,
+        bio: friend.bio || null,
         currentStreak: friend.streak || 0,
+        longestStreak: friend.longestStreak || 0,
+        totalPoints: friend.totalTasksCompleted || 0,
         friendsSince: f.createdAt
       };
     });
