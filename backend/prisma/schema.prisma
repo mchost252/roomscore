@@ -46,6 +46,7 @@ model User {
   receivedDirectMessages DirectMessage[]    @relation("DirectMessageTo")
   personalTasks         PersonalTask[]
   userRoomProgress      UserRoomProgress[]
+  mvpAwards             RoomMVP[]
 
   @@index([email])
   @@index([username])
@@ -81,6 +82,7 @@ model Room {
   appreciations   Appreciation[]
   nudges          Nudge[]
   userRoomProgress UserRoomProgress[]
+  mvpHistory      RoomMVP[]
 
   @@index([joinCode])
   @@index([ownerId])
@@ -283,4 +285,25 @@ model UserRoomProgress {
   @@unique([userId, roomId])
   @@index([userId])
   @@index([roomId])
+}
+
+// ==================== ROOM MVP HISTORY ====================
+// Tracks daily MVP awards for cooldown enforcement
+model RoomMVP {
+  id             String   @id @default(cuid())
+  roomId         String
+  userId         String
+  date           String   // YYYY-MM-DD format
+  mvpScore       Int      @default(0)
+  tasksCompleted Int      @default(0)
+  streakBonus    Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  room           Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, date])
+  @@index([roomId])
+  @@index([userId])
+  @@index([date])
 }

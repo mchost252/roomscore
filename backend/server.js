@@ -21,6 +21,7 @@ const friendRoutes = require('./routes/friends');
 const directMessageRoutes = require('./routes/directMessages');
 const nudgeRoutes = require('./routes/nudges');
 const appreciationRoutes = require('./routes/appreciations');
+const orbitSummaryRoutes = require('./routes/orbitSummary');
 
 // Import socket handler
 const socketHandler = require('./socket/socketHandler');
@@ -150,6 +151,7 @@ app.use('/api/friends', friendRoutes);
 app.use('/api/direct-messages', directMessageRoutes);
 app.use('/api/nudges', nudgeRoutes);
 app.use('/api/appreciations', appreciationRoutes);
+app.use('/api/orbit-summary', orbitSummaryRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

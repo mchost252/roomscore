@@ -55,6 +55,8 @@ import { format, parseISO } from 'date-fns';
 import api, { invalidateCache } from '../utils/api';
 import ChatDrawer from '../components/ChatDrawer';
 import TaskTypeSelector from '../components/TaskTypeSelector';
+import DailyOrbitSummaryModal from '../components/DailyOrbitSummaryModal';
+import { MVPCrownIcon } from '../components/icons/ConstellationIcons';
 import { getErrorMessage } from '../utils/errorMessages';
 
 const RoomDetailPage = () => {
@@ -107,6 +109,13 @@ const RoomDetailPage = () => {
   const [pendingMembers, setPendingMembers] = useState([]);
   const [loadingPending, setLoadingPending] = useState(false);
   const chatContainerRef = React.useRef(null);
+  
+  // Daily Orbit Summary state
+  const [orbitSummaryOpen, setOrbitSummaryOpen] = useState(false);
+  const [orbitSummary, setOrbitSummary] = useState(null);
+  
+  // Room MVP state (today's MVP from yesterday's activity)
+  const [roomMVP, setRoomMVP] = useState(null);
 
   // Determine if current user is the room owner
   const isOwner = room?.owner?._id === user?.id || room?.owner === user?.id;
@@ -136,6 +145,68 @@ const RoomDetailPage = () => {
       console.error('Error checking nudge status:', err);
     }
   }, [roomId]);
+
+  // Load Daily Orbit Summary (shows once per day per room)
+  const checkAndShowOrbitSummary = useCallback(async () => {
+    if (!roomId || !user?.id) return;
+    
+    // Check localStorage for last seen date for this room
+    const storageKey = `orbit_summary_seen_${roomId}_${user.id}`;
+    const today = new Date().toISOString().split('T')[0];
+    const lastSeen = localStorage.getItem(storageKey);
+    
+    // Only show if not seen today
+    if (lastSeen === today) {
+      return;
+    }
+    
+    try {
+      const response = await api.get(`/orbit-summary/${roomId}`);
+      if (response.data.success && response.data.summary) {
+        // Only show if there were members yesterday (not a brand new room)
+        if (response.data.summary.totalMembers > 0) {
+          setOrbitSummary(response.data.summary);
+          setOrbitSummaryOpen(true);
+          // Mark as seen for today
+          localStorage.setItem(storageKey, today);
+        }
+      }
+    } catch (err) {
+      // Silently fail - this is not critical
+      console.log('Could not load orbit summary:', err.message);
+    }
+  }, [roomId, user?.id]);
+
+  // Show orbit summary when room loads
+  useEffect(() => {
+    if (room && user?.id) {
+      // Small delay to let the room UI render first
+      const timer = setTimeout(() => {
+        checkAndShowOrbitSummary();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [room, user?.id, checkAndShowOrbitSummary]);
+
+  // Fetch today's MVP when room loads
+  const fetchRoomMVP = useCallback(async () => {
+    if (!roomId) return;
+    try {
+      const response = await api.get(`/orbit-summary/${roomId}/today-mvp`);
+      if (response.data.success && response.data.mvp) {
+        setRoomMVP(response.data.mvp);
+      }
+    } catch (err) {
+      // Silently fail - MVP is not critical
+      console.log('Could not load room MVP:', err.message);
+    }
+  }, [roomId]);
+
+  useEffect(() => {
+    if (room) {
+      fetchRoomMVP();
+    }
+  }, [room, fetchRoomMVP]);
 
   // Check if user can send nudge on load
   useEffect(() => {
@@ -1395,6 +1466,14 @@ const RoomDetailPage = () => {
                             <Typography variant="body1" fontWeight="bold">
                               {member.userId.username || member.userId.email}
                             </Typography>
+                            {/* MVP Crown */}
+                            {roomMVP?.userId === (member.userId._id || member.userId) && (
+                              <Tooltip title="Room MVP — consistency & contribution">
+                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                  <MVPCrownIcon size={20} glowing animated />
+                                </Box>
+                              </Tooltip>
+                            )}
                             {(member.userId._id === user?.id || member.userId === user?.id) && (
                               <Chip label="You" size="small" color="primary" />
                             )}
@@ -1758,6 +1837,14 @@ const RoomDetailPage = () => {
                           <Typography variant="body2">
                             {member.userId.username || member.userId.email}
                           </Typography>
+                          {/* MVP Crown */}
+                          {roomMVP?.userId === (member.userId._id || member.userId) && (
+                            <Tooltip title="Room MVP — consistency & contribution">
+                              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                <MVPCrownIcon size={18} glowing />
+                              </Box>
+                            </Tooltip>
+                          )}
                           {isRoomOwner && (
                             <Chip label="Owner" size="small" color="primary" />
                           )}
@@ -2177,6 +2264,14 @@ const RoomDetailPage = () => {
         canNudge={canNudge}
         nudgeStatus={nudgeStatus}
         nudging={nudging}
+      />
+      
+      {/* Daily Orbit Summary Modal */}
+      <DailyOrbitSummaryModal
+        open={orbitSummaryOpen}
+        onClose={() => setOrbitSummaryOpen(false)}
+        summary={orbitSummary}
+        roomName={room?.name}
       />
     </Box>
   );
