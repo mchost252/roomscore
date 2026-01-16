@@ -110,7 +110,8 @@ const MessagesPage = () => {
     }
     
     // Always load fresh data on mount (but cache makes it feel instant)
-    loadConversations();
+    // If we have cache, treat this as a silent refresh so we don't wipe UI on transient empty responses
+    loadConversations(hasCache);
   }, []);
 
   useEffect(() => {
@@ -194,8 +195,9 @@ const MessagesPage = () => {
 
     // Handle read receipts - update message status
     const handleDmRead = ({ readBy, messageIds, readAt }) => {
+      const ids = Array.isArray(messageIds) ? messageIds : [];
       setMessages(prev => prev.map(msg => {
-        if (messageIds.includes(msg._id) || (getUserId(msg.recipient) === readBy && !msg.isRead)) {
+        if (ids.includes(msg._id) || (getUserId(msg.recipient) === readBy && !msg.isRead)) {
           return { ...msg, isRead: true, readAt };
         }
         return msg;
@@ -204,8 +206,9 @@ const MessagesPage = () => {
 
     // Handle message delivered confirmation
     const handleDmDelivered = ({ messageIds }) => {
+      const ids = Array.isArray(messageIds) ? messageIds : [];
       setMessages(prev => prev.map(msg => {
-        if (messageIds.includes(msg._id)) {
+        if (ids.includes(msg._id)) {
           return { ...msg, isDelivered: true };
         }
         return msg;
@@ -240,10 +243,18 @@ const MessagesPage = () => {
     setEmojiAnchor(null);
   };
 
-  const loadConversations = async () => {
+  const loadConversations = async (silentRefresh = false) => {
     try {
       const res = await api.get('/direct-messages/conversations');
       const conversationsData = res.data.conversations || [];
+
+      // IMPORTANT: never wipe existing conversations on silent refresh
+      if (silentRefresh && conversationsData.length === 0 && conversations.length > 0) {
+        console.warn('⚠️ Silent refresh returned 0 conversations; keeping existing list and retrying soon');
+        setTimeout(() => loadConversations(true), 2000);
+        return;
+      }
+
       setConversations(conversationsData);
       setConversationsLoaded(true);
       // Cache for instant loading - strip large avatar data

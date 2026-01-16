@@ -72,16 +72,25 @@ const FriendsPage = () => {
     const lastFetch = sessionStorage.getItem('friends_last_fetch');
     const now = Date.now();
     if (!lastFetch || now - parseInt(lastFetch) > 30000) { // 30 seconds
-      loadFriends();
-      loadRequests();
+      // If we already have cached data, treat as silent refresh so we don't wipe UI
+      loadFriends(friends.length > 0);
+      loadRequests(requests.length > 0);
       sessionStorage.setItem('friends_last_fetch', now.toString());
     }
   }, []);
 
-  const loadFriends = async () => {
+  const loadFriends = async (silentRefresh = false) => {
     try {
       const res = await api.get('/friends');
       const friendsData = res.data.friends || [];
+
+      // IMPORTANT: never wipe existing friends list during silent refresh.
+      if (silentRefresh && friendsData.length === 0 && friends.length > 0) {
+        console.warn('⚠️ Silent refresh returned 0 friends; keeping existing list and retrying soon');
+        setTimeout(() => loadFriends(true), 2000);
+        return;
+      }
+
       setFriends(friendsData);
       // Cache for instant loading - strip large avatar data to prevent quota errors
       try {
@@ -115,10 +124,18 @@ const FriendsPage = () => {
     }
   };
 
-  const loadRequests = async () => {
+  const loadRequests = async (silentRefresh = false) => {
     try {
       const res = await api.get('/friends/requests');
       const requestsData = res.data.requests || [];
+
+      // IMPORTANT: never wipe existing requests list during silent refresh.
+      if (silentRefresh && requestsData.length === 0 && requests.length > 0) {
+        console.warn('⚠️ Silent refresh returned 0 friend requests; keeping existing list and retrying soon');
+        setTimeout(() => loadRequests(true), 2000);
+        return;
+      }
+
       setRequests(requestsData);
       // Cache for instant loading - strip avatar data
       try {
@@ -207,8 +224,8 @@ const FriendsPage = () => {
       await api.put(`/friends/accept/${requestId}`);
       setSuccess('Friend request accepted!');
       setTimeout(() => setSuccess(null), 2000);
-      loadFriends();
-      loadRequests();
+      loadFriends(true);
+      loadRequests(true);
     } catch (err) {
       const { icon, message } = getErrorMessage(err, 'friend');
       setError(`${icon} ${message}`);
@@ -219,7 +236,7 @@ const FriendsPage = () => {
   const handleReject = async (requestId) => {
     try {
       await api.put(`/friends/reject/${requestId}`);
-      loadRequests();
+      loadRequests(true);
     } catch (err) {
       const { icon, message } = getErrorMessage(err, 'friend');
       setError(`${icon} ${message}`);
@@ -232,7 +249,7 @@ const FriendsPage = () => {
       await api.delete(`/friends/${friendId}`);
       setSuccess('Friend removed');
       setTimeout(() => setSuccess(null), 2000);
-      loadFriends();
+      loadFriends(true);
     } catch (err) {
       const { icon, message } = getErrorMessage(err, 'friend');
       setError(`${icon} ${message}`);
