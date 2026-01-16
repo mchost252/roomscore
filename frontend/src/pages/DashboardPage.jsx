@@ -382,15 +382,28 @@ const DashboardPage = () => {
     localStorage.setItem('onboardingCompleted', 'true');
   };
 
+  const getMyId = () => user?._id || user?.id;
+
+  const computeTotalPoints = (roomsList) => {
+    const myId = getMyId();
+    if (!myId || !Array.isArray(roomsList)) return 0;
+    return roomsList.reduce((sum, r) => {
+      const myMember = r?.members?.find(m => (m.userId?._id || m.userId) === myId);
+      return sum + (myMember?.points || 0);
+    }, 0);
+  };
+
   const loadFromCacheFirst = useCallback(() => {
     const cacheKey = cacheManager.generateKey('/rooms');
     const cached = cacheManager.getWithStale(cacheKey);
+    const cachedRooms = Array.isArray(cached.data?.rooms) ? cached.data.rooms : null;
     
-    if (cached.data?.rooms) {
-      setRooms(cached.data.rooms);
+    if (cachedRooms) {
+      setRooms(cachedRooms);
       setStats(prev => ({
         ...prev,
-        roomsJoined: cached.data.rooms.length || 0
+        roomsJoined: cachedRooms.length || 0,
+        totalPoints: computeTotalPoints(cachedRooms)
       }));
       setIsStaleData(cached.isStale);
       
@@ -400,7 +413,7 @@ const DashboardPage = () => {
     } else {
       loadDashboardData();
     }
-  }, []);
+  }, [user?._id, user?.id]);
 
   useEffect(() => {
     const handleForeground = () => {
@@ -414,9 +427,9 @@ const DashboardPage = () => {
   useEffect(() => {
     if (user && !hasMounted.current) {
       hasMounted.current = true;
-      loadFromCacheFirst();
+      // loadFromCacheFirst is already called in the [user] effect. Avoid double-load.
     }
-  }, [user, loadFromCacheFirst]);
+  }, [user]);
 
   useEffect(() => {
     if (!socket) return;
@@ -497,7 +510,8 @@ const DashboardPage = () => {
 
       setStats(prev => ({
         ...prev,
-        roomsJoined: freshRooms.length || 0
+        roomsJoined: freshRooms.length || 0,
+        totalPoints: computeTotalPoints(freshRooms)
       }));
     } catch (err) {
       console.error('Error loading dashboard:', err);
