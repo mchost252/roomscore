@@ -17,9 +17,12 @@ import {
   CircularProgress,
   Popover,
   Tooltip,
-  Button
+  Button,
+  Menu,
+  MenuItem,
+  ListItemIcon
 } from '@mui/material';
-import { Send, ArrowBack, EmojiEmotions, DoneAll, Done } from '@mui/icons-material';
+import { Send, ArrowBack, EmojiEmotions, DoneAll, Done, MoreVert, Delete as DeleteIcon, PersonRemove } from '@mui/icons-material';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
@@ -40,6 +43,8 @@ const MessagesPage = () => {
   const [newMessage, setNewMessage] = useState('');
   const [replyTo, setReplyTo] = useState(null);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  const [menuAnchorEl, setMenuAnchorEl] = useState(null);
+  const menuOpen = Boolean(menuAnchorEl);
   const [emojiAnchor, setEmojiAnchor] = useState(null);
   const [conversationsLoaded, setConversationsLoaded] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
@@ -221,12 +226,26 @@ const MessagesPage = () => {
     socket.on('dm:read', handleDmRead);
     socket.on('dm:delivered', handleDmDelivered);
 
+    const handleFriendRemoved = ({ friendId }) => {
+      // If the current chat was removed, exit the chat
+      if (getUserId(selectedFriend) === friendId) {
+        setMessages([]);
+        setSelectedFriend(null);
+        if (isMobile) navigate('/messages');
+      }
+      // Remove from conversations
+      setConversations(prev => prev.filter(c => getUserId(c.friend) !== friendId));
+    };
+
+    socket.on('friend:removed', handleFriendRemoved);
+
     return () => {
       socket.off('new_direct_message', handleNewDirectMessage);
       socket.off('user:status', handleUserStatus);
       socket.off('users:online', handleOnlineUsers);
       socket.off('dm:read', handleDmRead);
       socket.off('dm:delivered', handleDmDelivered);
+      socket.off('friend:removed');
     };
   }, [socket, selectedFriend, user]);
 
@@ -241,6 +260,53 @@ const MessagesPage = () => {
   const handleEmojiClick = (emoji) => {
     setNewMessage(prev => prev + emoji);
     setEmojiAnchor(null);
+  };
+
+  const handleOpenMenu = (e) => setMenuAnchorEl(e.currentTarget);
+  const handleCloseMenu = () => setMenuAnchorEl(null);
+
+  const handleClearChat = async () => {
+    const fid = getReliableFriendId();
+    if (!fid) return;
+    handleCloseMenu();
+
+    try {
+      await api.delete(`/direct-messages/${fid}`);
+      // Clear UI instantly
+      setMessages([]);
+      // Update conversations preview
+      setConversations(prev => prev.map(c => {
+        if (getUserId(c.friend) === fid) {
+          return { ...c, lastMessage: null, unreadCount: 0 };
+        }
+        return c;
+      }));
+      // Clear cache
+      sessionStorage.removeItem(`messages_${fid}`);
+    } catch (err) {
+      console.error('Error clearing chat:', err);
+    }
+  };
+
+  const handleRemoveFriend = async () => {
+    const fid = getReliableFriendId();
+    if (!fid) return;
+    handleCloseMenu();
+
+    try {
+      await api.delete(`/friends/${fid}`);
+      // Remove conversation locally
+      setConversations(prev => prev.filter(c => getUserId(c.friend) !== fid));
+      // Clear state
+      setMessages([]);
+      setSelectedFriend(null);
+      // Clear cache
+      sessionStorage.removeItem(`messages_${fid}`);
+      // Navigate back
+      navigate('/messages');
+    } catch (err) {
+      console.error('Error removing friend:', err);
+    }
   };
 
   const loadConversations = async (silentRefresh = false) => {
@@ -576,6 +642,37 @@ const MessagesPage = () => {
                   </Typography>
                 </Box>
               </Box>
+
+              {/* 3-dot menu */}
+              <IconButton onClick={handleOpenMenu}>
+                <MoreVert />
+              </IconButton>
+              <Menu anchorEl={menuAnchorEl} open={menuOpen} onClose={handleCloseMenu}>
+                <MenuItem
+                  onClick={() => {
+                    if (window.confirm('Clear chat history? This cannot be undone.')) {
+                      handleClearChat();
+                    } else {
+                      handleCloseMenu();
+                    }
+                  }}
+                >
+                  <ListItemIcon><DeleteIcon fontSize="small" /></ListItemIcon>
+                  Clear chat history
+                </MenuItem>
+                <MenuItem
+                  onClick={() => {
+                    if (window.confirm('Remove this friend? This will also clear your chat history.')) {
+                      handleRemoveFriend();
+                    } else {
+                      handleCloseMenu();
+                    }
+                  }}
+                >
+                  <ListItemIcon><PersonRemove fontSize="small" /></ListItemIcon>
+                  Remove user
+                </MenuItem>
+              </Menu>
             </Paper>
 
             {/* Messages */}
@@ -1076,6 +1173,37 @@ const MessagesPage = () => {
             </Box>
           )}
         </Box>
+
+        {/* 3-dot menu */}
+        <IconButton onClick={handleOpenMenu}>
+          <MoreVert />
+        </IconButton>
+        <Menu anchorEl={menuAnchorEl} open={menuOpen} onClose={handleCloseMenu}>
+          <MenuItem
+            onClick={() => {
+              if (window.confirm('Clear chat history? This cannot be undone.')) {
+                handleClearChat();
+              } else {
+                handleCloseMenu();
+              }
+            }}
+          >
+            <ListItemIcon><DeleteIcon fontSize="small" /></ListItemIcon>
+            Clear chat history
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              if (window.confirm('Remove this friend? This will also clear your chat history.')) {
+                handleRemoveFriend();
+              } else {
+                handleCloseMenu();
+              }
+            }}
+          >
+            <ListItemIcon><PersonRemove fontSize="small" /></ListItemIcon>
+            Remove user
+          </MenuItem>
+        </Menu>
       </Paper>
       </Container>
     </>

@@ -1105,7 +1105,8 @@ const RoomDetailPage = () => {
                     name: room.name,
                     description: room.description || '',
                     isPublic: room.isPublic,
-                    maxMembers: room.maxMembers
+                    maxMembers: room.maxMembers,
+                    chatRetentionDays: room.chatRetentionDays ?? 5
                   });
                   setSettingsOpen(true);
                 }}>
@@ -1825,6 +1826,16 @@ const RoomDetailPage = () => {
               onChange={(e) => setRoomSettings({ ...roomSettings, maxMembers: parseInt(e.target.value) || 50 })}
               fullWidth
             />
+
+           <TextField
+             label="Chat retention (days)"
+             type="number"
+             inputProps={{ min: 1, max: 5 }}
+             helperText="Room chat history will be kept for this many days (1–5). Older messages are deleted."
+             value={roomSettings.chatRetentionDays ?? room?.chatRetentionDays ?? 5}
+             onChange={(e) => setRoomSettings({ ...roomSettings, chatRetentionDays: Math.max(1, Math.min(5, parseInt(e.target.value) || 5)) })}
+             fullWidth
+           />
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Typography variant="body2">Public Room</Typography>
               <Box 
@@ -1871,7 +1882,20 @@ const RoomDetailPage = () => {
             variant="contained" 
             onClick={async () => {
               try {
-                await api.put(`/rooms/${roomId}`, roomSettings);
+                // Update basic room info
+                await api.put(`/rooms/${roomId}`, {
+                  name: roomSettings.name,
+                  description: roomSettings.description,
+                  isPublic: roomSettings.isPublic,
+                  maxMembers: roomSettings.maxMembers
+                });
+
+                // Update room settings (includes chat retention)
+                await api.put(`/rooms/${roomId}/settings`, {
+                  isPublic: roomSettings.isPublic,
+                  chatRetentionDays: roomSettings.chatRetentionDays
+                });
+
                 setSuccess('Room settings updated!');
                 setTimeout(() => setSuccess(null), 3000);
                 setSettingsOpen(false);

@@ -721,12 +721,19 @@ router.get('/:id/chat', protect, isRoomMember, async (req, res, next) => {
   try {
     const { limit = 50, before } = req.query;
 
+    // Enforce room chat retention (max 5 days)
+    const retentionDays = Math.min(5, Math.max(1, req.room.chatRetentionDays || 5));
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - retentionDays);
+
     const whereClause = {
-      roomId: req.params.id
+      roomId: req.params.id,
+      createdAt: { gte: cutoff }
     };
 
     if (before) {
-      whereClause.createdAt = { lt: new Date(before) };
+      // Combine before filter with retention cutoff
+      whereClause.createdAt = { gte: cutoff, lt: new Date(before) };
     }
 
     const messages = await prisma.chatMessage.findMany({
@@ -750,7 +757,8 @@ router.get('/:id/chat', protect, isRoomMember, async (req, res, next) => {
     res.json({
       success: true,
       count: formattedMessages.length,
-      messages: formattedMessages
+      messages: formattedMessages,
+      retentionDays
     });
   } catch (error) {
     next(error);
@@ -762,11 +770,22 @@ router.get('/:id/chat', protect, isRoomMember, async (req, res, next) => {
 // @access  Private (owner only)
 router.put('/:id/settings', protect, isRoomOwner, async (req, res, next) => {
   try {
-    const { isPublic } = req.body;
+    const { isPublic, chatRetentionDays } = req.body;
 
     const updateData = {};
     if (typeof isPublic === 'boolean') {
       updateData.isPrivate = !isPublic;
+    }
+
+    if (chatRetentionDays !== undefined) {
+      const days = Number(chatRetentionDays);
+      if (!Number.isFinite(days) || days < 1 || days > 5) {
+        return res.status(400).json({
+          success: false,
+          message: 'chatRetentionDays must be a number between 1 and 5'
+        });
+      }
+      updateData.chatRetentionDays = days;
     }
 
     const room = await prisma.room.update({

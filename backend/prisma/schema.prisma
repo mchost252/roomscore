@@ -54,21 +54,23 @@ model User {
 
 // ==================== ROOM ====================
 model Room {
-  id              String    @id @default(cuid())
-  name            String
-  description     String?
-  joinCode        String    @unique
-  isPrivate       Boolean   @default(false)
-  maxMembers      Int       @default(10)
-  streak          Int       @default(0)
-  longestStreak   Int       @default(0)
+  id               String    @id @default(cuid())
+  name             String
+  description      String?
+  joinCode         String    @unique
+  isPrivate        Boolean   @default(false)
+  maxMembers       Int       @default(10)
+  // Chat retention for room chat messages (days). Enforced server-side. Max 5.
+  chatRetentionDays Int      @default(5)
+  streak           Int       @default(0)
+  longestStreak    Int       @default(0)
   lastActivityDate DateTime?
-  ownerId         String
-  startDate       DateTime  @default(now())
-  endDate         DateTime?
-  isActive        Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  ownerId          String
+  startDate        DateTime  @default(now())
+  endDate          DateTime?
+  isActive         Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   // Relations
   owner           User            @relation("RoomOwner", fields: [ownerId], references: [id], onDelete: Cascade)

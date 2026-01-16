@@ -178,6 +178,44 @@ router.put('/read/:friendId', protect, async (req, res, next) => {
   }
 });
 
+// @route   DELETE /api/direct-messages/:friendId
+// @desc    Clear direct message history with a specific friend
+// @access  Private
+router.delete('/:friendId', protect, async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const friendId = req.params.friendId;
+
+    // Verify friendship exists
+    const friendship = await prisma.friend.findFirst({
+      where: {
+        status: 'accepted',
+        OR: [
+          { fromUserId: userId, toUserId: friendId },
+          { fromUserId: friendId, toUserId: userId }
+        ]
+      }
+    });
+
+    if (!friendship) {
+      return res.status(403).json({ success: false, message: 'Not friends with this user' });
+    }
+
+    const result = await prisma.directMessage.deleteMany({
+      where: {
+        OR: [
+          { fromUserId: userId, toUserId: friendId },
+          { fromUserId: friendId, toUserId: userId }
+        ]
+      }
+    });
+
+    res.json({ success: true, deleted: result.count });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // @route   POST /api/direct-messages/:friendId
 // @desc    Send message to friend
 // @access  Private

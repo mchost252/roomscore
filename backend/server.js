@@ -9,6 +9,7 @@ const logger = require('./utils/logger');
 const passport = require('passport');
 const session = require('express-session');
 const { prisma, connectDatabase, startKeepAlive } = require('./config/database');
+const { startChatRetentionCleanup } = require('./services/chatRetentionService');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -111,6 +112,8 @@ connectDatabase()
     logger.info('PostgreSQL connected successfully');
     // Start keep-alive pings to prevent Neon database from sleeping
     startKeepAlive();
+    // Start chat retention cleanup
+    startChatRetentionCleanup();
   })
   .catch((err) => {
     console.error('❌ PostgreSQL connection error:', err.message);

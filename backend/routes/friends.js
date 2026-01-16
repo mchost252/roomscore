@@ -189,6 +189,53 @@ router.put('/reject/:requestId', protect, async (req, res, next) => {
   }
 });
 
+// @route   DELETE /api/friends/:friendId
+// @desc    Remove a friend (unfriend). Also clears DM history.
+// @access  Private
+router.delete('/:friendId', protect, async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const friendId = req.params.friendId;
+
+    const friendship = await prisma.friend.findFirst({
+      where: {
+        status: 'accepted',
+        OR: [
+          { fromUserId: userId, toUserId: friendId },
+          { fromUserId: friendId, toUserId: userId }
+        ]
+      }
+    });
+
+    if (!friendship) {
+      return res.status(404).json({ success: false, message: 'Friendship not found' });
+    }
+
+    await prisma.friend.delete({ where: { id: friendship.id } });
+
+    // Clear direct message history between users
+    await prisma.directMessage.deleteMany({
+      where: {
+        OR: [
+          { fromUserId: userId, toUserId: friendId },
+          { fromUserId: friendId, toUserId: userId }
+        ]
+      }
+    });
+
+    // Emit socket events so both users update UI
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user:${userId}`).emit('friend:removed', { friendId });
+      io.to(`user:${friendId}`).emit('friend:removed', { friendId: userId });
+    }
+
+    res.json({ success: true, message: 'Friend removed' });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // @route   GET /api/friends
 // @desc    Get user's friends list
 // @access  Private

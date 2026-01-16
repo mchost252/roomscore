@@ -4,8 +4,9 @@
   "description": "Backend API for RoomScore - Social Habit Tracking Platform",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "prisma migrate deploy && node server.js",
     "dev": "nodemon server.js",
+    "postinstall": "prisma generate",
     "test": "jest --coverage"
   },
   "keywords": [
