@@ -480,6 +480,16 @@ const DashboardPage = () => {
       
       const roomsResponse = await api.get('/rooms');
       const freshRooms = roomsResponse.data.rooms || [];
+
+      // IMPORTANT: never wipe existing rooms during silent refresh.
+      // This prevents the "rooms show then disappear" bug when a background refresh returns empty.
+      if (silentRefresh && freshRooms.length === 0 && rooms.length > 0) {
+        console.warn('⚠️ Silent refresh returned 0 rooms; keeping existing rooms and retrying soon');
+        setIsStaleData(true);
+        // Retry once shortly after (handles brief backend hiccups)
+        setTimeout(() => loadDashboardData(true), 2000);
+        return;
+      }
       
       setRooms(freshRooms);
       setIsStaleData(false);
@@ -490,9 +500,12 @@ const DashboardPage = () => {
       }));
     } catch (err) {
       console.error('Error loading dashboard:', err);
+      // On silent refresh errors, keep current rooms.
       if (!silentRefresh && rooms.length === 0) {
         const { icon, message } = getErrorMessage(err);
         setError(`${icon} ${message}`);
+      } else {
+        setIsStaleData(true);
       }
     }
   };

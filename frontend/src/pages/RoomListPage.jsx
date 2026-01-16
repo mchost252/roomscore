@@ -148,7 +148,15 @@ const RoomListPage = () => {
       
       // Handle my rooms result
       if (results[0].status === 'fulfilled') {
-        setMyRooms(results[0].value.data.rooms || []);
+        const freshMyRooms = results[0].value.data.rooms || [];
+
+        // IMPORTANT: never wipe existing rooms during silent refresh.
+        if (silentRefresh && freshMyRooms.length === 0 && myRooms.length > 0) {
+          console.warn('⚠️ Silent refresh returned 0 rooms; keeping existing rooms and retrying soon');
+          setTimeout(() => loadRooms(true), 2000);
+        } else {
+          setMyRooms(freshMyRooms);
+        }
       } else {
         console.error('Error loading my rooms:', results[0].reason);
         // Keep existing rooms on error during silent refresh
