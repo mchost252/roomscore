@@ -49,10 +49,11 @@ import { useTheme as useCustomTheme } from '../context/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import api from '../utils/api';
+import { subscribeToPush, unsubscribeFromPush, ensureServiceWorkerRegistered } from '../utils/pushClient';
 import { getErrorMessage } from '../utils/errorMessages';
 
 const ProfilePage = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, updateProfile, loadUser } = useAuth();
   const { socket } = useSocket();
   const { mode, themePreference, setThemeMode } = useCustomTheme();
   const navigate = useNavigate();
@@ -85,7 +86,42 @@ const ProfilePage = () => {
 
   useEffect(() => {
     loadProfileData();
+    // Force-refresh auth user from server so ProfilePage shows latest bio/avatar
+    // Uses bypassCache so we don't read stale cached /auth/profile.
+    loadUser?.(0, { bypassCache: true });
   }, []);
+
+  // Push support + status
+  useEffect(() => {
+    const initPush = async () => {
+      try {
+        const supported = typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+        setPushSupported(supported);
+        if (!supported) return;
+
+        await ensureServiceWorkerRegistered();
+        const statusRes = await api.get('/push/status');
+        setPushEnabled(!!statusRes.data.pushEnabled);
+      } catch (e) {
+        // Don't hard-fail profile page on push status issues
+        console.warn('Push init failed:', e?.message);
+      }
+    };
+    initPush();
+  }, []);
+
+  // Keep edit form in sync with latest user data
+  useEffect(() => {
+    if (!user) return;
+    setEditData(prev => ({
+      ...prev,
+      username: user.username || '',
+      email: user.email || '',
+      avatar: user.avatar || '',
+      bio: user.bio || ''
+    }));
+    setAvatarPreview(user.avatar || '');
+  }, [user]);
 
   // Real-time notification updates
   useEffect(() => {
@@ -172,21 +208,20 @@ const ProfilePage = () => {
       setLoading(true);
       setError(null);
 
-      // Convert avatar to base64 if file was uploaded
-      let avatarData = editData.avatar;
-      
-      await api.put('/auth/profile', {
+      // Update via AuthContext so UI updates instantly without reload
+      const result = await updateProfile({
         username: editData.username,
-        avatar: avatarData || null,
+        avatar: editData.avatar || null,
         bio: editData.bio
       });
+
+      if (!result.success) {
+        throw new Error(result.message || 'Profile update failed');
+      }
       
       setSuccess('Profile updated successfully!');
       setTimeout(() => setSuccess(null), 3000);
       setEditDialogOpen(false);
-      
-      // Reload user profile
-      window.location.reload();
     } catch (err) {
       console.error('Error updating profile:', err);
       const { icon, message } = getErrorMessage(err);
@@ -854,6 +889,71 @@ const ProfilePage = () => {
                     </Button>
                   </Box>
                 </Box>
+              </Box>
+
+              {/* Push Notifications */}
+              <Box sx={{ mb: { xs: 2, md: 3 } }}>
+                <Typography variant="subtitle1" fontWeight="bold" gutterBottom sx={{ fontSize: { xs: '0.9rem', md: '1rem' } }}>
+                  Push Notifications
+                </Typography>
+
+                {!pushSupported ? (
+                  <Alert severity="info">Push notifications are not supported on this browser/device.</Alert>
+                ) : (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                    <Typography variant="body2" color="text.secondary">
+                      Status: {pushEnabled ? 'Enabled' : 'Disabled'}
+                    </Typography>
+
+                    {!pushEnabled ? (
+                      <Button
+                        variant="contained"
+                        size="small"
+                        startIcon={<NotificationsActive />}
+                        onClick={async () => {
+                          try {
+                            const res = await subscribeToPush();
+                            if (res.success) {
+                              setPushEnabled(true);
+                              setSuccess('Push notifications enabled');
+                              setTimeout(() => setSuccess(null), 2500);
+                            } else {
+                              setError(res.message || 'Failed to enable push');
+                              setTimeout(() => setError(null), 4000);
+                            }
+                          } catch (e) {
+                            setError(e.message || 'Failed to enable push');
+                            setTimeout(() => setError(null), 4000);
+                          }
+                        }}
+                      >
+                        Enable
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outlined"
+                        color="error"
+                        size="small"
+                        startIcon={<NotificationsOff />}
+                        onClick={async () => {
+                          try {
+                            const res = await unsubscribeFromPush();
+                            if (res.success) {
+                              setPushEnabled(false);
+                              setSuccess('Push notifications disabled');
+                              setTimeout(() => setSuccess(null), 2500);
+                            }
+                          } catch (e) {
+                            setError(e.message || 'Failed to disable push');
+                            setTimeout(() => setError(null), 4000);
+                          }
+                        }}
+                      >
+                        Disable
+                      </Button>
+                    )}
+                  </Box>
+                )}
               </Box>
 
             </Paper>

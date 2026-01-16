@@ -295,7 +295,8 @@ router.post('/:friendId', protect, async (req, res, next) => {
     PushNotificationService.notifyDirectMessage(
       friendId,
       req.user.username,
-      message.trim()
+      message.trim(),
+      userId
     ).catch(err => logger.error('Push notification error for DM:', err));
 
     res.json({ success: true, message: formattedDm });

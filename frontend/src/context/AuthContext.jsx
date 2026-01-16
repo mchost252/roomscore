@@ -27,10 +27,10 @@ export const AuthProvider = ({ children }) => {
   }, [token]);
 
   // Load user profile
-  const loadUser = async (retryCount = 0) => {
+  const loadUser = async (retryCount = 0, options = {}) => {
     try {
       console.log('🔄 Loading user profile...');
-      const response = await api.get('/auth/profile');
+      const response = await api.get('/auth/profile', options?.bypassCache ? { headers: { 'x-bypass-cache': '1' } } : undefined);
       console.log('✅ User profile loaded:', response.data.user);
       setUser(response.data.user);
       setLoading(false); // Set loading false immediately after user is set
@@ -216,9 +216,15 @@ export const AuthProvider = ({ children }) => {
   // Update profile
   const updateProfile = async (updates) => {
     try {
-      const response = await api.put('/auth/profile', updates);
+      // Bypass cache for profile update
+      const response = await api.put('/auth/profile', updates, {
+        headers: { 'x-bypass-cache': '1' }
+      });
+      // Update auth user immediately
       setUser(response.data.user);
-      return { success: true };
+      // Also invalidate cached profile so future loads show updated bio/avatar
+      try { clearAllCache(); } catch (_) {}
+      return { success: true, user: response.data.user };
     } catch (error) {
       return {
         success: false,

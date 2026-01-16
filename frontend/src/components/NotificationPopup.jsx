@@ -75,6 +75,10 @@ const NotificationPopup = () => {
       if (notification.relatedRoom) {
         const roomId = notification.relatedRoom._id || notification.relatedRoom;
         navigate(`/rooms/${roomId}`);
+      } else if (notification.type === 'direct_message') {
+        const senderId = notification.data?.senderId;
+        if (senderId) navigate(`/messages/${senderId}`);
+        else navigate('/messages');
       }
     } catch (error) {
       console.error('Error marking notification as read:', error);

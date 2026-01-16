@@ -1,5 +1,5 @@
 const webpush = require('web-push');
-const User = require('../models/User');
+const { prisma } = require('../config/database');
 const logger = require('../utils/logger');
 
 // Configure web-push with VAPID keys (only if they exist)
@@ -25,57 +25,35 @@ class PushNotificationService {
     if (!pushNotificationsEnabled) {
       return { success: false, reason: 'Push notifications not configured' };
     }
-    
+
     try {
-      const user = await User.findById(userId);
-      
-      if (!user || !user.notificationSettings.pushEnabled || !user.pushSubscriptions.length) {
-        return { success: false, reason: 'No active subscriptions' };
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { pushSubscription: true }
+      });
+
+      if (!user?.pushSubscription?.endpoint || !user.pushSubscription?.keys) {
+        return { success: false, reason: 'No active subscription' };
       }
 
-      const results = [];
-      const failedSubscriptions = [];
-
-      // Send to all user's subscriptions (multiple devices)
-      for (const subscription of user.pushSubscriptions) {
-        try {
-          const pushSubscription = {
-            endpoint: subscription.endpoint,
-            keys: {
-              p256dh: subscription.keys.p256dh,
-              auth: subscription.keys.auth
-            }
-          };
-
-          await webpush.sendNotification(
-            pushSubscription,
-            JSON.stringify(payload)
-          );
-
-          results.push({ success: true, endpoint: subscription.endpoint });
-          logger.info(`Push notification sent to user ${userId}`);
-        } catch (error) {
-          logger.error(`Failed to send push notification:`, error);
-          
-          // If subscription is no longer valid (410 Gone), mark for removal
-          if (error.statusCode === 410) {
-            failedSubscriptions.push(subscription._id);
-          }
-          
-          results.push({ success: false, endpoint: subscription.endpoint, error: error.message });
+      const pushSubscription = {
+        endpoint: user.pushSubscription.endpoint,
+        keys: {
+          p256dh: user.pushSubscription.keys.p256dh,
+          auth: user.pushSubscription.keys.auth
         }
-      }
+      };
 
-      // Clean up invalid subscriptions
-      if (failedSubscriptions.length > 0) {
-        await User.findByIdAndUpdate(userId, {
-          $pull: { pushSubscriptions: { _id: { $in: failedSubscriptions } } }
-        });
-        logger.info(`Removed ${failedSubscriptions.length} invalid subscriptions for user ${userId}`);
-      }
-
-      return { success: true, results };
+      await webpush.sendNotification(pushSubscription, JSON.stringify(payload));
+      logger.info(`Push notification sent to user ${userId}`);
+      return { success: true };
     } catch (error) {
+      // If subscription is invalid, clear it
+      if (error.statusCode === 410) {
+        try {
+          await prisma.user.update({ where: { id: userId }, data: { pushSubscription: null } });
+        } catch (_) {}
+      }
       logger.error('Error in sendToUser:', error);
       return { success: false, error: error.message };
     }
@@ -204,7 +182,7 @@ class PushNotificationService {
   }
 
   // Notify new direct message
-  static async notifyDirectMessage(recipientId, senderUsername, messagePreview) {
+  static async notifyDirectMessage(recipientId, senderUsername, messagePreview, senderId) {
     const payload = {
       title: `Message from ${senderUsername}`,
       body: messagePreview.length > 100 ? messagePreview.substring(0, 100) + '...' : messagePreview,
@@ -214,7 +192,8 @@ class PushNotificationService {
       renotify: true,
       data: {
         type: 'direct_message',
-        url: '/messages'
+        senderId,
+        url: senderId ? `/messages/${senderId}` : '/messages'
       }
     };
 
