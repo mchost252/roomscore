@@ -18,7 +18,10 @@ import {
   StepLabel,
   Card,
   CardContent,
-  Divider
+  Divider,
+  Chip,
+  ToggleButton,
+  ToggleButtonGroup
 } from '@mui/material';
 import {
   ArrowBack,
@@ -57,8 +60,11 @@ const CreateRoomPage = () => {
     title: '',
     description: '',
     points: 5, // Default 5 points
-    frequency: 'daily'
+    frequency: 'daily',
+    daysOfWeek: [] // For custom frequency: 0=Sun, 1=Mon, ..., 6=Sat
   });
+
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   const steps = ['Room Details', 'Add Tasks', 'Review'];
 
@@ -78,12 +84,19 @@ const CreateRoomPage = () => {
       return;
     }
 
+    // Validate custom frequency has days selected
+    if (newTask.frequency === 'custom' && newTask.daysOfWeek.length === 0) {
+      setError({ isTimeout: false, text: '📅 Please select at least one day for custom frequency' });
+      return;
+    }
+
     setTasks(prev => [...prev, { ...newTask, id: Date.now() }]);
     setNewTask({
       title: '',
       description: '',
       points: 5,
-      frequency: 'daily'
+      frequency: 'daily',
+      daysOfWeek: []
     });
     setError(null);
   };
@@ -282,10 +295,18 @@ const CreateRoomPage = () => {
               label="Chat Retention Days"
               value={roomData.chatRetentionDays}
               onChange={(e) => {
+                // Allow empty or any number while typing
+                const val = e.target.value;
+                if (val === '') {
+                  handleRoomDataChange('chatRetentionDays', '');
+                } else {
+                  handleRoomDataChange('chatRetentionDays', parseInt(val) || '');
+                }
+              }}
+              onBlur={(e) => {
+                // Validate on blur
                 const val = parseInt(e.target.value);
-                if (val >= 1 && val <= 5) {
-                  handleRoomDataChange('chatRetentionDays', val);
-                } else if (e.target.value === '' || val < 1) {
+                if (!val || val < 1) {
                   handleRoomDataChange('chatRetentionDays', 1);
                 } else if (val > 5) {
                   handleRoomDataChange('chatRetentionDays', 5);
@@ -293,6 +314,7 @@ const CreateRoomPage = () => {
               }}
               inputProps={{ min: 1, max: 5 }}
               helperText="Messages older than this will be automatically deleted (1-5 days)"
+              error={roomData.chatRetentionDays !== '' && (roomData.chatRetentionDays < 1 || roomData.chatRetentionDays > 5)}
               sx={{ mb: 3 }}
             />
 
@@ -368,17 +390,26 @@ const CreateRoomPage = () => {
                   label="Points (1-10)"
                   value={newTask.points}
                   onChange={(e) => {
+                    // Allow empty or any number while typing
+                    const val = e.target.value;
+                    if (val === '') {
+                      setNewTask(prev => ({ ...prev, points: '' }));
+                    } else {
+                      setNewTask(prev => ({ ...prev, points: parseInt(val) || '' }));
+                    }
+                  }}
+                  onBlur={(e) => {
+                    // Validate on blur
                     const val = parseInt(e.target.value);
-                    if (val >= 1 && val <= 10) {
-                      setNewTask(prev => ({ ...prev, points: val }));
-                    } else if (e.target.value === '' || val < 1) {
+                    if (!val || val < 1) {
                       setNewTask(prev => ({ ...prev, points: 1 }));
                     } else if (val > 10) {
                       setNewTask(prev => ({ ...prev, points: 10 }));
                     }
                   }}
                   inputProps={{ min: 1, max: 10 }}
-                  helperText="1-10"
+                  error={newTask.points !== '' && (newTask.points < 1 || newTask.points > 10)}
+                  helperText={newTask.points !== '' && (newTask.points < 1 || newTask.points > 10) ? "Must be 1-10" : "1-10"}
                   sx={{ flex: 1 }}
                 />
                 <TextField
@@ -386,15 +417,54 @@ const CreateRoomPage = () => {
                   select
                   label="Frequency"
                   value={newTask.frequency}
-                  onChange={(e) => setNewTask(prev => ({ ...prev, frequency: e.target.value }))}
+                  onChange={(e) => setNewTask(prev => ({ ...prev, frequency: e.target.value, daysOfWeek: [] }))}
                   SelectProps={{ native: true }}
                   sx={{ flex: 1 }}
                 >
                   <option value="daily">Daily</option>
                   <option value="weekly">Weekly</option>
-                  <option value="custom">Custom</option>
+                  <option value="custom">Custom Days</option>
                 </TextField>
               </Box>
+
+              {/* Custom Days Selector */}
+              {newTask.frequency === 'custom' && (
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                    Select days this task should be completed:
+                  </Typography>
+                  <ToggleButtonGroup
+                    value={newTask.daysOfWeek}
+                    onChange={(e, newDays) => setNewTask(prev => ({ ...prev, daysOfWeek: newDays || [] }))}
+                    size="small"
+                    sx={{ flexWrap: 'wrap', gap: 0.5 }}
+                  >
+                    {dayNames.map((day, index) => (
+                      <ToggleButton 
+                        key={index} 
+                        value={index}
+                        sx={{ 
+                          px: 1.5, 
+                          py: 0.5,
+                          minWidth: 'auto',
+                          '&.Mui-selected': {
+                            bgcolor: 'primary.main',
+                            color: 'white',
+                            '&:hover': { bgcolor: 'primary.dark' }
+                          }
+                        }}
+                      >
+                        {day}
+                      </ToggleButton>
+                    ))}
+                  </ToggleButtonGroup>
+                  {newTask.daysOfWeek.length > 0 && (
+                    <Typography variant="caption" color="primary" sx={{ mt: 1, display: 'block' }}>
+                      Selected: {newTask.daysOfWeek.sort((a,b) => a-b).map(d => dayNames[d]).join(', ')}
+                    </Typography>
+                  )}
+                </Box>
+              )}
 
               <Button
                 fullWidth
@@ -434,12 +504,14 @@ const CreateRoomPage = () => {
                                   {task.description}
                                 </Typography>
                               )}
-                              <Box component="span" sx={{ display: 'flex', gap: 1, mt: 0.5 }}>
+                              <Box component="span" sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
                                 <Typography component="span" variant="caption" sx={{ bgcolor: 'primary.main', color: 'white', px: 1, py: 0.5, borderRadius: 1 }}>
                                   {task.points} points
                                 </Typography>
                                 <Typography component="span" variant="caption" sx={{ bgcolor: 'action.selected', px: 1, py: 0.5, borderRadius: 1 }}>
-                                  {task.frequency}
+                                  {task.frequency === 'custom' && task.daysOfWeek?.length > 0
+                                    ? task.daysOfWeek.sort((a,b) => a-b).map(d => dayNames[d]).join(', ')
+                                    : task.frequency}
                                 </Typography>
                               </Box>
                             </>

@@ -50,27 +50,52 @@ const Navbar = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [unreadMessages, setUnreadMessages] = useState(0);
 
-  // Fetch unread message count on mount and listen for updates
-  useEffect(() => {
-    const fetchUnreadCount = async () => {
-      try {
-        const res = await api.get('/direct-messages/unread-count');
-        setUnreadMessages(res.data.unreadCount || 0);
-      } catch (err) {
-        console.error('Error fetching unread count:', err);
-      }
-    };
+  // Fetch unread message count
+  const fetchUnreadCount = useCallback(async () => {
+    if (!user) return;
+    try {
+      const res = await api.get('/direct-messages/unread-count');
+      setUnreadMessages(res.data.unreadCount || 0);
+    } catch (err) {
+      // Silent fail - don't spam console
+    }
+  }, [user]);
 
+  // Fetch on mount and when user changes
+  useEffect(() => {
     if (user) {
       fetchUnreadCount();
     }
-  }, [user]);
+  }, [user, fetchUnreadCount]);
+
+  // Also refetch when socket connects (in case we missed events)
+  useEffect(() => {
+    if (socket && user) {
+      const handleConnect = () => {
+        console.log('🔌 Socket connected, fetching unread count');
+        fetchUnreadCount();
+      };
+      
+      socket.on('connect', handleConnect);
+      
+      // If already connected, fetch now
+      if (socket.connected) {
+        fetchUnreadCount();
+      }
+      
+      return () => {
+        socket.off('connect', handleConnect);
+      };
+    }
+  }, [socket, user, fetchUnreadCount]);
 
   // Listen for socket events to update unread count
   useEffect(() => {
     if (!socket) return;
 
     const handleNewMessage = (message) => {
+      console.log('📩 new_direct_message event received:', message);
+      
       // Get sender ID from various possible formats
       const senderId = message.sender?._id || message.sender?.id || message.fromUserId;
       // Get current user ID (handle both _id and id formats)
@@ -81,17 +106,17 @@ const Navbar = () => {
       // 2. User is not currently viewing the messages page for that sender
       const isViewingThisSender = location.pathname.includes(`/messages/${senderId}`);
       
+      console.log('📩 senderId:', senderId, 'currentUserId:', currentUserId, 'isViewing:', isViewingThisSender);
+      
       if (senderId && senderId !== currentUserId && !isViewingThisSender) {
-        console.log('📬 New message received, incrementing unread count');
+        console.log('📬 Incrementing unread count');
         setUnreadMessages(prev => prev + 1);
       }
     };
 
     const handleMessagesRead = () => {
       // Refetch count when messages are marked as read
-      api.get('/direct-messages/unread-count')
-        .then(res => setUnreadMessages(res.data.unreadCount || 0))
-        .catch(() => {});
+      fetchUnreadCount();
     };
 
     socket.on('new_direct_message', handleNewMessage);
@@ -101,7 +126,7 @@ const Navbar = () => {
       socket.off('new_direct_message', handleNewMessage);
       socket.off('dm:read', handleMessagesRead);
     };
-  }, [socket, user, location.pathname]);
+  }, [socket, user, location.pathname, fetchUnreadCount]);
 
   // Clear unread count when visiting messages page
   useEffect(() => {

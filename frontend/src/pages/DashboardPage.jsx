@@ -223,8 +223,9 @@ const RoomCard = ({ room, user, onClick }) => {
     : 0;
   
   // Calculate days until expiry
-  const daysLeft = room.expiresAt 
-    ? Math.max(0, Math.ceil((new Date(room.expiresAt) - new Date()) / (1000 * 60 * 60 * 24)))
+  const expiryDate = room.endDate || room.expiresAt;
+  const daysLeft = expiryDate 
+    ? Math.max(0, Math.ceil((new Date(expiryDate) - new Date()) / (1000 * 60 * 60 * 24)))
     : null;
 
   return (

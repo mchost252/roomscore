@@ -26,6 +26,7 @@ const calculateExpiryDate = (duration) => {
 const formatRoomResponse = (room) => ({
   ...room,
   _id: room.id, // For frontend compatibility
+  isPublic: !room.isPrivate, // Frontend compatibility - convert isPrivate to isPublic
   owner: room.owner ? { ...room.owner, _id: room.owner.id } : { _id: room.ownerId },
   members: room.members?.map(m => ({
     ...m,

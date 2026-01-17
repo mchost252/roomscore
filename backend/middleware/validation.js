@@ -55,6 +55,15 @@ exports.createRoomSchema = Joi.object({
   maxMembers: Joi.number().min(2).max(100),
   duration: Joi.string().valid('1_week', '2_weeks', '1_month'),
   requireApproval: Joi.boolean(),
+  chatRetentionDays: Joi.number().min(1).max(5), // How long to keep chat messages
+  tasks: Joi.array().items(Joi.object({
+    title: Joi.string().min(1).max(100).required(),
+    description: Joi.string().max(500).allow('', null),
+    points: Joi.number().min(1).max(10), // Points limited to 1-10
+    taskType: Joi.string().valid('daily', 'weekly', 'custom'),
+    frequency: Joi.string().valid('daily', 'weekly', 'custom'),
+    daysOfWeek: Joi.array().items(Joi.number().min(0).max(6)) // For custom frequency
+  })),
   settings: Joi.object({
     timezone: Joi.string(),
     allowMemberTaskCreation: Joi.boolean(),
@@ -85,27 +94,31 @@ exports.joinRoomSchema = Joi.object({
 exports.createTaskSchema = Joi.object({
   title: Joi.string().min(3).max(100).required(),
   description: Joi.string().max(500).allow(''),
-  points: Joi.number().min(1).max(1000).required(),
+  points: Joi.number().min(1).max(10).required(), // Points limited to 1-10
   category: Joi.string().valid('health', 'productivity', 'learning', 'social', 'finance', 'other'),
-  frequency: Joi.string().valid('daily', 'weekly', 'monthly', 'one-time').required(),
-  daysOfWeek: Joi.array().items(Joi.number().min(0).max(6)),
+  frequency: Joi.string().valid('daily', 'weekly', 'custom').required(),
+  taskType: Joi.string().valid('daily', 'weekly', 'custom'),
+  daysOfWeek: Joi.array().items(Joi.number().min(0).max(6)), // For custom frequency
   deadline: Joi.date().iso()
 });
 
 exports.updateTaskSchema = Joi.object({
   title: Joi.string().min(3).max(100),
   description: Joi.string().max(500).allow(''),
-  points: Joi.number().min(1).max(1000),
+  points: Joi.number().min(1).max(10), // Points limited to 1-10
   category: Joi.string().valid('health', 'productivity', 'learning', 'social', 'finance', 'other'),
-  frequency: Joi.string().valid('daily', 'weekly', 'monthly', 'one-time'),
-  daysOfWeek: Joi.array().items(Joi.number().min(0).max(6)),
+  frequency: Joi.string().valid('daily', 'weekly', 'custom'),
+  taskType: Joi.string().valid('daily', 'weekly', 'custom'),
+  daysOfWeek: Joi.array().items(Joi.number().min(0).max(6)), // For custom frequency
   deadline: Joi.date().iso(),
   isActive: Joi.boolean()
 });
 
 // Chat schema
 exports.sendMessageSchema = Joi.object({
-  message: Joi.string().min(1).max(2000).required()
+  message: Joi.string().min(1).max(2000).required(),
+  replyToId: Joi.string().allow(null, ''),
+  replyToText: Joi.string().max(200).allow(null, '')
 });
 
 module.exports.validate = validate;

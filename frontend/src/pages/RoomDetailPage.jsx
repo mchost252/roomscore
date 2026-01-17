@@ -27,7 +27,9 @@ import {
   Tab,
   Tooltip,
   Divider,
-  useTheme
+  useTheme,
+  Switch,
+  FormControlLabel
 } from '@mui/material';
 import {
   ArrowBack,
@@ -1217,7 +1219,7 @@ const RoomDetailPage = () => {
                   setRoomSettings({
                     name: room.name,
                     description: room.description || '',
-                    isPublic: room.isPublic,
+                    isPublic: room.isPublic ?? !room.isPrivate,
                     maxMembers: room.maxMembers,
                     chatRetentionDays: room.chatRetentionDays ?? 5
                   });
@@ -1244,11 +1246,11 @@ const RoomDetailPage = () => {
         )}
 
         {/* Room Expiry Info */}
-        {room.expiresAt && (
+        {(room.endDate || room.expiresAt) && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, p: 1, bgcolor: 'warning.main', borderRadius: 1, opacity: 0.9 }}>
             <CalendarToday sx={{ fontSize: { xs: 16, md: 20 }, color: 'warning.contrastText' }} />
             <Typography variant="body2" sx={{ fontSize: { xs: '0.7rem', md: '0.875rem' }, color: 'warning.contrastText' }}>
-              Room expires: {format(parseISO(room.expiresAt), 'MMM d, yyyy')} ({Math.max(0, Math.ceil((new Date(room.expiresAt) - new Date()) / (1000 * 60 * 60 * 24)))} days left)
+              Room expires: {format(parseISO(room.endDate || room.expiresAt), 'MMM d, yyyy')} ({Math.max(0, Math.ceil((new Date(room.endDate || room.expiresAt) - new Date()) / (1000 * 60 * 60 * 24)))} days left)
             </Typography>
           </Box>
         )}
@@ -2011,24 +2013,44 @@ const RoomDetailPage = () => {
              type="number"
              inputProps={{ min: 1, max: 5 }}
              helperText="Room chat history will be kept for this many days (1–5). Older messages are deleted."
-             value={roomSettings.chatRetentionDays ?? room?.chatRetentionDays ?? 5}
-             onChange={(e) => setRoomSettings({ ...roomSettings, chatRetentionDays: Math.max(1, Math.min(5, parseInt(e.target.value) || 5)) })}
+             value={roomSettings.chatRetentionDays === '' ? '' : (roomSettings.chatRetentionDays ?? room?.chatRetentionDays ?? 5)}
+             onChange={(e) => {
+               const val = e.target.value;
+               if (val === '') {
+                 setRoomSettings({ ...roomSettings, chatRetentionDays: '' });
+               } else {
+                 setRoomSettings({ ...roomSettings, chatRetentionDays: parseInt(val) || '' });
+               }
+             }}
+             onBlur={(e) => {
+               const val = parseInt(e.target.value);
+               if (!val || val < 1) {
+                 setRoomSettings({ ...roomSettings, chatRetentionDays: 1 });
+               } else if (val > 5) {
+                 setRoomSettings({ ...roomSettings, chatRetentionDays: 5 });
+               }
+             }}
+             error={roomSettings.chatRetentionDays !== '' && (roomSettings.chatRetentionDays < 1 || roomSettings.chatRetentionDays > 5)}
              fullWidth
            />
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography variant="body2">Public Room</Typography>
-              <Box 
-                component="label" 
-                sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
-              >
-                <input
-                  type="checkbox"
+            <FormControlLabel
+              control={
+                <Switch
                   checked={roomSettings.isPublic}
                   onChange={(e) => setRoomSettings({ ...roomSettings, isPublic: e.target.checked })}
-                  style={{ marginLeft: 8 }}
                 />
-              </Box>
-            </Box>
+              }
+              label={
+                <Box>
+                  <Typography variant="body1">Public Room</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {roomSettings.isPublic 
+                      ? 'Anyone can discover and join this room' 
+                      : 'Users need a join code to access this room'}
+                  </Typography>
+                </Box>
+              }
+            />
             
             <Divider sx={{ my: 2 }} />
             
