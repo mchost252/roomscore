@@ -30,6 +30,7 @@ import api from '../utils/api';
 import { useDeviceType } from '../hooks/useDeviceType';
 import { fetchAvatars } from '../hooks/useAvatar';
 import UserProfileDialog from '../components/UserProfileDialog';
+import useVisibilityRefresh from '../hooks/useVisibilityRefresh';
 
 const MessagesPage = () => {
   const navigate = useNavigate();
@@ -50,9 +51,16 @@ const MessagesPage = () => {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState(new Set());
   const [avatars, setAvatars] = useState({});
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const messagesEndRef = useRef(null);
+  const lastFetchTime = useRef(0);
 
   const quickEmojis = ['👍', '❤️', '😂', '🔥', '🎉'];
+
+  // Refresh data when user returns to the tab/app
+  useVisibilityRefresh(() => {
+    loadConversations(true);
+  }, 30000); // Minimum 30 seconds between visibility refreshes
 
   // Sync online users from context
   useEffect(() => {
@@ -310,14 +318,28 @@ const MessagesPage = () => {
   };
 
   const loadConversations = async (silentRefresh = false) => {
+    // Debounce: prevent multiple rapid calls
+    const now = Date.now();
+    if (silentRefresh && now - lastFetchTime.current < 2000) {
+      console.log('⏳ Skipping conversations fetch - too soon');
+      return;
+    }
+    lastFetchTime.current = now;
+
     try {
-      const res = await api.get('/direct-messages/conversations');
+      if (silentRefresh) {
+        setIsRefreshing(true);
+      }
+
+      const res = await api.get('/direct-messages/conversations', {
+        headers: silentRefresh ? {} : { 'x-bypass-cache': 'true' }
+      });
       const conversationsData = res.data.conversations || [];
 
       // IMPORTANT: never wipe existing conversations on silent refresh
       if (silentRefresh && conversationsData.length === 0 && conversations.length > 0) {
-        console.warn('⚠️ Silent refresh returned 0 conversations; keeping existing list and retrying soon');
-        setTimeout(() => loadConversations(true), 2000);
+        console.warn('⚠️ Silent refresh returned 0 conversations; keeping existing list');
+        // Don't retry - just keep showing current data
         return;
       }
 
@@ -355,6 +377,8 @@ const MessagesPage = () => {
     } catch (err) {
       console.error('Error loading conversations:', err);
       setConversationsLoaded(true); // Still mark as loaded even on error
+    } finally {
+      setIsRefreshing(false);
     }
   };
 

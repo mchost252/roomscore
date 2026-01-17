@@ -70,19 +70,20 @@ api.interceptors.request.use(
     // Check if we're rate limited - if so, try to return cached data
     if (rateLimitedUntil > Date.now()) {
       const cacheKey = cacheManager.generateKey(config.url, config.params);
-      const cachedData = cacheManager.get(cacheKey, true); // Allow stale during rate limit
+      const cachedResult = cacheManager.getWithStale(cacheKey);
       
-      if (cachedData) {
+      if (cachedResult.data) {
         console.log('📦 Rate limited - returning cached data for:', config.url);
         config.adapter = () => {
           return Promise.resolve({
-            data: cachedData,
+            data: cachedResult.data,
             status: 200,
             statusText: 'OK (Cached - Rate Limited)',
             headers: {},
             config,
             request: {},
-            cached: true
+            cached: true,
+            isStale: cachedResult.isStale
           });
         };
         return config;
@@ -96,14 +97,15 @@ api.interceptors.request.use(
     const cacheConfig = !bypassCache ? shouldCache(config.url, config.method) : null;
     if (cacheConfig) {
       const cacheKey = cacheManager.generateKey(config.url, config.params);
-      const cachedData = cacheManager.get(cacheKey, true);
+      // Use getWithStale to properly handle stale data format
+      const cachedResult = cacheManager.getWithStale(cacheKey);
       
-      if (cachedData) {
-        // Silently use cache (no console spam)
-        // Return cached response instead of making request
+      // Only use cache if data exists AND is not stale (for initial load, stale data is loaded separately)
+      if (cachedResult.data && !cachedResult.isStale) {
+        // Return fresh cached response instead of making request
         config.adapter = () => {
           return Promise.resolve({
-            data: cachedData,
+            data: cachedResult.data,
             status: 200,
             statusText: 'OK (Cached)',
             headers: {},
@@ -113,7 +115,7 @@ api.interceptors.request.use(
           });
         };
       } else {
-        // Cache miss - will fetch and cache
+        // Cache miss or stale - will fetch fresh and cache
         // Store cache config for response interceptor
         config.cacheConfig = cacheConfig;
         config.cacheKey = cacheKey;

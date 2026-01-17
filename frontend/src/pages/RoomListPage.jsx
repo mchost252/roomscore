@@ -36,6 +36,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import cacheManager from '../utils/cache';
 import { getErrorMessage } from '../utils/errorMessages';
+import useVisibilityRefresh from '../hooks/useVisibilityRefresh';
 
 const RoomListPage = () => {
   const { user } = useAuth();
@@ -51,7 +52,14 @@ const RoomListPage = () => {
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [joiningRoom, setJoiningRoom] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const hasMounted = useRef(false);
+  const lastFetchTime = useRef(0);
+
+  // Refresh data when user returns to the tab/app
+  useVisibilityRefresh(() => {
+    loadRooms(true);
+  }, 30000); // Minimum 30 seconds between visibility refreshes
 
   // Load from cache first for instant display
   useEffect(() => {
@@ -61,32 +69,21 @@ const RoomListPage = () => {
     }
   }, []);
 
-  // Listen for app foreground event to refresh data (mobile)
-  useEffect(() => {
-    const handleForeground = () => {
-      console.log('App came to foreground, refreshing rooms...');
-      loadRooms(true); // silent refresh
-    };
-    
-    window.addEventListener('app:foreground', handleForeground);
-    return () => window.removeEventListener('app:foreground', handleForeground);
-  }, []);
-
   // Load cached data first, then revalidate
   const loadFromCacheFirst = useCallback(() => {
     const cacheKey = cacheManager.generateKey('/rooms');
     const cached = cacheManager.getWithStale(cacheKey);
     
-    if (cached.data?.rooms) {
+    if (cached.data?.rooms && cached.data.rooms.length > 0) {
+      // Show cached data immediately
       setMyRooms(cached.data.rooms);
       setLoading(false);
       
-      // If stale, revalidate in background
-      if (cached.isStale) {
-        loadRooms(true);
-      }
+      // Always refresh in background to get latest data
+      loadRooms(true);
     } else {
-      loadRooms();
+      // No cache - do full load
+      loadRooms(false);
     }
   }, []);
 
@@ -134,16 +131,28 @@ const RoomListPage = () => {
   }, [socket, user?.id]);
 
   const loadRooms = useCallback(async (silentRefresh = false) => {
+    // Debounce: prevent multiple rapid calls
+    const now = Date.now();
+    if (silentRefresh && now - lastFetchTime.current < 2000) {
+      console.log('⏳ Skipping fetch - too soon since last fetch');
+      return;
+    }
+    lastFetchTime.current = now;
+
     try {
       if (!silentRefresh) {
         setLoading(true);
         setError(null);
+      } else {
+        setIsRefreshing(true);
       }
       
       // Fetch both in parallel for speed, with individual error handling
+      // Force bypass cache for fresh data on non-silent refresh
+      const headers = silentRefresh ? {} : { 'x-bypass-cache': 'true' };
       const results = await Promise.allSettled([
-        api.get('/rooms'),
-        api.get('/rooms?type=public')
+        api.get('/rooms', { headers }),
+        api.get('/rooms?type=public', { headers })
       ]);
       
       // Handle my rooms result
@@ -152,8 +161,8 @@ const RoomListPage = () => {
 
         // IMPORTANT: never wipe existing rooms during silent refresh.
         if (silentRefresh && freshMyRooms.length === 0 && myRooms.length > 0) {
-          console.warn('⚠️ Silent refresh returned 0 rooms; keeping existing rooms and retrying soon');
-          setTimeout(() => loadRooms(true), 2000);
+          console.warn('⚠️ Silent refresh returned 0 rooms; keeping existing rooms');
+          // Don't retry automatically - just keep showing current data
         } else {
           setMyRooms(freshMyRooms);
         }
@@ -180,6 +189,7 @@ const RoomListPage = () => {
       }
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   }, [myRooms.length]);
 

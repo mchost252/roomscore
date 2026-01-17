@@ -36,6 +36,7 @@ import cacheManager from '../utils/cache';
 import OnboardingModal from '../components/OnboardingModal';
 import { getErrorMessage } from '../utils/errorMessages';
 import WhatsNewCard from '../components/WhatsNewCard';
+import useVisibilityRefresh from '../hooks/useVisibilityRefresh';
 
 // Stat Card Component
 const StatCard = ({ icon: Icon, label, value, color, subtext }) => {
@@ -354,11 +355,20 @@ const DashboardPage = () => {
   const navigate = useNavigate();
   const [rooms, setRooms] = useState([]);
   const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // Start with loading true
   const [error, setError] = useState(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [isStaleData, setIsStaleData] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false); // Track background refresh
   const hasMounted = useRef(false);
+  const lastFetchTime = useRef(0);
+
+  // Refresh data when user returns to the tab/app
+  useVisibilityRefresh(() => {
+    if (user) {
+      loadDashboardData(true);
+    }
+  }, 30000); // Minimum 30 seconds between visibility refreshes
 
   useEffect(() => {
     if (localStorage.getItem('onboardingCompleted') !== 'true') {
@@ -398,31 +408,26 @@ const DashboardPage = () => {
     const cached = cacheManager.getWithStale(cacheKey);
     const cachedRooms = Array.isArray(cached.data?.rooms) ? cached.data.rooms : null;
     
-    if (cachedRooms) {
+    if (cachedRooms && cachedRooms.length > 0) {
+      // Show cached data immediately
       setRooms(cachedRooms);
       setStats(prev => ({
         ...prev,
         roomsJoined: cachedRooms.length || 0,
         totalPoints: computeTotalPoints(cachedRooms)
       }));
+      setLoading(false); // Stop loading immediately when we have cache
       setIsStaleData(cached.isStale);
       
-      if (cached.isStale) {
-        loadDashboardData(true);
-      }
+      // Always refresh in background to get latest data
+      loadDashboardData(true);
     } else {
-      loadDashboardData();
+      // No cache - do full load
+      loadDashboardData(false);
     }
   }, [user?._id, user?.id]);
 
-  useEffect(() => {
-    const handleForeground = () => {
-      loadDashboardData(true);
-    };
-    
-    window.addEventListener('app:foreground', handleForeground);
-    return () => window.removeEventListener('app:foreground', handleForeground);
-  }, []);
+  // Note: foreground refresh is now handled by useVisibilityRefresh hook
 
   useEffect(() => {
     if (user && !hasMounted.current) {
@@ -491,19 +496,34 @@ const DashboardPage = () => {
   }, [socket, user?._id, user?.id]);
 
   const loadDashboardData = async (silentRefresh = false) => {
+    // Debounce: prevent multiple rapid calls
+    const now = Date.now();
+    if (silentRefresh && now - lastFetchTime.current < 2000) {
+      console.log('⏳ Skipping fetch - too soon since last fetch');
+      return;
+    }
+    lastFetchTime.current = now;
+
     try {
-      if (!silentRefresh) setError(null);
+      if (!silentRefresh) {
+        setError(null);
+        setLoading(true);
+      } else {
+        setIsRefreshing(true);
+      }
       
-      const roomsResponse = await api.get('/rooms');
+      // Force bypass cache for fresh data
+      const roomsResponse = await api.get('/rooms', {
+        headers: silentRefresh ? {} : { 'x-bypass-cache': 'true' }
+      });
       const freshRooms = roomsResponse.data.rooms || [];
 
       // IMPORTANT: never wipe existing rooms during silent refresh.
       // This prevents the "rooms show then disappear" bug when a background refresh returns empty.
       if (silentRefresh && freshRooms.length === 0 && rooms.length > 0) {
-        console.warn('⚠️ Silent refresh returned 0 rooms; keeping existing rooms and retrying soon');
+        console.warn('⚠️ Silent refresh returned 0 rooms; keeping existing rooms');
         setIsStaleData(true);
-        // Retry once shortly after (handles brief backend hiccups)
-        setTimeout(() => loadDashboardData(true), 2000);
+        setIsRefreshing(false);
         return;
       }
       
@@ -524,6 +544,9 @@ const DashboardPage = () => {
       } else {
         setIsStaleData(true);
       }
+    } finally {
+      setLoading(false);
+      setIsRefreshing(false);
     }
   };
 
