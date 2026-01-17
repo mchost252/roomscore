@@ -237,6 +237,7 @@ model DirectMessage {
   toUserId   String
   content    String
   read       Boolean  @default(false)
+  deletedFor String[] @default([]) // Array of userIds who deleted this message
   createdAt  DateTime @default(now())
 
   fromUser   User     @relation("DirectMessageFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
@@ -276,6 +277,7 @@ model UserRoomProgress {
   currentStreak        Int       @default(0)
   longestStreak        Int       @default(0)
   totalPoints          Int       @default(0)
+  lastSummarySeenDate  String?   // YYYY-MM-DD format - tracks when user last saw daily summary
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 

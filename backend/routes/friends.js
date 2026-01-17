@@ -258,7 +258,27 @@ router.get('/', protect, async (req, res, next) => {
       }
     });
 
-    // Extract friend data
+    // Get total points for each friend from their room memberships
+    const friendIds = friendships.map(f => f.fromUserId === userId ? f.toUserId : f.fromUserId);
+    
+    // Aggregate total points from RoomMember table
+    const pointsData = await prisma.roomMember.groupBy({
+      by: ['userId'],
+      where: {
+        userId: { in: friendIds }
+      },
+      _sum: {
+        points: true
+      }
+    });
+    
+    // Create a map of userId -> totalPoints
+    const pointsMap = {};
+    pointsData.forEach(p => {
+      pointsMap[p.userId] = p._sum.points || 0;
+    });
+
+    // Extract friend data with correct totalPoints
     const friends = friendships.map(f => {
       const friend = f.fromUserId === userId ? f.toUser : f.fromUser;
       return {
@@ -268,7 +288,7 @@ router.get('/', protect, async (req, res, next) => {
         bio: friend.bio || null,
         currentStreak: friend.streak || 0,
         longestStreak: friend.longestStreak || 0,
-        totalPoints: friend.totalTasksCompleted || 0,
+        totalPoints: pointsMap[friend.id] || 0,
         friendsSince: f.createdAt
       };
     });

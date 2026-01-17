@@ -1,4 +1,4 @@
-import React, { useState, memo, useCallback } from 'react';
+import React, { useState, useEffect, memo, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   AppBar,
@@ -34,17 +34,77 @@ import {
   MoreVert,
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import { useDeviceType } from '../hooks/useDeviceType';
 import NotificationPopup from './NotificationPopup';
+import api from '../utils/api';
 
 const Navbar = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
+  const { socket } = useSocket();
   const { isMobile } = useDeviceType();
   const [anchorEl, setAnchorEl] = useState(null);
   const [mobileMenuAnchor, setMobileMenuAnchor] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [unreadMessages, setUnreadMessages] = useState(0);
+
+  // Fetch unread message count on mount and listen for updates
+  useEffect(() => {
+    const fetchUnreadCount = async () => {
+      try {
+        const res = await api.get('/direct-messages/unread-count');
+        setUnreadMessages(res.data.unreadCount || 0);
+      } catch (err) {
+        console.error('Error fetching unread count:', err);
+      }
+    };
+
+    if (user) {
+      fetchUnreadCount();
+    }
+  }, [user]);
+
+  // Listen for socket events to update unread count
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleNewMessage = (message) => {
+      // Only increment if we're not currently viewing messages from this sender
+      const senderId = message.sender?._id || message.sender?.id;
+      if (senderId !== user?.id && !location.pathname.includes('/messages/')) {
+        setUnreadMessages(prev => prev + 1);
+      }
+    };
+
+    const handleMessagesRead = () => {
+      // Refetch count when messages are marked as read
+      api.get('/direct-messages/unread-count')
+        .then(res => setUnreadMessages(res.data.unreadCount || 0))
+        .catch(() => {});
+    };
+
+    socket.on('new_direct_message', handleNewMessage);
+    socket.on('dm:read', handleMessagesRead);
+
+    return () => {
+      socket.off('new_direct_message', handleNewMessage);
+      socket.off('dm:read', handleMessagesRead);
+    };
+  }, [socket, user, location.pathname]);
+
+  // Clear unread count when visiting messages page
+  useEffect(() => {
+    if (location.pathname.startsWith('/messages/')) {
+      // Small delay to allow read marking to happen
+      setTimeout(() => {
+        api.get('/direct-messages/unread-count')
+          .then(res => setUnreadMessages(res.data.unreadCount || 0))
+          .catch(() => {});
+      }, 500);
+    }
+  }, [location.pathname]);
 
   const handleMenuOpen = (event) => {
     setAnchorEl(event.currentTarget);
@@ -203,7 +263,14 @@ const Navbar = () => {
             <BottomNavigationAction label="Dashboard" icon={<Dashboard />} />
             <BottomNavigationAction label="Rooms" icon={<Groups />} />
             <BottomNavigationAction label="Friends" icon={<People />} />
-            <BottomNavigationAction label="Messages" icon={<Message />} />
+            <BottomNavigationAction 
+              label="Messages" 
+              icon={
+                <Badge badgeContent={unreadMessages} color="error" max={99}>
+                  <Message />
+                </Badge>
+              } 
+            />
           </BottomNavigation>
         </Paper>
       </>
@@ -249,7 +316,9 @@ const Navbar = () => {
             onClick={() => navigate('/messages')}
             selected={location.pathname.startsWith('/messages')}
           >
-            <Message sx={{ mr: 1 }} />
+            <Badge badgeContent={unreadMessages} color="error" max={99} sx={{ mr: 1 }}>
+              <Message />
+            </Badge>
             Messages
           </MenuItem>
         </Box>

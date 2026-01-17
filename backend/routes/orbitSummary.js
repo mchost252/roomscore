@@ -189,6 +189,7 @@ router.get('/:roomId', protect, isRoomMember, async (req, res) => {
     
     // Determine room MVP
     // Rules: Must have at least 1 valid task, highest MVP score wins
+    // Cooldown: Can't be MVP more than 2 consecutive days
     const eligibleForMVP = memberSummaries.filter(m => m.validTaskCount > 0);
     let mvpMember = null;
     
@@ -196,9 +197,43 @@ router.get('/:roomId', protect, isRoomMember, async (req, res) => {
       // Sort by MVP score descending
       eligibleForMVP.sort((a, b) => b.mvpScore - a.mvpScore);
       
-      // Check for MVP cooldown (can't be MVP more than 2 consecutive days)
-      // This would require storing MVP history - for now, just pick highest score
-      mvpMember = eligibleForMVP[0];
+      // Check MVP cooldown - get last 2 days of MVP history
+      const twoDaysAgo = new Date();
+      twoDaysAgo.setUTCDate(twoDaysAgo.getUTCDate() - 2);
+      const twoDaysAgoStr = twoDaysAgo.toISOString().split('T')[0];
+      
+      const recentMVPs = await prisma.roomMVP.findMany({
+        where: {
+          roomId,
+          date: { gte: twoDaysAgoStr }
+        },
+        orderBy: { date: 'desc' },
+        take: 2
+      });
+      
+      // Check if top scorer has been MVP for 2 consecutive days
+      const usersOnCooldown = new Set();
+      if (recentMVPs.length >= 2) {
+        // Check for consecutive days by same user
+        const dates = recentMVPs.map(m => m.date).sort();
+        const userIds = recentMVPs.map(m => m.userId);
+        
+        // If same user was MVP for the last 2 recorded days, they're on cooldown
+        if (userIds.length >= 2 && userIds[0] === userIds[1]) {
+          usersOnCooldown.add(userIds[0]);
+        }
+      }
+      
+      // Find highest scorer not on cooldown
+      for (const candidate of eligibleForMVP) {
+        if (!usersOnCooldown.has(candidate.userId)) {
+          mvpMember = candidate;
+          break;
+        }
+      }
+      
+      // If everyone eligible is on cooldown, no MVP for today
+      // (This is intentional - gives others a chance)
     }
     
     // Calculate room streak status
@@ -233,6 +268,36 @@ router.get('/:roomId', protect, isRoomMember, async (req, res) => {
     memberSummaries.forEach(member => {
       member.appreciationsReceived = appreciationsByUser[member.userId] || { star: 0, fire: 0, shield: 0 };
     });
+    
+    // Save MVP to history if we have one (for cooldown tracking)
+    if (mvpMember) {
+      try {
+        await prisma.roomMVP.upsert({
+          where: {
+            roomId_date: {
+              roomId,
+              date: yesterdayStr
+            }
+          },
+          update: {
+            userId: mvpMember.userId,
+            mvpScore: mvpMember.mvpScore,
+            tasksCompleted: mvpMember.tasksCompleted,
+            streakBonus: mvpMember.currentStreak * 5
+          },
+          create: {
+            roomId,
+            userId: mvpMember.userId,
+            date: yesterdayStr,
+            mvpScore: mvpMember.mvpScore,
+            tasksCompleted: mvpMember.tasksCompleted,
+            streakBonus: mvpMember.currentStreak * 5
+          }
+        });
+      } catch (err) {
+        logger.warn('Failed to save MVP history:', err.message);
+      }
+    }
     
     res.json({
       success: true,
@@ -396,8 +461,7 @@ router.post('/:roomId/mark-seen', protect, isRoomMember, async (req, res) => {
     const userId = req.user.id;
     const todayStr = getTodayString();
     
-    // Store in UserRoomProgress or a separate table
-    // For now, we'll use a simple approach - update lastSummarySeenDate
+    // Store lastSummarySeenDate in UserRoomProgress
     await prisma.userRoomProgress.upsert({
       where: {
         userId_roomId: {
@@ -406,8 +470,7 @@ router.post('/:roomId/mark-seen', protect, isRoomMember, async (req, res) => {
         }
       },
       update: {
-        // We'd add a lastSummarySeenDate field
-        updatedAt: new Date()
+        lastSummarySeenDate: todayStr
       },
       create: {
         userId,
@@ -416,12 +479,14 @@ router.post('/:roomId/mark-seen', protect, isRoomMember, async (req, res) => {
         currentStreak: 0,
         longestStreak: 0,
         totalPoints: 0,
+        lastSummarySeenDate: todayStr
       }
     });
     
     res.json({
       success: true,
-      message: 'Summary marked as seen'
+      message: 'Summary marked as seen',
+      seenDate: todayStr
     });
     
   } catch (error) {
@@ -429,6 +494,42 @@ router.post('/:roomId/mark-seen', protect, isRoomMember, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to mark summary as seen'
+    });
+  }
+});
+
+/**
+ * GET /orbit-summary/:roomId/should-show
+ * 
+ * Check if daily summary should be shown for this user in this room
+ */
+router.get('/:roomId/should-show', protect, isRoomMember, async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const userId = req.user.id;
+    const todayStr = getTodayString();
+    
+    const progress = await prisma.userRoomProgress.findUnique({
+      where: {
+        userId_roomId: { userId, roomId }
+      },
+      select: { lastSummarySeenDate: true }
+    });
+    
+    // Show summary if user hasn't seen it today
+    const shouldShow = !progress?.lastSummarySeenDate || progress.lastSummarySeenDate !== todayStr;
+    
+    res.json({
+      success: true,
+      shouldShow,
+      lastSeenDate: progress?.lastSummarySeenDate || null
+    });
+    
+  } catch (error) {
+    logger.error('Error checking summary status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to check summary status'
     });
   }
 });

@@ -251,6 +251,24 @@ class PushNotificationService {
 
     return await this.sendToUser(userId, payload);
   }
+
+  // Notify nudge to room members
+  static async notifyNudge(recipientIds, senderUsername, roomName, roomId) {
+    const payload = {
+      title: `🔔 Nudge from ${roomName}`,
+      body: `${senderUsername} reminded the room: Your orbit is waiting – don't forget today's tasks!`,
+      icon: '/icon-192x192.png',
+      badge: '/badge-72x72.png',
+      tag: `nudge-${roomId}`,
+      data: {
+        type: 'nudge',
+        roomId: roomId,
+        url: `/rooms/${roomId}`
+      }
+    };
+
+    return await this.sendToUsers(recipientIds, payload);
+  }
 }
 
 module.exports = PushNotificationService;

@@ -1,12 +1,8 @@
 const cron = require('node-cron');
 const NotificationService = require('./notificationService');
 const PushNotificationService = require('./pushNotificationService');
-const ChatMessage = require('../models/ChatMessage');
-const Room = require('../models/Room');
-const User = require('../models/User');
-const TaskCompletion = require('../models/TaskCompletion');
+const { prisma } = require('../config/database');
 const logger = require('../utils/logger');
-const moment = require('moment-timezone');
 
 // Send scheduled notifications every 5 minutes
 cron.schedule('*/5 * * * *', async () => {
@@ -202,60 +198,84 @@ cron.schedule('0 9 * * *', async () => {
   }
 });
 
-// Update user and room streaks daily at midnight
+// Update user and room streaks daily at midnight UTC
+// This resets streaks for users/rooms that had no activity yesterday
 cron.schedule('0 0 * * *', async () => {
   try {
     logger.info('Running daily streak update job...');
     
-    const rooms = await Room.find({ isActive: true });
+    const yesterdayStr = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const twoDaysAgoStr = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString().split('T')[0];
+    
+    // Get all active rooms with their members
+    const rooms = await prisma.room.findMany({
+      where: { isActive: true },
+      include: {
+        members: {
+          where: { status: 'active' },
+          include: { user: true }
+        }
+      }
+    });
+    
     let usersUpdated = 0;
     let roomsUpdated = 0;
     
     for (const room of rooms) {
-      const timezone = room.settings.timezone || 'UTC';
       let roomHadActivityYesterday = false;
-      
-      // Get yesterday's boundaries
-      const yesterday = moment().tz(timezone).subtract(1, 'day');
-      const startOfYesterday = yesterday.clone().startOf('day').toDate();
-      const endOfYesterday = yesterday.clone().endOf('day').toDate();
       
       // Process each member's streak
       for (const member of room.members) {
         try {
-          const user = await User.findById(member.userId);
-          if (!user) continue;
-          
           // Check if user completed any tasks yesterday in this room
-          const completionsYesterday = await TaskCompletion.countDocuments({
-            userId: user._id,
-            roomId: room._id,
-            completedAt: {
-              $gte: startOfYesterday,
-              $lte: endOfYesterday
+          const completionsYesterday = await prisma.taskCompletion.count({
+            where: {
+              userId: member.userId,
+              roomId: room.id,
+              completionDate: yesterdayStr
             }
           });
           
           if (completionsYesterday > 0) {
-            // User completed tasks - already incremented in real-time, just mark activity
             roomHadActivityYesterday = true;
-            logger.info(`✅ User ${user.username} streak: ${user.currentStreak}`);
           } else {
-            // Check if user should lose their streak
-            // Only reset if they had a streak and missed yesterday
-            if (user.currentStreak > 0 && !user.streakFrozen) {
-              user.resetStreak();
-              await user.save();
-              usersUpdated++;
-              
-              logger.info(`❌ User ${user.username} streak reset (no tasks yesterday)`);
-              
-              // Create system message in room
-              await ChatMessage.create({
-                roomId: room._id,
-                message: `💫 ${user.username}'s streak was reset`,
-                isSystemMessage: true
-              });
+            // Check if user had a streak and needs reset
+            const userProgress = await prisma.userRoomProgress.findUnique({
+              where: {
+                userId_roomId: { userId: member.userId, roomId: room.id }
+              }
+            });
+            
+            if (userProgress && userProgress.currentStreak > 0) {
+              // Check if last completion was before yesterday (missed yesterday)
+              const lastCompletionDate = userProgress.lastCompletionDate;
+              if (lastCompletionDate) {
+                const lastDateStr = lastCompletionDate.toISOString().split('T')[0];
+                if (lastDateStr < yesterdayStr) {
+                  // Reset streak
+                  await prisma.userRoomProgress.update({
+                    where: { id: userProgress.id },
+                    data: { currentStreak: 0 }
+                  });
+                  usersUpdated++;
+                  logger.info(`❌ User ${member.user.username} room streak reset in ${room.name}`);
+                }
+              }
+            }
+            
+            // Also check and reset global user streak if needed
+            if (member.user.streak > 0) {
+              const lastStreakDate = member.user.lastStreakDate;
+              if (lastStreakDate) {
+                const lastDateStr = lastStreakDate.toISOString().split('T')[0];
+                if (lastDateStr < yesterdayStr) {
+                  await prisma.user.update({
+                    where: { id: member.userId },
+                    data: { streak: 0 }
+                  });
+                  logger.info(`❌ User ${member.user.username} global streak reset`);
+                }
+              }
             }
           }
         } catch (userError) {
@@ -263,25 +283,28 @@ cron.schedule('0 0 * * *', async () => {
         }
       }
       
-      // Update room streak
-      if (roomHadActivityYesterday) {
-        // Room streak already updated in real-time
-        logger.info(`✅ Room ${room.name} streak: ${room.roomStreak}`);
-      } else {
-        // Check if room should lose streak
-        if (room.roomStreak > 0) {
-          room.resetRoomStreak();
-          await room.save();
-          roomsUpdated++;
-          
-          logger.info(`❌ Room ${room.name} streak reset (no activity yesterday)`);
-          
-          // Create system message
-          await ChatMessage.create({
-            roomId: room._id,
-            message: `💫 Orbit dimmed - no activity yesterday`,
-            isSystemMessage: true
-          });
+      // Update room streak if no activity yesterday
+      if (!roomHadActivityYesterday && room.streak > 0) {
+        const lastActivityDate = room.lastActivityDate;
+        if (lastActivityDate) {
+          const lastDateStr = lastActivityDate.toISOString().split('T')[0];
+          if (lastDateStr < yesterdayStr) {
+            await prisma.room.update({
+              where: { id: room.id },
+              data: { streak: 0 }
+            });
+            roomsUpdated++;
+            logger.info(`❌ Room ${room.name} streak reset (no activity yesterday)`);
+            
+            // Create system message
+            await prisma.chatMessage.create({
+              data: {
+                roomId: room.id,
+                content: '🌑 Orbit dimmed — no activity yesterday',
+                type: 'system'
+              }
+            });
+          }
         }
       }
     }

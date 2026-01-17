@@ -4,6 +4,7 @@ const { protect, isRoomMember } = require('../middleware/auth');
 const { prisma } = require('../config/database');
 const logger = require('../utils/logger');
 const NotificationService = require('../services/notificationService');
+const PushNotificationService = require('../services/pushNotificationService');
 
 // Helper to get today's date string (UTC)
 const getTodayString = () => new Date().toISOString().split('T')[0];
@@ -92,6 +93,7 @@ router.post('/:roomId', protect, isRoomMember, async (req, res) => {
         .map(m => m.userId)
         .filter(uid => uid && uid !== req.user.id);
 
+      // In-app notifications
       await Promise.allSettled(
         recipientIds.map(uid => NotificationService.createNotification({
           recipientId: uid,
@@ -102,6 +104,16 @@ router.post('/:roomId', protect, isRoomMember, async (req, res) => {
           data: { roomId, senderId: req.user.id }
         }))
       );
+
+      // Push notifications
+      if (recipientIds.length > 0) {
+        PushNotificationService.notifyNudge(
+          recipientIds,
+          req.user.username,
+          req.room.name,
+          roomId
+        ).catch(err => logger.warn('Push notification error for nudge:', err.message));
+      }
     } catch (notifyErr) {
       logger.warn('Failed to create nudge notifications:', notifyErr.message);
     }

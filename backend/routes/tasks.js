@@ -331,7 +331,7 @@ router.post('/:roomId/tasks/:taskId/complete', protect, isRoomMember, async (req
       }
     });
 
-    // Update or create user room progress
+    // Update or create user room progress with proper streak logic
     const existingProgress = await prisma.userRoomProgress.findUnique({
       where: {
         userId_roomId: {
@@ -341,13 +341,51 @@ router.post('/:roomId/tasks/:taskId/complete', protect, isRoomMember, async (req
       }
     });
 
+    // Calculate streak updates
+    const now = new Date();
+    const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const yesterdayStart = new Date(todayStart);
+    yesterdayStart.setUTCDate(yesterdayStart.getUTCDate() - 1);
+
+    let newStreak = 1;
+    let newLongestStreak = 1;
+    
     if (existingProgress) {
+      const lastCompletion = existingProgress.lastCompletionDate;
+      
+      if (lastCompletion) {
+        const lastCompletionDate = new Date(lastCompletion);
+        const lastCompletionDay = new Date(Date.UTC(
+          lastCompletionDate.getUTCFullYear(),
+          lastCompletionDate.getUTCMonth(),
+          lastCompletionDate.getUTCDate()
+        ));
+        
+        // Check if last completion was today (already completed today, no streak change)
+        if (lastCompletionDay.getTime() === todayStart.getTime()) {
+          newStreak = existingProgress.currentStreak;
+          newLongestStreak = existingProgress.longestStreak;
+        }
+        // Check if last completion was yesterday (continue streak)
+        else if (lastCompletionDay.getTime() === yesterdayStart.getTime()) {
+          newStreak = existingProgress.currentStreak + 1;
+          newLongestStreak = Math.max(existingProgress.longestStreak, newStreak);
+        }
+        // Otherwise reset streak to 1
+        else {
+          newStreak = 1;
+          newLongestStreak = Math.max(existingProgress.longestStreak, 1);
+        }
+      }
+      
       await prisma.userRoomProgress.update({
         where: { id: existingProgress.id },
         data: {
           tasksCompletedToday: { increment: 1 },
           totalPoints: { increment: task.points },
-          lastCompletionDate: new Date()
+          lastCompletionDate: now,
+          currentStreak: newStreak,
+          longestStreak: newLongestStreak
         }
       });
     } else {
@@ -357,7 +395,89 @@ router.post('/:roomId/tasks/:taskId/complete', protect, isRoomMember, async (req
           roomId: req.params.roomId,
           tasksCompletedToday: 1,
           totalPoints: task.points,
-          lastCompletionDate: new Date()
+          lastCompletionDate: now,
+          currentStreak: 1,
+          longestStreak: 1
+        }
+      });
+    }
+    
+    // Also update the user's global streak
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { streak: true, longestStreak: true, lastStreakDate: true }
+    });
+    
+    let globalStreak = 1;
+    let globalLongestStreak = user?.longestStreak || 1;
+    
+    if (user?.lastStreakDate) {
+      const lastStreakDay = new Date(user.lastStreakDate);
+      const lastStreakDayStart = new Date(Date.UTC(
+        lastStreakDay.getUTCFullYear(),
+        lastStreakDay.getUTCMonth(),
+        lastStreakDay.getUTCDate()
+      ));
+      
+      if (lastStreakDayStart.getTime() === todayStart.getTime()) {
+        // Already completed today, keep current streak
+        globalStreak = user.streak;
+      } else if (lastStreakDayStart.getTime() === yesterdayStart.getTime()) {
+        // Continue streak
+        globalStreak = user.streak + 1;
+        globalLongestStreak = Math.max(globalLongestStreak, globalStreak);
+      } else {
+        // Reset streak
+        globalStreak = 1;
+      }
+    }
+    
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        streak: globalStreak,
+        longestStreak: globalLongestStreak,
+        lastStreakDate: now
+      }
+    });
+
+    // Update room streak (first completion of the day updates room streak)
+    const room = await prisma.room.findUnique({
+      where: { id: req.params.roomId },
+      select: { streak: true, longestStreak: true, lastActivityDate: true }
+    });
+
+    if (room) {
+      let roomStreak = 1;
+      let roomLongestStreak = room.longestStreak || 1;
+
+      if (room.lastActivityDate) {
+        const lastActivityDay = new Date(room.lastActivityDate);
+        const lastActivityDayStart = new Date(Date.UTC(
+          lastActivityDay.getUTCFullYear(),
+          lastActivityDay.getUTCMonth(),
+          lastActivityDay.getUTCDate()
+        ));
+
+        if (lastActivityDayStart.getTime() === todayStart.getTime()) {
+          // Already had activity today, keep current streak
+          roomStreak = room.streak;
+        } else if (lastActivityDayStart.getTime() === yesterdayStart.getTime()) {
+          // Continue room streak
+          roomStreak = room.streak + 1;
+          roomLongestStreak = Math.max(roomLongestStreak, roomStreak);
+        } else {
+          // Reset room streak
+          roomStreak = 1;
+        }
+      }
+
+      await prisma.room.update({
+        where: { id: req.params.roomId },
+        data: {
+          streak: roomStreak,
+          longestStreak: roomLongestStreak,
+          lastActivityDate: now
         }
       });
     }

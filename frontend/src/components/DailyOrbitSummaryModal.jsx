@@ -235,33 +235,35 @@ const MemberSummaryCard = ({ member, isMVP, index }) => {
             )}
           </Box>
           
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 0.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 0.5, flexWrap: 'wrap' }}>
             {/* Tasks completed */}
-            <Tooltip title="Tasks completed yesterday">
+            <Tooltip title={`${member.tasksCompleted} task${member.tasksCompleted !== 1 ? 's' : ''} completed yesterday`}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <Typography variant="body2" color="text.secondary">
-                  ✓
+                <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
+                  ✅
                 </Typography>
                 <Typography 
                   variant="body2" 
                   fontWeight={600}
                   color={member.tasksCompleted > 0 ? 'primary.main' : 'text.disabled'}
+                  sx={{ fontSize: '0.8rem' }}
                 >
-                  {member.tasksCompleted}
+                  {member.tasksCompleted} tasks
                 </Typography>
               </Box>
             </Tooltip>
             
             {/* Streak */}
-            <Tooltip title={member.streakMaintained ? 'Streak maintained!' : 'Streak broken'}>
+            <Tooltip title={`Current streak: ${member.currentStreak} day${member.currentStreak !== 1 ? 's' : ''}${member.streakMaintained ? ' (maintained!)' : ''}`}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 <StreakFlameIcon size={16} streak={member.currentStreak} />
                 <Typography 
                   variant="body2" 
                   fontWeight={600}
                   color={member.currentStreak > 0 ? 'secondary.main' : 'text.disabled'}
+                  sx={{ fontSize: '0.8rem' }}
                 >
-                  {member.currentStreak}d
+                  {member.currentStreak} day{member.currentStreak !== 1 ? 's' : ''}
                 </Typography>
               </Box>
             </Tooltip>
@@ -302,6 +304,17 @@ const MemberSummaryCard = ({ member, isMVP, index }) => {
   );
 };
 
+// Encouragement messages for when user closes the summary
+const ENCOURAGEMENT_MESSAGES = [
+  "Keep the orbit alive! ✨",
+  "You've got this! 🚀",
+  "Stay consistent! 🔥",
+  "One task at a time! 💪",
+  "Your orbit believes in you! 🌟",
+  "Let's make today count! ⭐",
+  "Small steps, big progress! 🎯",
+];
+
 const DailyOrbitSummaryModal = ({ 
   open, 
   onClose, 
@@ -311,6 +324,8 @@ const DailyOrbitSummaryModal = ({
   const theme = useMuiTheme();
   const isDark = theme.palette.mode === 'dark';
   const [showContent, setShowContent] = useState(false);
+  const [showEncouragement, setShowEncouragement] = useState(false);
+  const [encouragementMessage, setEncouragementMessage] = useState('');
   
   useEffect(() => {
     if (open) {
@@ -320,6 +335,20 @@ const DailyOrbitSummaryModal = ({
       setShowContent(false);
     }
   }, [open]);
+
+  // Handle close with encouragement animation
+  const handleClose = () => {
+    // Pick random encouragement message
+    const randomMessage = ENCOURAGEMENT_MESSAGES[Math.floor(Math.random() * ENCOURAGEMENT_MESSAGES.length)];
+    setEncouragementMessage(randomMessage);
+    setShowEncouragement(true);
+    
+    // Hide encouragement and close after 1.5 seconds
+    setTimeout(() => {
+      setShowEncouragement(false);
+      onClose();
+    }, 1500);
+  };
   
   // Calculate activity percentage
   const activityPercentage = useMemo(() => {
@@ -331,40 +360,87 @@ const DailyOrbitSummaryModal = ({
   
   const isOrbitStable = summary.roomStreakStatus === 'stable';
   
+  // Show encouragement overlay
+  if (showEncouragement) {
+    return (
+      <Dialog
+        open={true}
+        PaperProps={{
+          sx: {
+            borderRadius: 4,
+            overflow: 'hidden',
+            background: isDark 
+              ? 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)'
+              : 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
+            minHeight: 200,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }
+        }}
+      >
+        <Zoom in={true}>
+          <Box sx={{ textAlign: 'center', p: 4 }}>
+            <Typography 
+              variant="h5" 
+              fontWeight={700}
+              sx={{
+                background: isDark
+                  ? 'linear-gradient(135deg, #60A5FA, #F59E0B)'
+                  : 'linear-gradient(135deg, #3B82F6, #D97706)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                animation: 'pulse 1s ease-in-out infinite',
+                '@keyframes pulse': {
+                  '0%, 100%': { transform: 'scale(1)' },
+                  '50%': { transform: 'scale(1.05)' },
+                },
+              }}
+            >
+              {encouragementMessage}
+            </Typography>
+          </Box>
+        </Zoom>
+      </Dialog>
+    );
+  }
+  
   return (
     <Dialog
       open={open}
-      onClose={onClose}
+      onClose={handleClose}
       maxWidth="sm"
       fullWidth
       PaperProps={{
         sx: {
-          borderRadius: 4,
+          borderRadius: { xs: 2, sm: 4 },
           overflow: 'hidden',
           background: 'transparent',
           boxShadow: isDark 
             ? '0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 100px rgba(96, 165, 250, 0.1)'
             : '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+          maxHeight: { xs: '90vh', sm: '85vh' },
+          m: { xs: 1, sm: 2 },
         }
       }}
     >
       <ConstellationBackground>
-        <DialogContent sx={{ p: 0 }}>
+        <DialogContent sx={{ p: 0, overflowY: 'auto' }}>
           {/* Header */}
           <Box
             sx={{
               position: 'relative',
-              p: 3,
-              pb: 2,
+              p: { xs: 2, sm: 3 },
+              pb: { xs: 1.5, sm: 2 },
               textAlign: 'center',
             }}
           >
             <IconButton
-              onClick={onClose}
+              onClick={handleClose}
               sx={{
                 position: 'absolute',
-                top: 12,
-                right: 12,
+                top: { xs: 8, sm: 12 },
+                right: { xs: 8, sm: 12 },
                 color: 'text.secondary',
                 '&:hover': {
                   background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
@@ -498,48 +574,56 @@ const DailyOrbitSummaryModal = ({
             <Fade in={showContent} timeout={1600}>
               <Box
                 sx={{
-                  mx: 3,
+                  mx: { xs: 2, sm: 3 },
                   mt: 2,
-                  p: 2,
+                  p: { xs: 1.5, sm: 2 },
                   borderRadius: 3,
                   background: isDark
                     ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(251, 191, 36, 0.1))'
                     : 'linear-gradient(135deg, rgba(217, 119, 6, 0.1), rgba(245, 158, 11, 0.05))',
                   border: `1px solid ${isDark ? 'rgba(245, 158, 11, 0.3)' : 'rgba(217, 119, 6, 0.3)'}`,
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: 2,
+                  flexDirection: { xs: 'column', sm: 'row' },
+                  alignItems: { xs: 'flex-start', sm: 'center' },
+                  gap: { xs: 1.5, sm: 2 },
                 }}
               >
-                <MVPCrownIcon size={40} glowing animated />
-                <Box sx={{ flex: 1 }}>
-                  <Typography variant="caption" color="text.secondary" fontWeight={500}>
-                    YESTERDAY'S MVP
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Avatar 
-                      src={summary.mvp.avatar} 
-                      sx={{ width: 28, height: 28 }}
-                    >
-                      {summary.mvp.username?.[0]?.toUpperCase()}
-                    </Avatar>
-                    <Typography variant="subtitle1" fontWeight={700}>
-                      {summary.mvp.username}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
+                  <MVPCrownIcon size={40} glowing animated />
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="caption" color="text.secondary" fontWeight={500}>
+                      YESTERDAY'S MVP
                     </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Avatar 
+                        src={summary.mvp.avatar} 
+                        sx={{ width: 28, height: 28 }}
+                      >
+                        {summary.mvp.username?.[0]?.toUpperCase()}
+                      </Avatar>
+                      <Typography variant="subtitle1" fontWeight={700}>
+                        {summary.mvp.username}
+                      </Typography>
+                    </Box>
                   </Box>
                 </Box>
-                <Tooltip title="Most consistent & reliable contributor">
-                  <Chip
-                    label="👑 Consistency & Contribution"
-                    size="small"
-                    sx={{
-                      background: 'linear-gradient(135deg, #F59E0B, #FBBF24)',
-                      color: '#0f172a',
-                      fontWeight: 600,
-                      fontSize: '0.7rem',
-                    }}
-                  />
-                </Tooltip>
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: { xs: 'flex-start', sm: 'flex-end' }, gap: 0.5 }}>
+                  {summary.mvp.mvpScore && (
+                    <Chip
+                      label={`⭐ ${summary.mvp.mvpScore} pts`}
+                      size="small"
+                      sx={{
+                        background: 'linear-gradient(135deg, #F59E0B, #FBBF24)',
+                        color: '#0f172a',
+                        fontWeight: 700,
+                        fontSize: '0.75rem',
+                      }}
+                    />
+                  )}
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+                    Consistency & Contribution
+                  </Typography>
+                </Box>
               </Box>
             </Fade>
           )}
@@ -565,17 +649,35 @@ const DailyOrbitSummaryModal = ({
           )}
           
           {/* Members List */}
-          <Box sx={{ px: 3, py: 2 }}>
+          <Box sx={{ px: { xs: 2, sm: 3 }, py: 2 }}>
             <Typography 
               variant="subtitle2" 
               color="text.secondary" 
               sx={{ mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}
             >
               <OrbitSummaryIcon size={18} />
-              Orbit Members
+              Orbit Members ({summary.members?.length || 0})
             </Typography>
             
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {/* Scrollable members list for mobile */}
+            <Box sx={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: 1,
+              maxHeight: { xs: '35vh', sm: '40vh' },
+              overflowY: 'auto',
+              pr: { xs: 0.5, sm: 1 },
+              '&::-webkit-scrollbar': {
+                width: '4px',
+              },
+              '&::-webkit-scrollbar-track': {
+                background: 'transparent',
+              },
+              '&::-webkit-scrollbar-thumb': {
+                background: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)',
+                borderRadius: '4px',
+              },
+            }}>
               {summary.members?.map((member, index) => (
                 <MemberSummaryCard
                   key={member.userId}
@@ -587,15 +689,34 @@ const DailyOrbitSummaryModal = ({
             </Box>
           </Box>
           
+          {/* Legend */}
+          <Box
+            sx={{
+              px: { xs: 2, sm: 3 },
+              py: 1.5,
+              borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}`,
+            }}
+          >
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontWeight: 600 }}>
+              Legend:
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: { xs: 1.5, sm: 2 }, fontSize: '0.7rem' }}>
+              <Typography variant="caption" color="text.secondary">✅ = Tasks done</Typography>
+              <Typography variant="caption" color="text.secondary">🔥 = Streak days</Typography>
+              <Typography variant="caption" color="text.secondary">⭐ = MVP score</Typography>
+              <Typography variant="caption" color="text.secondary">🛡️ = Shield</Typography>
+            </Box>
+          </Box>
+
           {/* Footer */}
           <Box
             sx={{
-              p: 2,
+              p: { xs: 1.5, sm: 2 },
               textAlign: 'center',
               borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}`,
             }}
           >
-            <Typography variant="caption" color="text.disabled">
+            <Typography variant="caption" color="text.disabled" sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}>
               This summary shows once daily when you enter the room
             </Typography>
           </Box>

@@ -6,6 +6,7 @@ import { useAuth } from './context/AuthContext';
 // Components
 import AppLayout from './components/AppLayout';
 import LoadingScreen from './components/LoadingScreen';
+import PushNotificationPrompt from './components/PushNotificationPrompt';
 
 // Pages (lazy loaded for code splitting)
 const LoginPage = lazy(() => import('./pages/LoginPage'));
@@ -64,6 +65,8 @@ const ProtectedLayout = ({ children }) => {
         <Suspense fallback={<ContentLoadingFallback />}>
           {children}
         </Suspense>
+        {/* Push notification prompt - shows once for new users */}
+        <PushNotificationPrompt />
       </AppLayout>
     </ProtectedRoute>
   );

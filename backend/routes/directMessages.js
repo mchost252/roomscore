@@ -29,7 +29,7 @@ router.get('/conversations', protect, async (req, res, next) => {
     });
 
     if (friendships.length === 0) {
-      return res.json({ success: true, conversations: [] });
+      return res.json({ success: true, conversations: [], totalUnread: 0 });
     }
 
     // Get friend IDs
@@ -37,37 +37,46 @@ router.get('/conversations', protect, async (req, res, next) => {
       f.fromUserId === userId ? f.toUserId : f.fromUserId
     );
 
-    // Get last messages for each conversation
+    // Get last messages for each conversation (excluding deleted)
     const conversations = await Promise.all(friendships.map(async (friendship) => {
       const friendId = friendship.fromUserId === userId ? friendship.toUserId : friendship.fromUserId;
       const friendData = friendship.fromUserId === userId ? friendship.toUser : friendship.fromUser;
 
-      // Get last message
+      // Get last message (not deleted by current user)
       const lastMessage = await prisma.directMessage.findFirst({
         where: {
           OR: [
             { fromUserId: userId, toUserId: friendId },
             { fromUserId: friendId, toUserId: userId }
-          ]
+          ],
+          NOT: {
+            deletedFor: { has: userId }
+          }
         },
         orderBy: { createdAt: 'desc' }
       });
 
-      // Get unread count
+      // Get unread count (not deleted by current user)
       const unreadCount = await prisma.directMessage.count({
         where: {
           fromUserId: friendId,
           toUserId: userId,
-          read: false
+          read: false,
+          NOT: {
+            deletedFor: { has: userId }
+          }
         }
       });
 
       return {
         friend: { ...friendData, _id: friendData.id },
-        lastMessage: lastMessage ? { ...lastMessage, _id: lastMessage.id } : null,
+        lastMessage: lastMessage ? { ...lastMessage, _id: lastMessage.id, message: lastMessage.content } : null,
         unreadCount
       };
     }));
+
+    // Calculate total unread
+    const totalUnread = conversations.reduce((sum, c) => sum + c.unreadCount, 0);
 
     // Sort by last message time
     conversations.sort((a, b) => {
@@ -76,7 +85,30 @@ router.get('/conversations', protect, async (req, res, next) => {
       return new Date(bTime) - new Date(aTime);
     });
 
-    res.json({ success: true, conversations });
+    res.json({ success: true, conversations, totalUnread });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /api/direct-messages/unread-count
+// @desc    Get total unread message count across all conversations
+// @access  Private
+router.get('/unread-count', protect, async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    const unreadCount = await prisma.directMessage.count({
+      where: {
+        toUserId: userId,
+        read: false,
+        NOT: {
+          deletedFor: { has: userId }
+        }
+      }
+    });
+
+    res.json({ success: true, unreadCount });
   } catch (error) {
     next(error);
   }
@@ -105,13 +137,16 @@ router.get('/:friendId', protect, async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Not friends with this user' });
     }
 
-    // Get messages
+    // Get messages (excluding ones deleted by current user)
     const messages = await prisma.directMessage.findMany({
       where: {
         OR: [
           { fromUserId: userId, toUserId: friendId },
           { fromUserId: friendId, toUserId: userId }
-        ]
+        ],
+        NOT: {
+          deletedFor: { has: userId }
+        }
       },
       include: {
         fromUser: { select: { id: true, username: true } },
@@ -131,13 +166,23 @@ router.get('/:friendId', protect, async (req, res, next) => {
       data: { read: true }
     });
 
+    // Emit read receipt to sender via socket
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user:${friendId}`).emit('dm:read', {
+        readBy: userId,
+        readAt: new Date().toISOString()
+      });
+    }
+
     // Format for frontend
     const formattedMessages = messages.map(m => ({
       ...m,
       _id: m.id,
       message: m.content,
       sender: { ...m.fromUser, _id: m.fromUser.id },
-      recipient: { ...m.toUser, _id: m.toUser.id }
+      recipient: { ...m.toUser, _id: m.toUser.id },
+      isRead: m.read
     }));
 
     res.json({ success: true, messages: formattedMessages });
@@ -179,7 +224,7 @@ router.put('/read/:friendId', protect, async (req, res, next) => {
 });
 
 // @route   DELETE /api/direct-messages/:friendId
-// @desc    Clear direct message history with a specific friend
+// @desc    Clear direct message history with a specific friend (soft delete for current user only)
 // @access  Private
 router.delete('/:friendId', protect, async (req, res, next) => {
   try {
@@ -201,16 +246,33 @@ router.delete('/:friendId', protect, async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Not friends with this user' });
     }
 
-    const result = await prisma.directMessage.deleteMany({
+    // Soft delete: Add current user to deletedFor array instead of hard deleting
+    // This way the other user still sees their messages
+    const messages = await prisma.directMessage.findMany({
       where: {
         OR: [
           { fromUserId: userId, toUserId: friendId },
           { fromUserId: friendId, toUserId: userId }
         ]
-      }
+      },
+      select: { id: true, deletedFor: true }
     });
 
-    res.json({ success: true, deleted: result.count });
+    // Update each message to add current user to deletedFor
+    let updatedCount = 0;
+    for (const msg of messages) {
+      if (!msg.deletedFor.includes(userId)) {
+        await prisma.directMessage.update({
+          where: { id: msg.id },
+          data: {
+            deletedFor: { push: userId }
+          }
+        });
+        updatedCount++;
+      }
+    }
+
+    res.json({ success: true, deleted: updatedCount, message: 'Chat history cleared for you' });
   } catch (error) {
     next(error);
   }
