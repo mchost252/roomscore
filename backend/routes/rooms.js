@@ -45,19 +45,47 @@ router.get('/', protect, async (req, res, next) => {
     
     if (type === 'public') {
       // Get public rooms that user is NOT a member of
+      // Optimized: First get user's room IDs, then exclude them
       const t0 = Date.now();
+      
+      // Get IDs of rooms user is already in (faster than nested query)
+      const userRoomIds = await prisma.roomMember.findMany({
+        where: { userId: req.user.id },
+        select: { roomId: true }
+      });
+      const excludeRoomIds = userRoomIds.map(r => r.roomId);
+      
+      // Get rooms user owns
+      const ownedRooms = await prisma.room.findMany({
+        where: { ownerId: req.user.id },
+        select: { id: true }
+      });
+      const ownedRoomIds = ownedRooms.map(r => r.id);
+      
+      // Combine exclusions
+      const allExcludeIds = [...new Set([...excludeRoomIds, ...ownedRoomIds])];
+      
       const rooms = await prisma.room.findMany({
         where: {
           isPrivate: false,
           isActive: true,
-          NOT: {
-            OR: [
-              { ownerId: req.user.id },
-              { members: { some: { userId: req.user.id } } }
-            ]
-          }
+          ...(allExcludeIds.length > 0 ? { id: { notIn: allExcludeIds } } : {})
         },
-        include: {
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          joinCode: true,
+          isPrivate: true,
+          maxMembers: true,
+          chatRetentionDays: true,
+          streak: true,
+          ownerId: true,
+          startDate: true,
+          endDate: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
           owner: { select: { id: true, username: true } },
           members: {
             select: {
@@ -72,11 +100,11 @@ router.get('/', protect, async (req, res, next) => {
           },
           tasks: {
             where: { isActive: true },
-            select: { id: true, isActive: true }
+            select: { id: true }
           }
         },
         orderBy: { createdAt: 'desc' },
-        take: 50
+        take: 30
       });
       logger.info(`GET /api/rooms?type=public returned ${rooms.length} rooms in ${Date.now() - t0}ms for user ${req.user.id}`);
       
@@ -88,14 +116,34 @@ router.get('/', protect, async (req, res, next) => {
     }
     
     // Get user's rooms (owned or member)
+    // Optimized: Use separate queries to avoid complex joins
     const t0 = Date.now();
+    
+    // Get room IDs user is a member of
+    const memberRoomIds = await prisma.roomMember.findMany({
+      where: { userId: req.user.id },
+      select: { roomId: true }
+    });
+    const memberIds = memberRoomIds.map(r => r.roomId);
+    
+    // Get owned room IDs
+    const ownedRoomIds = await prisma.room.findMany({
+      where: { ownerId: req.user.id, isActive: true },
+      select: { id: true }
+    });
+    const ownedIds = ownedRoomIds.map(r => r.id);
+    
+    // Combine and dedupe
+    const allRoomIds = [...new Set([...memberIds, ...ownedIds])];
+    
+    if (allRoomIds.length === 0) {
+      return res.json({ success: true, count: 0, rooms: [] });
+    }
+    
     const rooms = await prisma.room.findMany({
       where: {
-        isActive: true,
-        OR: [
-          { ownerId: req.user.id },
-          { members: { some: { userId: req.user.id } } }
-        ]
+        id: { in: allRoomIds },
+        isActive: true
       },
       include: {
         owner: { select: { id: true, username: true } },
@@ -110,7 +158,6 @@ router.get('/', protect, async (req, res, next) => {
             user: { select: { id: true, username: true, avatar: true } }
           }
         },
-        // Only fetch active tasks and only the fields the frontend needs
         tasks: {
           where: { isActive: true },
           select: {

@@ -109,7 +109,58 @@ exports.isRoomMember = async (req, res, next) => {
   try {
     const roomId = req.params.id || req.params.roomId;
     
+    // First, do a quick membership check without loading all data
+    const membership = await prisma.roomMember.findUnique({
+      where: {
+        roomId_userId: {
+          roomId: roomId,
+          userId: req.user.id
+        }
+      },
+      select: { id: true }
+    });
+    
+    // Also check if user is owner (separate quick query)
     const room = await prisma.room.findUnique({
+      where: { id: roomId },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        joinCode: true,
+        isPrivate: true,
+        maxMembers: true,
+        chatRetentionDays: true,
+        streak: true,
+        longestStreak: true,
+        lastActivityDate: true,
+        ownerId: true,
+        startDate: true,
+        endDate: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+    
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: 'Room not found'
+      });
+    }
+
+    const isOwner = room.ownerId === req.user.id;
+    
+    if (!membership && !isOwner) {
+      return res.status(403).json({
+        success: false,
+        message: 'You must be a member of this room'
+      });
+    }
+
+    // Now load full room data only for authorized users
+    const fullRoom = await prisma.room.findUnique({
       where: { id: roomId },
       include: {
         members: {
@@ -130,7 +181,6 @@ exports.isRoomMember = async (req, res, next) => {
             }
           }
         },
-        // Only active tasks and only fields needed by UI
         tasks: {
           where: { isActive: true },
           select: {
@@ -139,6 +189,7 @@ exports.isRoomMember = async (req, res, next) => {
             title: true,
             description: true,
             taskType: true,
+            daysOfWeek: true,
             points: true,
             isActive: true,
             createdAt: true
@@ -153,24 +204,8 @@ exports.isRoomMember = async (req, res, next) => {
         }
       }
     });
-    
-    if (!room) {
-      return res.status(404).json({
-        success: false,
-        message: 'Room not found'
-      });
-    }
 
-    const isMember = room.members.some(member => member.userId === req.user.id);
-
-    if (!isMember && room.ownerId !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        message: 'You must be a member of this room'
-      });
-    }
-
-    req.room = room;
+    req.room = fullRoom;
     next();
   } catch (error) {
     next(error);

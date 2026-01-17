@@ -87,6 +87,8 @@ model Room {
   @@index([joinCode])
   @@index([ownerId])
   @@index([isActive])
+  @@index([isPrivate, isActive])
+  @@index([ownerId, isActive])
 }
 
 // ==================== ROOM MEMBER (Junction Table) ====================
@@ -123,6 +125,7 @@ model RoomTask {
   completions TaskCompletion[]
 
   @@index([roomId])
+  @@index([roomId, isActive])
 }
 
 // ==================== TASK COMPLETION ====================
