@@ -379,7 +379,8 @@ const ProfilePage = () => {
       maxWidth: '100vw', 
       overflowX: 'hidden',
       boxSizing: 'border-box',
-      px: { xs: 2, sm: 2, md: 3 },
+      px: { xs: 2, sm: 2, md: 4, lg: 6 },
+      py: { md: 2 },
     }}>
       {/* Header */}
       <Box sx={{ mb: { xs: 2, md: 4 } }}>
@@ -403,10 +404,10 @@ const ProfilePage = () => {
         </Alert>
       )}
 
-      <Grid container spacing={{ xs: 2, md: 3 }} sx={{ width: '100%', maxWidth: '100%', ml: 0, mr: 0, mt: 0 }}>
+      <Grid container spacing={{ xs: 2, md: 4 }} sx={{ width: '100%', maxWidth: '100%', ml: 0, mr: 0, mt: 0 }}>
         {/* Left Sidebar - Profile Info */}
-        <Grid item xs={12} md={4} sx={{ maxWidth: '100%', pl: { xs: '0 !important' }, pr: { xs: 0 } }}>
-          <Paper sx={{ p: { xs: 2, md: 3 }, textAlign: 'center', mb: { xs: 2, md: 3 } }}>
+        <Grid item xs={12} md={4} lg={3} sx={{ maxWidth: '100%', pl: { xs: '0 !important' }, pr: { xs: 0, md: 2 } }}>
+          <Paper sx={{ p: { xs: 2, md: 3 }, textAlign: 'center', mb: { xs: 2, md: 3 }, boxShadow: { md: 2 } }}>
             <Avatar
               src={user?.avatar || undefined}
               sx={{
@@ -469,7 +470,7 @@ const ProfilePage = () => {
           </Paper>
 
           {/* Quick Stats */}
-          <Paper sx={{ p: { xs: 2, md: 3 } }}>
+          <Paper sx={{ p: { xs: 2, md: 3 }, boxShadow: { md: 2 } }}>
             <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
               Quick Stats
             </Typography>
@@ -509,7 +510,7 @@ const ProfilePage = () => {
         </Grid>
 
         {/* Right Content Area */}
-        <Grid item xs={12} md={8} sx={{ maxWidth: '100%', pl: { xs: '0 !important' }, pr: { xs: 0 } }}>
+        <Grid item xs={12} md={8} lg={9} sx={{ maxWidth: '100%', pl: { xs: '0 !important', md: 2 }, pr: { xs: 0 } }}>
           <Paper sx={{ mb: { xs: 2, md: 3 } }}>
             <Tabs 
               value={tabValue} 
