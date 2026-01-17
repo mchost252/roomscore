@@ -617,23 +617,9 @@ const AppLayout = ({ children }) => {
             </Typography>
           </Box>
 
-          {/* Right side - Notifications + Profile */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {/* Right side - Notifications only (profile accessible via sidebar menu) */}
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <NotificationPopup />
-            <Avatar
-              src={user?.avatar}
-              alt={user?.username}
-              sx={{
-                width: 32,
-                height: 32,
-                bgcolor: isDark ? '#60A5FA' : '#3B82F6',
-                fontSize: '0.8rem',
-                cursor: 'pointer',
-              }}
-              onClick={() => navigate('/profile')}
-            >
-              {user?.username?.[0]?.toUpperCase()}
-            </Avatar>
           </Box>
         </Box>
 

@@ -341,11 +341,21 @@ router.post('/:roomId/tasks/:taskId/complete', protect, isRoomMember, async (req
       }
     });
 
-    // Calculate streak updates
-    const now = new Date();
-    const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    // Calculate streak updates using user's timezone
+    const userTimezone = req.user.timezone || 'UTC';
+    
+    // Helper to get today's date in user's timezone
+    const getUserLocalDate = (tz) => {
+      const now = new Date();
+      const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+      return formatter.format(now); // Returns YYYY-MM-DD
+    };
+    
+    const todayStr = getUserLocalDate(userTimezone);
+    const todayStart = new Date(todayStr + 'T00:00:00Z');
     const yesterdayStart = new Date(todayStart);
     yesterdayStart.setUTCDate(yesterdayStart.getUTCDate() - 1);
+    const now = new Date();
 
     let newStreak = 1;
     let newLongestStreak = 1;

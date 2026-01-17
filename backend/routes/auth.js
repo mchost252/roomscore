@@ -28,7 +28,7 @@ const toPublicProfile = (user) => ({
 // @access  Public
 router.post('/register', validate(registerSchema), async (req, res, next) => {
   try {
-    const { email, password, username } = req.body;
+    const { email, password, username, timezone } = req.body;
 
     // Check if user exists
     const existingUser = await prisma.user.findFirst({
@@ -52,16 +52,17 @@ router.post('/register', validate(registerSchema), async (req, res, next) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create user
+    // Create user with timezone from browser
     const user = await prisma.user.create({
       data: {
         email: email.toLowerCase(),
         password: hashedPassword,
-        username
+        username,
+        timezone: timezone || 'UTC'
       }
     });
 
-    logger.info(`New user registered: ${email}`);
+    logger.info(`New user registered: ${email} (timezone: ${timezone || 'UTC'})`);
     sendTokenResponse(user, 201, res);
   } catch (error) {
     next(error);
@@ -73,10 +74,10 @@ router.post('/register', validate(registerSchema), async (req, res, next) => {
 // @access  Public
 router.post('/login', validate(loginSchema), async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, timezone } = req.body;
 
     // Check for user
-    const user = await prisma.user.findUnique({
+    let user = await prisma.user.findUnique({
       where: { email: email.toLowerCase() }
     });
 
@@ -101,6 +102,15 @@ router.post('/login', validate(loginSchema), async (req, res, next) => {
         success: false,
         message: 'Invalid credentials'
       });
+    }
+
+    // Update user's timezone on each login (in case they moved or use different device)
+    if (timezone && timezone !== user.timezone) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { timezone }
+      });
+      logger.info(`User timezone updated: ${email} -> ${timezone}`);
     }
 
     logger.info(`User logged in: ${email}`);

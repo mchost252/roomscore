@@ -56,14 +56,27 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Get user's timezone from browser
+  const getUserTimezone = () => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    } catch (e) {
+      return 'UTC';
+    }
+  };
+
   // Register
   const register = async (email, password, username) => {
     try {
       console.log('📝 Attempting registration to:', `${API_BASE_URL}/api/auth/register`);
+      const timezone = getUserTimezone();
+      console.log('🌍 Detected timezone:', timezone);
+      
       const response = await axios.post(`${API_BASE_URL}/api/auth/register`, {
         email,
         password,
-        username
+        username,
+        timezone
       });
       
       const { token: newToken, refreshToken, user: newUser } = response.data;
@@ -114,9 +127,13 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     try {
       console.log('🔐 Attempting login to:', `${API_BASE_URL}/api/auth/login`);
+      const timezone = getUserTimezone();
+      console.log('🌍 Detected timezone:', timezone);
+      
       const response = await axios.post(`${API_BASE_URL}/api/auth/login`, {
         email,
-        password
+        password,
+        timezone
       });
       
       console.log('✅ Login response:', response.data);
@@ -177,8 +194,10 @@ export const AuthProvider = ({ children }) => {
   // Google login
   const googleLogin = async (googleToken) => {
     try {
+      const timezone = getUserTimezone();
       const response = await axios.post(`${API_BASE_URL}/api/auth/google`, {
-        token: googleToken
+        token: googleToken,
+        timezone
       });
       
       const { token: newToken, refreshToken, user: newUser } = response.data;
