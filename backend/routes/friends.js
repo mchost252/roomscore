@@ -38,21 +38,42 @@ router.post('/request', protect, async (req, res, next) => {
 
     if (existing) {
       if (existing.status === 'accepted') {
-        return res.status(400).json({ success: false, message: 'Already friends' });
+        return res.status(400).json({ success: false, message: 'Already friends with this user' });
       }
       if (existing.status === 'pending') {
-        return res.status(400).json({ success: false, message: 'Friend request already sent' });
+        // Check if the request is FROM current user or TO current user
+        if (existing.fromUserId === requesterId) {
+          return res.status(400).json({ success: false, message: 'Friend request already sent' });
+        } else {
+          return res.status(400).json({ success: false, message: 'This user already sent you a friend request. Check your pending requests!' });
+        }
+      }
+      if (existing.status === 'rejected') {
+        // Delete old rejected request and allow new one
+        await prisma.friend.delete({ where: { id: existing.id } });
       }
     }
 
     // Create friend request
-    const friendRequest = await prisma.friend.create({
-      data: {
-        fromUserId: requesterId,
-        toUserId: recipientId,
-        status: 'pending'
+    let friendRequest;
+    try {
+      friendRequest = await prisma.friend.create({
+        data: {
+          fromUserId: requesterId,
+          toUserId: recipientId,
+          status: 'pending'
+        }
+      });
+    } catch (createError) {
+      // Handle unique constraint violation (P2002)
+      if (createError.code === 'P2002') {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Friend request already exists or you are already friends' 
+        });
       }
-    });
+      throw createError;
+    }
 
     // Send in-app notification
     await NotificationService.createNotification({
