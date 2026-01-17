@@ -71,9 +71,18 @@ const Navbar = () => {
     if (!socket) return;
 
     const handleNewMessage = (message) => {
-      // Only increment if we're not currently viewing messages from this sender
-      const senderId = message.sender?._id || message.sender?.id;
-      if (senderId !== user?.id && !location.pathname.includes('/messages/')) {
+      // Get sender ID from various possible formats
+      const senderId = message.sender?._id || message.sender?.id || message.fromUserId;
+      // Get current user ID (handle both _id and id formats)
+      const currentUserId = user?._id || user?.id;
+      
+      // Only increment if:
+      // 1. Message is NOT from current user (it's incoming)
+      // 2. User is not currently viewing the messages page for that sender
+      const isViewingThisSender = location.pathname.includes(`/messages/${senderId}`);
+      
+      if (senderId && senderId !== currentUserId && !isViewingThisSender) {
+        console.log('📬 New message received, incrementing unread count');
         setUnreadMessages(prev => prev + 1);
       }
     };

@@ -10,12 +10,15 @@ import {
   Alert,
 } from '@mui/material';
 import { Notifications, NotificationsOff } from '@mui/icons-material';
-import { subscribeToPush, getPushPermission } from '../utils/pushClient';
+import { subscribeToPush, getPushPermission, ensureServiceWorkerRegistered } from '../utils/pushClient';
+import api from '../utils/api';
 
 /**
  * Push Notification Prompt
  * Shows a friendly prompt asking users to enable push notifications
- * Only shows once, and remembers the user's choice
+ * - Shows if permission is 'default' (not yet asked)
+ * - Shows if permission is 'granted' but no subscription exists on server
+ * - Re-prompts after 7 days if user clicked "Maybe Later"
  */
 const PushNotificationPrompt = () => {
   const [open, setOpen] = useState(false);
@@ -25,21 +28,48 @@ const PushNotificationPrompt = () => {
   useEffect(() => {
     // Check if we should show the prompt
     const checkPrompt = async () => {
-      // Don't show if already prompted
-      if (localStorage.getItem('pushPromptShown') === 'true') {
-        return;
-      }
-
       // Don't show if push not supported
-      if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+      if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+        console.log('Push notifications not supported');
         return;
       }
 
-      // Don't show if already granted or denied
       const permission = Notification.permission;
-      if (permission === 'granted' || permission === 'denied') {
-        localStorage.setItem('pushPromptShown', 'true');
+      
+      // If permission was denied by browser, we can't do anything
+      if (permission === 'denied') {
+        console.log('Push permission denied by browser');
         return;
+      }
+
+      // Check if user skipped recently (within 7 days)
+      const lastSkipped = localStorage.getItem('pushPromptSkippedAt');
+      if (lastSkipped) {
+        const daysSinceSkip = (Date.now() - parseInt(lastSkipped)) / (1000 * 60 * 60 * 24);
+        if (daysSinceSkip < 7) {
+          console.log('Push prompt skipped recently, will ask again in', Math.ceil(7 - daysSinceSkip), 'days');
+          return;
+        }
+      }
+
+      // If permission is granted, check if we have an active subscription
+      if (permission === 'granted') {
+        try {
+          const reg = await ensureServiceWorkerRegistered();
+          if (reg) {
+            const subscription = await reg.pushManager.getSubscription();
+            if (subscription) {
+              // Already subscribed, no need to prompt
+              console.log('Push already subscribed');
+              localStorage.setItem('pushEnabled', 'true');
+              return;
+            }
+          }
+          // Permission granted but no subscription - need to subscribe
+          console.log('Permission granted but no subscription, will prompt');
+        } catch (err) {
+          console.error('Error checking push subscription:', err);
+        }
       }
 
       // Wait a bit before showing (let user settle in)
@@ -59,8 +89,8 @@ const PushNotificationPrompt = () => {
       const result = await subscribeToPush();
       
       if (result.success) {
-        localStorage.setItem('pushPromptShown', 'true');
         localStorage.setItem('pushEnabled', 'true');
+        localStorage.removeItem('pushPromptSkippedAt'); // Clear skip timestamp
         setOpen(false);
       } else {
         setError(result.message || 'Failed to enable notifications');
@@ -73,7 +103,8 @@ const PushNotificationPrompt = () => {
   };
 
   const handleSkip = () => {
-    localStorage.setItem('pushPromptShown', 'true');
+    // Remember when user skipped, so we can ask again after 7 days
+    localStorage.setItem('pushPromptSkippedAt', Date.now().toString());
     setOpen(false);
   };
 
