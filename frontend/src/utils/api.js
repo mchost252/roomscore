@@ -27,6 +27,60 @@ const api = axios.create({
   timeout: 30000, // 30 second timeout for slow connections
 });
 
+// Retry configuration for failed requests (handles Neon cold starts and network issues)
+const MAX_RETRIES = 2;
+const RETRY_DELAY = 1500; // 1.5 second base delay
+
+// Helper to check if request should be retried
+const shouldRetry = (error) => {
+  // Retry on timeout (Neon cold start)
+  if (error.code === 'ECONNABORTED') return true;
+  // Retry on network errors
+  if (!error.response) return true;
+  // Retry on 5xx server errors
+  if (error.response?.status >= 500) return true;
+  // Retry on 429 rate limit (after delay)
+  if (error.response?.status === 429) return true;
+  // Don't retry on client errors (4xx except 429)
+  return false;
+};
+
+// Sleep helper
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Add retry interceptor (runs before other interceptors)
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const config = error.config;
+    
+    // Don't retry if we've already retried max times, shouldn't retry, or no config
+    if (!config || config._retryCount >= MAX_RETRIES || !shouldRetry(error)) {
+      return Promise.reject(error);
+    }
+    
+    // Initialize retry count
+    config._retryCount = config._retryCount || 0;
+    config._retryCount++;
+    
+    // Calculate delay (exponential backoff)
+    let delay = RETRY_DELAY * config._retryCount;
+    
+    // For rate limit, use longer delay
+    if (error.response?.status === 429) {
+      delay = Math.max(delay, 5000);
+    }
+    
+    console.log(`🔄 Retrying request (${config._retryCount}/${MAX_RETRIES}): ${config.method?.toUpperCase()} ${config.url} after ${delay}ms`);
+    
+    // Wait before retrying
+    await sleep(delay);
+    
+    // Retry the request
+    return api(config);
+  }
+);
+
 // Cache configuration for different endpoints - use exact match or regex
 // Mobile-optimized with longer TTLs for persistent cache
 const CACHE_CONFIG = {

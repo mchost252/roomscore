@@ -1,6 +1,28 @@
 // Prisma Database Client for PostgreSQL (Neon)
 const { PrismaClient } = require('@prisma/client');
 
+// Build optimized DATABASE_URL with connection pool settings for Neon serverless
+function getOptimizedDatabaseUrl() {
+  let url = process.env.DATABASE_URL;
+  if (!url) return url;
+  
+  // Add connection pool and timeout settings if not already present
+  const params = new URLSearchParams();
+  
+  // Connection pool settings optimized for serverless
+  if (!url.includes('connection_limit')) params.append('connection_limit', '10');
+  if (!url.includes('pool_timeout')) params.append('pool_timeout', '20');
+  if (!url.includes('connect_timeout')) params.append('connect_timeout', '10');
+  if (!url.includes('statement_cache_size')) params.append('statement_cache_size', '0');
+  
+  const paramString = params.toString();
+  if (paramString) {
+    url += (url.includes('?') ? '&' : '?') + paramString;
+  }
+  
+  return url;
+}
+
 // Create Prisma client instance with logging and connection pool settings
 // Optimized for Neon serverless PostgreSQL
 const prisma = new PrismaClient({
@@ -9,9 +31,51 @@ const prisma = new PrismaClient({
     : ['warn', 'error'],
   datasources: {
     db: {
-      url: process.env.DATABASE_URL
+      url: getOptimizedDatabaseUrl()
     }
   }
+});
+
+// Add middleware to log slow queries and retry on connection errors
+prisma.$use(async (params, next) => {
+  const before = Date.now();
+  let lastError;
+  
+  // Retry up to 2 times for connection errors (Neon cold start)
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const result = await next(params);
+      const duration = Date.now() - before;
+      
+      if (duration > 2000) {
+        console.warn(`⚠️ Slow query: ${params.model}.${params.action} took ${duration}ms`);
+      }
+      
+      return result;
+    } catch (error) {
+      lastError = error;
+      
+      // Check if it's a connection error worth retrying
+      const isConnectionError = 
+        error.code === 'P1001' || // Can't reach database
+        error.code === 'P1002' || // Database timeout
+        error.code === 'P1008' || // Operations timed out
+        error.code === 'P1017' || // Server closed connection
+        error.message?.includes('Connection') ||
+        error.message?.includes('timeout') ||
+        error.message?.includes('ECONNREFUSED');
+      
+      if (isConnectionError && attempt < 3) {
+        console.warn(`⚠️ Database connection error (attempt ${attempt}/3): ${error.message}. Retrying...`);
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt)); // Exponential backoff
+        continue;
+      }
+      
+      throw error;
+    }
+  }
+  
+  throw lastError;
 });
 
 // Ensure single instance (avoid connection pool exhaustion)
@@ -58,17 +122,28 @@ let keepAliveInterval = null;
 function startKeepAlive() {
   if (keepAliveInterval) return;
   
-  // Ping every 4 minutes to keep Neon database warm (it suspends after 5 mins)
+  // Ping every 2 minutes to keep Neon database warm (more aggressive to prevent cold starts)
   keepAliveInterval = setInterval(async () => {
     try {
+      const start = Date.now();
       await prisma.$queryRaw`SELECT 1`;
-      console.log('💓 Database keep-alive ping successful');
+      const duration = Date.now() - start;
+      if (duration > 1000) {
+        console.log(`💓 Database keep-alive ping: ${duration}ms (slow - possible cold start)`);
+      }
     } catch (error) {
       console.error('❌ Database keep-alive ping failed:', error.message);
+      // Try to reconnect
+      try {
+        await prisma.$connect();
+        console.log('✅ Database reconnected after failed ping');
+      } catch (reconnectError) {
+        console.error('❌ Database reconnect failed:', reconnectError.message);
+      }
     }
-  }, 4 * 60 * 1000); // 4 minutes
+  }, 2 * 60 * 1000); // 2 minutes (more aggressive)
   
-  console.log('💓 Database keep-alive started (every 4 minutes)');
+  console.log('💓 Database keep-alive started (every 2 minutes)');
 }
 
 function stopKeepAlive() {
