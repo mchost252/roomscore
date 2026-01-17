@@ -26,12 +26,14 @@ const validate = (schema) => {
 exports.registerSchema = Joi.object({
   email: Joi.string().email().required(),
   password: Joi.string().min(6).required(),
-  username: Joi.string().min(3).max(30).required()
+  username: Joi.string().min(3).max(30).required(),
+  timezone: Joi.string().allow('', null) // Auto-detected from browser
 });
 
 exports.loginSchema = Joi.object({
   email: Joi.string().email().required(),
-  password: Joi.string().required()
+  password: Joi.string().required(),
+  timezone: Joi.string().allow('', null) // Auto-detected from browser
 });
 
 exports.updateProfileSchema = Joi.object({

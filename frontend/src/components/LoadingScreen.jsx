@@ -63,15 +63,15 @@ const LoadingScreen = memo(() => {
       <Box
         sx={{
           position: 'relative',
-          width: 120,
-          height: 140,
-          mb: 3,
+          width: 80,
+          height: 90,
+          mb: 2,
         }}
       >
         {/* SVG for constellation lines */}
         <svg
-          width="120"
-          height="140"
+          width="80"
+          height="90"
           viewBox="0 0 100 100"
           style={{
             position: 'absolute',
@@ -112,13 +112,13 @@ const LoadingScreen = memo(() => {
               left: `${star.x}%`,
               top: `${star.y}%`,
               transform: 'translate(-50%, -50%)',
-              width: 8,
-              height: 8,
+              width: 6,
+              height: 6,
               borderRadius: '50%',
               bgcolor: isDark ? '#60A5FA' : '#3B82F6',
               boxShadow: isDark 
-                ? '0 0 10px #60A5FA, 0 0 20px #60A5FA, 0 0 30px rgba(96, 165, 250, 0.5)'
-                : '0 0 8px #3B82F6, 0 0 16px rgba(59, 130, 246, 0.5)',
+                ? '0 0 6px #60A5FA, 0 0 12px #60A5FA, 0 0 18px rgba(96, 165, 250, 0.5)'
+                : '0 0 5px #3B82F6, 0 0 10px rgba(59, 130, 246, 0.5)',
               animation: `
                 fadeInStar 0.3s ease-out ${star.delay}s forwards,
                 twinkleStar 1.5s ease-in-out ${star.delay + 0.5}s infinite
@@ -130,8 +130,8 @@ const LoadingScreen = memo(() => {
                 top: '50%',
                 left: '50%',
                 transform: 'translate(-50%, -50%)',
-                width: 16,
-                height: 16,
+                width: 12,
+                height: 12,
                 borderRadius: '50%',
                 bgcolor: isDark ? 'rgba(96, 165, 250, 0.2)' : 'rgba(59, 130, 246, 0.15)',
               }
@@ -142,14 +142,15 @@ const LoadingScreen = memo(() => {
 
       {/* App name with fade-in */}
       <Typography 
-        variant="h5" 
+        variant="h6" 
         sx={{ 
           fontWeight: 700,
           color: isDark ? '#60A5FA' : '#3B82F6',
-          letterSpacing: 4,
+          letterSpacing: 3,
+          fontSize: '1.1rem',
           animation: 'fadeIn 0.5s ease-out 1s forwards',
           opacity: 0,
-          textShadow: isDark ? '0 0 20px rgba(96, 165, 250, 0.5)' : 'none',
+          textShadow: isDark ? '0 0 15px rgba(96, 165, 250, 0.5)' : 'none',
         }}
       >
         KRIOS
@@ -158,11 +159,12 @@ const LoadingScreen = memo(() => {
       <Typography 
         variant="caption" 
         sx={{ 
-          mt: 1,
+          mt: 0.5,
           color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)',
           animation: 'fadeIn 0.5s ease-out 1.2s forwards',
           opacity: 0,
-          letterSpacing: 2,
+          letterSpacing: 1,
+          fontSize: '0.7rem',
         }}
       >
         Loading your orbit...
