@@ -20,9 +20,10 @@ import {
   Button,
   Menu,
   MenuItem,
-  ListItemIcon
+  ListItemIcon,
+  useTheme
 } from '@mui/material';
-import { Send, ArrowBack, EmojiEmotions, DoneAll, Done, MoreVert, Delete as DeleteIcon, PersonRemove } from '@mui/icons-material';
+import { Send, ArrowBack, EmojiEmotions, DoneAll, Done, MoreVert, Delete as DeleteIcon, PersonRemove, Close as CloseIcon } from '@mui/icons-material';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
@@ -38,6 +39,8 @@ const MessagesPage = () => {
   const { socket, onlineUsers: contextOnlineUsers, isUserOnline, refreshOnlineUsers, connected } = useSocket();
   const { user } = useAuth();
   const { isMobile } = useDeviceType();
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const [conversations, setConversations] = useState([]);
   const [selectedFriend, setSelectedFriend] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -736,7 +739,8 @@ const MessagesPage = () => {
                         sx={{
                           display: 'flex',
                           justifyContent: isOwn ? 'flex-end' : 'flex-start',
-                          mb: 1.5,
+                          mb: 0.5,
+                          px: 1,
                           animation: msg._id?.startsWith?.('temp_') ? 'slideIn 0.2s ease-out' : 'none',
                           '@keyframes slideIn': {
                             from: { opacity: 0, transform: 'translateY(10px)' },
@@ -744,38 +748,72 @@ const MessagesPage = () => {
                           }
                         }}
                       >
+                        {/* WhatsApp-style bubble with tail */}
                         <Box
+                          onClick={handleReply}
                           sx={{
-                            py: 1.5,
-                            px: 2,
-                            maxWidth: '75%',
-                            bgcolor: isOwn ? 'primary.main' : 'background.paper',
-                            color: isOwn ? 'primary.contrastText' : 'text.primary',
-                            borderRadius: isOwn ? '20px 20px 4px 20px' : '20px 20px 20px 4px',
-                            boxShadow: isOwn ? '0 1px 2px rgba(0,0,0,0.15)' : '0 1px 2px rgba(0,0,0,0.1)',
-                            border: isOwn ? 'none' : '1px solid',
-                            borderColor: 'divider'
+                            position: 'relative',
+                            p: '8px 12px',
+                            pb: '6px',
+                            maxWidth: '80%',
+                            bgcolor: isOwn 
+                              ? isDark ? '#005c4b' : '#dcf8c6'
+                              : isDark ? '#1f2c34' : '#ffffff',
+                            color: isDark ? '#e9edef' : '#111b21',
+                            borderRadius: isOwn ? '8px 8px 0 8px' : '8px 8px 8px 0',
+                            boxShadow: '0 1px 0.5px rgba(0,0,0,0.13)',
+                            cursor: 'pointer',
+                            '&::after': {
+                              content: '""',
+                              position: 'absolute',
+                              bottom: 0,
+                              width: 0,
+                              height: 0,
+                              border: '6px solid transparent',
+                              ...(isOwn ? {
+                                right: '-6px',
+                                borderLeftColor: isDark ? '#005c4b' : '#dcf8c6',
+                                borderBottom: 'none',
+                                borderRight: 'none',
+                              } : {
+                                left: '-6px',
+                                borderRightColor: isDark ? '#1f2c34' : '#ffffff',
+                                borderBottom: 'none',
+                                borderLeft: 'none',
+                              }),
+                            },
                           }}
                         >
-                          <Typography variant="body1" sx={{ color: 'inherit', wordBreak: 'break-word' }}>{msg.message}</Typography>
-                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5, mt: 0.5 }}>
-                            <Typography 
-                              variant="caption" 
-                              sx={{ 
-                                opacity: 0.7, 
-                                color: 'inherit',
-                                fontSize: '0.7rem'
-                              }}
-                            >
+                          {/* Reply preview if exists */}
+                          {msg.replyTo && (
+                            <Box sx={{
+                              p: 1,
+                              mb: 0.5,
+                              bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.05)',
+                              borderLeft: '3px solid',
+                              borderColor: 'primary.main',
+                              borderRadius: '4px',
+                              fontSize: '0.75rem',
+                            }}>
+                              <Typography variant="caption" sx={{ opacity: 0.8, display: 'block' }} noWrap>
+                                {msg.replyTo.message || 'Message'}
+                              </Typography>
+                            </Box>
+                          )}
+                          <Typography variant="body2" sx={{ wordBreak: 'break-word', fontSize: '14.2px', lineHeight: 1.4 }}>
+                            {msg.message}
+                          </Typography>
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5, mt: 0.25, float: 'right', ml: 1 }}>
+                            <Typography variant="caption" sx={{ fontSize: '11px', color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.45)', lineHeight: 1 }}>
                               {formatTime(msg.createdAt)}
                             </Typography>
                             {isOwn && (
                               msg.isRead ? (
-                                <DoneAll sx={{ fontSize: 14, color: '#53bdeb' }} /> // Blue = seen
+                                <DoneAll sx={{ fontSize: 14, color: '#53bdeb' }} />
                               ) : msg.isDelivered || !msg._id?.startsWith?.('temp_') ? (
-                                <DoneAll sx={{ fontSize: 14, color: 'inherit', opacity: 0.7 }} /> // Gray double = delivered
+                                <DoneAll sx={{ fontSize: 14, color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.35)' }} />
                               ) : (
-                                <Done sx={{ fontSize: 14, color: 'inherit', opacity: 0.5 }} /> // Single = sent/sending
+                                <Done sx={{ fontSize: 14, color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.3)' }} />
                               )
                             )}
                           </Box>
@@ -788,6 +826,37 @@ const MessagesPage = () => {
               <div ref={messagesEndRef} />
             </Box>
 
+            {/* Reply Bar */}
+            {replyTo && (
+              <Box sx={{
+                px: 2,
+                py: 1,
+                bgcolor: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.05)',
+                borderTop: '1px solid',
+                borderColor: 'divider',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+              }}>
+                <Box sx={{
+                  flex: 1,
+                  pl: 1.5,
+                  borderLeft: '3px solid',
+                  borderColor: 'primary.main',
+                }}>
+                  <Typography variant="caption" color="primary" fontWeight={600}>
+                    Replying to {replyTo.sender?.username || 'message'}
+                  </Typography>
+                  <Typography variant="body2" noWrap sx={{ opacity: 0.7, fontSize: '0.8rem' }}>
+                    {replyTo.message}
+                  </Typography>
+                </Box>
+                <IconButton size="small" onClick={() => setReplyTo(null)}>
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </Box>
+            )}
+
             {/* Message Input */}
             <Paper 
               component="form" 
@@ -796,7 +865,7 @@ const MessagesPage = () => {
               sx={{ 
                 p: 1.5, 
                 borderRadius: 0,
-                borderTop: '1px solid',
+                borderTop: replyTo ? 'none' : '1px solid',
                 borderColor: 'divider',
                 flexShrink: 0, // Prevent shrinking
                 pb: 'env(safe-area-inset-bottom, 12px)' // Account for iOS safe area
@@ -1076,13 +1145,15 @@ const MessagesPage = () => {
                       const senderId = String(senderRawId);
                       const currentUserId = String(getUserId(user) || '');
                       const isOwn = senderId === currentUserId;
+                      const handleReplyDesktop = () => setReplyTo({ _id: msg._id, message: msg.message, sender: msg.sender });
                       return (
                         <Box
                           key={msg._id || idx}
                           sx={{
                             display: 'flex',
                             justifyContent: isOwn ? 'flex-end' : 'flex-start',
-                            mb: 1.5,
+                            mb: 0.5,
+                            px: 1,
                             animation: msg._id?.startsWith?.('temp_') ? 'slideIn 0.2s ease-out' : 'none',
                             '@keyframes slideIn': {
                               from: { opacity: 0, transform: 'translateY(10px)' },
@@ -1090,38 +1161,75 @@ const MessagesPage = () => {
                             }
                           }}
                         >
+                          {/* WhatsApp-style bubble with tail */}
                           <Box
+                            onClick={handleReplyDesktop}
                             sx={{
-                              py: 1.5,
-                              px: 2,
+                              position: 'relative',
+                              p: '8px 12px',
+                              pb: '6px',
                               maxWidth: '60%',
-                              bgcolor: isOwn ? 'primary.main' : 'background.paper',
-                              color: isOwn ? 'primary.contrastText' : 'text.primary',
-                              borderRadius: isOwn ? '20px 20px 4px 20px' : '20px 20px 20px 4px',
-                              boxShadow: isOwn ? '0 1px 2px rgba(0,0,0,0.15)' : '0 1px 2px rgba(0,0,0,0.1)',
-                              border: isOwn ? 'none' : '1px solid',
-                              borderColor: 'divider'
+                              bgcolor: isOwn 
+                                ? isDark ? '#005c4b' : '#dcf8c6'
+                                : isDark ? '#1f2c34' : '#ffffff',
+                              color: isDark ? '#e9edef' : '#111b21',
+                              borderRadius: isOwn ? '8px 8px 0 8px' : '8px 8px 8px 0',
+                              boxShadow: '0 1px 0.5px rgba(0,0,0,0.13)',
+                              cursor: 'pointer',
+                              '&::after': {
+                                content: '""',
+                                position: 'absolute',
+                                bottom: 0,
+                                width: 0,
+                                height: 0,
+                                border: '6px solid transparent',
+                                ...(isOwn ? {
+                                  right: '-6px',
+                                  borderLeftColor: isDark ? '#005c4b' : '#dcf8c6',
+                                  borderBottom: 'none',
+                                  borderRight: 'none',
+                                } : {
+                                  left: '-6px',
+                                  borderRightColor: isDark ? '#1f2c34' : '#ffffff',
+                                  borderBottom: 'none',
+                                  borderLeft: 'none',
+                                }),
+                              },
+                              '&:hover': {
+                                filter: 'brightness(0.97)',
+                              },
                             }}
                           >
-                            <Typography variant="body1" sx={{ color: 'inherit', wordBreak: 'break-word' }}>{msg.message}</Typography>
-                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5, mt: 0.5 }}>
-                              <Typography 
-                                variant="caption" 
-                                sx={{ 
-                                  opacity: 0.7, 
-                                  color: 'inherit',
-                                  fontSize: '0.7rem'
-                                }}
-                              >
+                            {/* Reply preview if exists */}
+                            {msg.replyTo && (
+                              <Box sx={{
+                                p: 1,
+                                mb: 0.5,
+                                bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.05)',
+                                borderLeft: '3px solid',
+                                borderColor: 'primary.main',
+                                borderRadius: '4px',
+                                fontSize: '0.75rem',
+                              }}>
+                                <Typography variant="caption" sx={{ opacity: 0.8, display: 'block' }} noWrap>
+                                  {msg.replyTo.message || 'Message'}
+                                </Typography>
+                              </Box>
+                            )}
+                            <Typography variant="body2" sx={{ wordBreak: 'break-word', fontSize: '14.2px', lineHeight: 1.4 }}>
+                              {msg.message}
+                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5, mt: 0.25, float: 'right', ml: 1 }}>
+                              <Typography variant="caption" sx={{ fontSize: '11px', color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.45)', lineHeight: 1 }}>
                                 {formatTime(msg.createdAt)}
                               </Typography>
                               {isOwn && (
                                 msg.isRead ? (
-                                  <DoneAll sx={{ fontSize: 14, color: '#53bdeb' }} /> // Blue = seen
+                                  <DoneAll sx={{ fontSize: 14, color: '#53bdeb' }} />
                                 ) : msg.isDelivered || !msg._id?.startsWith?.('temp_') ? (
-                                  <DoneAll sx={{ fontSize: 14, color: 'inherit', opacity: 0.7 }} /> // Gray double = delivered
+                                  <DoneAll sx={{ fontSize: 14, color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.35)' }} />
                                 ) : (
-                                  <Done sx={{ fontSize: 14, color: 'inherit', opacity: 0.5 }} /> // Single = sent/sending
+                                  <Done sx={{ fontSize: 14, color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.3)' }} />
                                 )
                               )}
                             </Box>
@@ -1134,13 +1242,44 @@ const MessagesPage = () => {
                 <div ref={messagesEndRef} />
               </Box>
 
+              {/* Reply Bar - Desktop */}
+              {replyTo && (
+                <Box sx={{
+                  px: 2,
+                  py: 1,
+                  bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.04)',
+                  borderTop: 1,
+                  borderColor: 'divider',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                }}>
+                  <Box sx={{
+                    flex: 1,
+                    pl: 1.5,
+                    borderLeft: '3px solid',
+                    borderColor: 'primary.main',
+                  }}>
+                    <Typography variant="caption" color="primary" fontWeight={600}>
+                      Replying to {replyTo.sender?.username || 'message'}
+                    </Typography>
+                    <Typography variant="body2" noWrap sx={{ opacity: 0.7, fontSize: '0.8rem' }}>
+                      {replyTo.message}
+                    </Typography>
+                  </Box>
+                  <IconButton size="small" onClick={() => setReplyTo(null)}>
+                    <CloseIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+              )}
+
               {/* Message Input */}
               <Box 
                 component="form" 
                 onSubmit={handleSendMessage} 
                 sx={{ 
                   p: 2, 
-                  borderTop: 1, 
+                  borderTop: replyTo ? 0 : 1, 
                   borderColor: 'divider',
                   bgcolor: 'background.paper'
                 }}

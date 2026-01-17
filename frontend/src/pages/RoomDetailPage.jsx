@@ -46,7 +46,8 @@ import {
   NotificationsActive,
   Star,
   Whatshot,
-  Shield
+  Shield,
+  HelpOutline
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
@@ -56,6 +57,7 @@ import api, { invalidateCache } from '../utils/api';
 import ChatDrawer from '../components/ChatDrawer';
 import TaskTypeSelector from '../components/TaskTypeSelector';
 import DailyOrbitSummaryModal from '../components/DailyOrbitSummaryModal';
+import RoomOnboardingModal from '../components/RoomOnboardingModal';
 import { MVPCrownIcon } from '../components/icons/ConstellationIcons';
 import { getErrorMessage } from '../utils/errorMessages';
 
@@ -85,6 +87,7 @@ const RoomDetailPage = () => {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
   const [showRoomIntro, setShowRoomIntro] = useState(false);
+  const [roomOnboardingOpen, setRoomOnboardingOpen] = useState(false);
   const [canNudge, setCanNudge] = useState(false);
   const [nudging, setNudging] = useState(false);
   const [nudgeStatus, setNudgeStatus] = useState({ hasCompletedTask: false, alreadySentToday: false });
@@ -187,6 +190,20 @@ const RoomDetailPage = () => {
       return () => clearTimeout(timer);
     }
   }, [room, user?.id, checkAndShowOrbitSummary]);
+
+  // Show room onboarding on first ever room visit
+  useEffect(() => {
+    if (room && user?.id) {
+      const onboardingSeen = localStorage.getItem('roomOnboardingSeen');
+      if (!onboardingSeen) {
+        // Small delay to let the room load first
+        const timer = setTimeout(() => {
+          setRoomOnboardingOpen(true);
+        }, 500);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [room, user?.id]);
 
   // Fetch today's MVP when room loads
   const fetchRoomMVP = useCallback(async () => {
@@ -1165,6 +1182,21 @@ const RoomDetailPage = () => {
                     />
                   </Tooltip>
                 )}
+                {/* Help icon to re-open room guide */}
+                <Tooltip title="Room Guide">
+                  <IconButton 
+                    size="small" 
+                    onClick={() => setRoomOnboardingOpen(true)}
+                    sx={{ 
+                      width: { xs: 20, md: 24 }, 
+                      height: { xs: 20, md: 24 },
+                      opacity: 0.6,
+                      '&:hover': { opacity: 1 }
+                    }}
+                  >
+                    <HelpOutline sx={{ fontSize: { xs: 14, md: 16 } }} />
+                  </IconButton>
+                </Tooltip>
               </Box>
             </Box>
           </Box>
@@ -2272,6 +2304,13 @@ const RoomDetailPage = () => {
         onClose={() => setOrbitSummaryOpen(false)}
         summary={orbitSummary}
         roomName={room?.name}
+      />
+
+      {/* Room Onboarding Modal */}
+      <RoomOnboardingModal
+        open={roomOnboardingOpen}
+        onClose={() => setRoomOnboardingOpen(false)}
+        isAdmin={isOwner}
       />
     </Box>
   );
