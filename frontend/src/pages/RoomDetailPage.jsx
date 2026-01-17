@@ -26,7 +26,8 @@ import {
   Tabs,
   Tab,
   Tooltip,
-  Divider
+  Divider,
+  useTheme
 } from '@mui/material';
 import {
   ArrowBack,
@@ -66,6 +67,7 @@ const RoomDetailPage = () => {
   const { user } = useAuth();
   const { socket } = useSocket();
   const navigate = useNavigate();
+  const theme = useTheme();
 
   const [room, setRoom] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -853,7 +855,7 @@ const RoomDetailPage = () => {
     }
   };
 
-  const handleSendMessageFromDrawer = async (messageText, replyToId = null) => {
+  const handleSendMessageFromDrawer = async (messageText, replyTo = null) => {
     if (!messageText.trim()) return;
     
     // OPTIMISTIC UPDATE - Add message to UI immediately with correct user data
@@ -866,7 +868,13 @@ const RoomDetailPage = () => {
         avatar: user?.avatar || user?.profilePicture || null
       },
       createdAt: new Date().toISOString(),
-      sending: true // Flag to show sending state
+      sending: true,
+      // Include reply info in optimistic message
+      replyTo: replyTo ? {
+        _id: replyTo._id || replyTo.messageId,
+        message: replyTo.message,
+        userId: replyTo.sender || replyTo.userId
+      } : null
     };
     
     setChatMessages(prev => [...prev, optimisticMessage]);
@@ -874,7 +882,9 @@ const RoomDetailPage = () => {
     // API call in background
     try {
       const response = await api.post(`/rooms/${roomId}/chat`, {
-        message: messageText
+        message: messageText,
+        replyToId: replyTo?._id || replyTo?.messageId || null,
+        replyToText: replyTo?.message || null
       });
       
       // Replace optimistic message with real one
@@ -1575,46 +1585,47 @@ const RoomDetailPage = () => {
                     }
 
                     const isOwnMessage = msg.userId?._id === user?.id || msg.userId === user?.id;
+                    const msgUserId = msg.userId?._id || msg.userId;
+                    const prevUserId = chatMessages[index - 1]?.userId?._id || chatMessages[index - 1]?.userId;
+                    const showAvatar = !isOwnMessage && (index === 0 || prevUserId !== msgUserId);
+                    
                     return (
                       <Box 
                         key={index} 
                         sx={{ 
                           display: 'flex',
-                          justifyContent: isOwnMessage ? 'flex-end' : 'flex-start',
-                          animation: 'slideIn 0.3s ease-out',
+                          flexDirection: isOwnMessage ? 'row-reverse' : 'row',
+                          gap: 1,
+                          alignItems: 'flex-end',
+                          animation: msg.sending ? 'pulse 1.5s infinite' : 'slideIn 0.3s ease-out',
                           '@keyframes slideIn': {
-                            from: {
-                              opacity: 0,
-                              transform: 'translateY(10px)'
-                            },
-                            to: {
-                              opacity: 1,
-                              transform: 'translateY(0)'
-                            }
+                            from: { opacity: 0, transform: 'translateY(10px)' },
+                            to: { opacity: 1, transform: 'translateY(0)' }
+                          },
+                          '@keyframes pulse': {
+                            '0%, 100%': { opacity: 1 },
+                            '50%': { opacity: 0.7 }
                           }
                         }}
                       >
-                        <Box sx={{ maxWidth: '70%', display: 'flex', gap: 1, alignItems: 'flex-start' }}>
-                          {!isOwnMessage && (
-                            <Avatar 
-                              src={msg.userId?.avatar || undefined}
-                              sx={{ 
-                                width: 32, 
-                                height: 32, 
-                                bgcolor: 'primary.main',
-                                fontSize: '0.875rem'
-                              }}
-                            >
-                              {!msg.userId?.avatar && (msg.userId?.username || msg.userId?.email || 'U')[0].toUpperCase()}
-                            </Avatar>
-                          )}
-                          <Box sx={{ flex: 1 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                        {/* Avatar */}
+                        {showAvatar && !isOwnMessage && (
+                          <Avatar 
+                            src={msg.userId?.avatar || undefined}
+                            sx={{ width: 28, height: 28, fontSize: '0.75rem' }}
+                          >
+                            {!msg.userId?.avatar && (msg.userId?.username || msg.userId?.email || 'U')[0].toUpperCase()}
+                          </Avatar>
+                        )}
+                        {!showAvatar && !isOwnMessage && <Box sx={{ width: 28 }} />}
+
+                        {/* Message Bubble */}
+                        <Box sx={{ maxWidth: '75%', display: 'flex', flexDirection: 'column', alignItems: isOwnMessage ? 'flex-end' : 'flex-start' }}>
+                          {/* Sender Name with badges */}
+                          {(showAvatar || isOwnMessage) && (
+                            <Typography variant="caption" color="text.secondary" sx={{ ml: isOwnMessage ? 0 : 1, mb: 0.5 }}>
                               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
-                                <Typography variant="caption" fontWeight="bold" color={isOwnMessage ? 'primary' : 'text.primary'}>
-                                  {isOwnMessage ? 'You' : (msg.userId?.username || msg.userId?.email || 'Unknown')}
-                                </Typography>
-                                {/* Appreciation badges (emoji only for 1, emoji+count for >1) */}
+                                <span>{isOwnMessage ? 'You' : (msg.userId?.username || msg.userId?.email || 'Unknown')}</span>
                                 {(() => {
                                   const uid = msg.userId?._id || msg.userId;
                                   const s = appreciationStatsByUser?.[uid];
@@ -1635,40 +1646,89 @@ const RoomDetailPage = () => {
                                   ));
                                 })()}
                               </Box>
-                              <Typography variant="caption" color="text.secondary">
-                                {msg.createdAt ? format(parseISO(msg.createdAt), 'h:mm a') : ''}
+                            </Typography>
+                          )}
+
+                          {/* Reply preview */}
+                          {msg.replyTo && (
+                            <Box sx={{
+                              mb: 0.5,
+                              px: 1,
+                              py: 0.5,
+                              borderLeft: 3,
+                              borderColor: 'primary.light',
+                              bgcolor: isOwnMessage ? 'rgba(255,255,255,0.1)' : 'action.hover',
+                              borderRadius: 1,
+                              maxWidth: '100%'
+                            }}>
+                              <Typography variant="caption" color="text.secondary" noWrap>
+                                {msg.replyTo?.message}
                               </Typography>
                             </Box>
-                            <Paper 
-                              sx={{ 
-                                p: 1.5, 
-                                bgcolor: isOwnMessage ? 'primary.main' : 'background.paper',
-                                color: isOwnMessage ? 'white' : 'text.primary',
-                                borderRadius: 2,
-                                borderTopRightRadius: isOwnMessage ? 0 : 2,
-                                borderTopLeftRadius: isOwnMessage ? 2 : 0,
-                                wordBreak: 'break-word'
-                              }}
-                              elevation={1}
-                            >
-                              <Typography variant="body2">
-                                {msg.message}
-                              </Typography>
-                            </Paper>
-                          </Box>
-                          {isOwnMessage && (
-                            <Avatar 
-                              src={user?.avatar || undefined}
-                              sx={{ 
-                                width: 32, 
-                                height: 32, 
-                                bgcolor: 'primary.main',
-                                fontSize: '0.875rem'
-                              }}
-                            >
-                              {!user?.avatar && (user?.username || user?.email || 'U')[0].toUpperCase()}
-                            </Avatar>
                           )}
+
+                          {/* WhatsApp-style bubble */}
+                          <Box
+                            sx={{
+                              position: 'relative',
+                              p: '10px 12px',
+                              pb: '8px',
+                              bgcolor: isOwnMessage 
+                                ? theme.palette.mode === 'dark' ? '#005c4b' : '#dcf8c6'
+                                : theme.palette.mode === 'dark' ? '#1f2c34' : '#ffffff',
+                              color: isOwnMessage 
+                                ? theme.palette.mode === 'dark' ? '#e9edef' : '#111b21'
+                                : theme.palette.mode === 'dark' ? '#e9edef' : '#111b21',
+                              borderRadius: isOwnMessage ? '8px 8px 0 8px' : '8px 8px 8px 0',
+                              wordBreak: 'break-word',
+                              boxShadow: '0 1px 0.5px rgba(0,0,0,0.13)',
+                              minWidth: '60px',
+                              maxWidth: '100%',
+                              '&::after': {
+                                content: '""',
+                                position: 'absolute',
+                                bottom: 0,
+                                width: 0,
+                                height: 0,
+                                border: '8px solid transparent',
+                                ...(isOwnMessage ? {
+                                  right: '-8px',
+                                  borderLeftColor: theme.palette.mode === 'dark' ? '#005c4b' : '#dcf8c6',
+                                  borderBottom: 'none',
+                                  borderRight: 'none',
+                                } : {
+                                  left: '-8px',
+                                  borderRightColor: theme.palette.mode === 'dark' ? '#1f2c34' : '#ffffff',
+                                  borderBottom: 'none',
+                                  borderLeft: 'none',
+                                }),
+                              },
+                            }}
+                          >
+                            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', fontSize: '14.2px', lineHeight: 1.4 }}>
+                              {msg.message}
+                            </Typography>
+                            {/* Inline timestamp like WhatsApp */}
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 0.5, mt: 0.25 }}>
+                              <Typography
+                                variant="caption"
+                                sx={{ 
+                                  fontSize: '11px',
+                                  color: isOwnMessage 
+                                    ? theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.45)'
+                                    : 'rgba(0,0,0,0.45)',
+                                  lineHeight: 1,
+                                }}
+                              >
+                                {msg.createdAt ? format(parseISO(msg.createdAt), 'h:mm a') : ''}
+                              </Typography>
+                              {isOwnMessage && (
+                                <Box sx={{ fontSize: '14px', color: msg.sending ? 'inherit' : (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.35)'), lineHeight: 1 }}>
+                                  {msg.sending ? '🕐' : '✓✓'}
+                                </Box>
+                              )}
+                            </Box>
+                          </Box>
                         </Box>
                       </Box>
                     );

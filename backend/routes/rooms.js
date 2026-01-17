@@ -174,11 +174,14 @@ router.get('/', protect, async (req, res, next) => {
 // @access  Private
 router.post('/', protect, validate(createRoomSchema), async (req, res, next) => {
   try {
-    const { name, description, isPublic, maxMembers, tasks, duration } = req.body;
+    const { name, description, isPublic, maxMembers, tasks, duration, chatRetentionDays } = req.body;
 
     // Calculate expiry date based on duration (max 1 month)
     const endDate = calculateExpiryDate(duration || '1_month');
     const joinCode = generateJoinCode();
+
+    // Validate chatRetentionDays (1-5)
+    const retentionDays = chatRetentionDays ? Math.min(5, Math.max(1, parseInt(chatRetentionDays))) : 3;
 
     const room = await prisma.room.create({
       data: {
@@ -188,6 +191,7 @@ router.post('/', protect, validate(createRoomSchema), async (req, res, next) => 
         joinCode,
         isPrivate: !isPublic,
         maxMembers: maxMembers || 50,
+        chatRetentionDays: retentionDays,
         endDate,
         members: {
           create: {
@@ -201,7 +205,7 @@ router.post('/', protect, validate(createRoomSchema), async (req, res, next) => 
             title: task.title,
             description: task.description || null,
             taskType: task.taskType || 'daily',
-            points: task.points || 10
+            points: Math.min(10, Math.max(1, task.points || 5)) // Clamp points to 1-10
           }))
         } : undefined
       },
@@ -642,14 +646,26 @@ router.get('/:id/leaderboard', protect, isRoomMember, async (req, res, next) => 
 // @access  Private (must be member)
 router.post('/:id/chat', protect, isRoomMember, validate(sendMessageSchema), async (req, res, next) => {
   try {
-    const { message } = req.body;
+    const { message, replyToId, replyToText } = req.body;
+
+    // If replyToId provided but no replyToText, try to fetch original message text
+    let finalReplyToText = replyToText || null;
+    if (replyToId && !finalReplyToText) {
+      const originalMsg = await prisma.chatMessage.findUnique({
+        where: { id: replyToId },
+        select: { content: true }
+      });
+      finalReplyToText = originalMsg?.content?.substring(0, 100) || null;
+    }
 
     const chatMessage = await prisma.chatMessage.create({
       data: {
         roomId: req.params.id,
         userId: req.user.id,
         content: message,
-        type: 'user'
+        type: 'user',
+        replyToId: replyToId || null,
+        replyToText: finalReplyToText
       },
       include: {
         user: { select: { id: true, username: true, avatar: true } }
@@ -664,7 +680,8 @@ router.post('/:id/chat', protect, isRoomMember, validate(sendMessageSchema), asy
       message: chatMessage.content,
       messageType: chatMessage.type,
       type: chatMessage.type,
-      userId: chatMessage.user ? { ...chatMessage.user, _id: chatMessage.user.id } : null
+      userId: chatMessage.user ? { ...chatMessage.user, _id: chatMessage.user.id } : null,
+      replyTo: chatMessage.replyToText ? { _id: chatMessage.replyToId, message: chatMessage.replyToText } : null
     };
 
     // Get room members (exclude sender)
@@ -751,7 +768,8 @@ router.get('/:id/chat', protect, isRoomMember, async (req, res, next) => {
       _id: m.id,
       message: m.content,
       messageType: m.type,
-      userId: m.user ? { ...m.user, _id: m.user.id } : null
+      userId: m.user ? { ...m.user, _id: m.user.id } : null,
+      replyTo: m.replyToText ? { _id: m.replyToId, message: m.replyToText } : null
     }));
 
     res.json({

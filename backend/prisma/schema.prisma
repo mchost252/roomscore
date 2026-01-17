@@ -146,12 +146,14 @@ model TaskCompletion {
 
 // ==================== CHAT MESSAGE ====================
 model ChatMessage {
-  id        String   @id @default(cuid())
-  roomId    String
-  userId    String?
-  content   String
-  type      String   @default("user") // user, system
-  createdAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  roomId      String
+  userId      String?
+  content     String
+  type        String   @default("user") // user, system
+  replyToId   String?  // ID of message being replied to
+  replyToText String?  // Cached text of replied message (for display even if original deleted)
+  createdAt   DateTime @default(now())
 
   room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
