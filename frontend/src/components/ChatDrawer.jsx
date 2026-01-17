@@ -353,42 +353,109 @@ const ChatDrawer = ({
                           </Typography>
                         </Box>
                       )}
-                      <Paper
-                        elevation={0}
+                      <Box
                         onClick={() => setReplyTo({ _id: msg._id, messageId: msg._id, message: msg.message, sender: msg.userId })}
                         sx={{
-                          p: 1.5,
+                          position: 'relative',
+                          p: '10px 12px',
+                          pb: '8px',
                           bgcolor: isMine 
-                            ? 'primary.main' 
+                            ? theme.palette.mode === 'dark' 
+                              ? '#005c4b' // WhatsApp dark green for sent
+                              : '#dcf8c6' // WhatsApp light green for sent
                             : theme.palette.mode === 'dark' 
-                              ? 'grey.800' 
-                              : 'grey.100',
-                          color: isMine ? 'primary.contrastText' : 'text.primary',
-                          borderRadius: 2,
-                          borderTopRightRadius: isMine ? 4 : 16,
-                          borderTopLeftRadius: isMine ? 16 : 4,
+                              ? '#1f2c34' // WhatsApp dark mode received
+                              : '#ffffff', // White for received in light mode
+                          color: isMine 
+                            ? theme.palette.mode === 'dark' ? '#e9edef' : '#111b21'
+                            : theme.palette.mode === 'dark' ? '#e9edef' : '#111b21',
+                          // WhatsApp-style border radius with tail
+                          borderRadius: isMine 
+                            ? '8px 8px 0 8px' // Sent: tail on bottom-right
+                            : '8px 8px 8px 0', // Received: tail on bottom-left
                           wordBreak: 'break-word',
-                          cursor: 'pointer'
+                          cursor: 'pointer',
+                          boxShadow: theme.palette.mode === 'dark' 
+                            ? '0 1px 0.5px rgba(0,0,0,0.13)'
+                            : '0 1px 0.5px rgba(0,0,0,0.13)',
+                          minWidth: '60px',
+                          maxWidth: '100%',
+                          // Tail pseudo-element
+                          '&::after': {
+                            content: '""',
+                            position: 'absolute',
+                            bottom: 0,
+                            width: 0,
+                            height: 0,
+                            border: '8px solid transparent',
+                            ...(isMine ? {
+                              right: '-8px',
+                              borderLeftColor: theme.palette.mode === 'dark' ? '#005c4b' : '#dcf8c6',
+                              borderBottom: 'none',
+                              borderRight: 'none',
+                            } : {
+                              left: '-8px',
+                              borderRightColor: theme.palette.mode === 'dark' ? '#1f2c34' : '#ffffff',
+                              borderBottom: 'none',
+                              borderLeft: 'none',
+                            }),
+                          },
+                          '&:hover': {
+                            filter: 'brightness(0.97)',
+                          },
+                          '&:active': {
+                            filter: 'brightness(0.95)',
+                          }
                         }}
                       >
-                        <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
+                        <Typography 
+                          variant="body2" 
+                          sx={{ 
+                            whiteSpace: 'pre-wrap',
+                            fontSize: '14.2px',
+                            lineHeight: 1.4,
+                          }}
+                        >
                           {msg.message}
                         </Typography>
-                      </Paper>
+                        {/* Inline timestamp like WhatsApp */}
+                        <Box sx={{ 
+                          display: 'flex', 
+                          justifyContent: 'flex-end', 
+                          alignItems: 'center',
+                          gap: 0.5,
+                          mt: 0.25,
+                          ml: 1,
+                          float: 'right',
+                          position: 'relative',
+                          top: '2px',
+                        }}>
+                          <Typography
+                            variant="caption"
+                            sx={{ 
+                              fontSize: '11px',
+                              color: isMine 
+                                ? theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.45)'
+                                : 'rgba(0,0,0,0.45)',
+                              lineHeight: 1,
+                            }}
+                          >
+                            {formatTime(msg.createdAt)}
+                          </Typography>
+                          {isMine && (
+                            <Box sx={{ 
+                              fontSize: '14px', 
+                              color: msg.read 
+                                ? '#53bdeb' // Blue ticks for read
+                                : theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.35)',
+                              lineHeight: 1,
+                            }}>
+                              {msg.sending ? '🕐' : '✓✓'}
+                            </Box>
+                          )}
+                        </Box>
+                      </Box>
 
-                      {/* Timestamp */}
-                      <Typography
-                        variant="caption"
-                        color="text.disabled"
-                        sx={{ 
-                          mt: 0.5, 
-                          mx: 1,
-                          fontSize: '0.65rem'
-                        }}
-                      >
-                        {formatTime(msg.createdAt)}
-                        {msg.sending && ' • Sending...'}
-                      </Typography>
                     </Box>
                   </Box>
                 </Slide>
@@ -576,71 +643,123 @@ const ChatDrawer = ({
           <DialogContent>
             {!selectedAppreciationType ? (
               // Step 1: Select appreciation type
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-                <Button
-                  variant="outlined"
-                  size="large"
-                  startIcon={<Star />}
-                  onClick={() => handleAppreciationTypeSelect('star')}
-                  sx={{ 
-                    justifyContent: 'flex-start',
-                    py: 2,
-                    borderColor: 'warning.main',
-                    color: 'warning.main',
-                    '&:hover': {
-                      borderColor: 'warning.dark',
-                      bgcolor: 'warning.50'
-                    }
-                  }}
-                >
-                  <Box sx={{ textAlign: 'left', flex: 1 }}>
-                    <Typography variant="body1" fontWeight="bold">⭐ Star</Typography>
-                    <Typography variant="caption" color="text.secondary">Good effort / appreciated</Typography>
+              (() => {
+                // Calculate how many members can receive each type
+                const otherMembers = roomMembers.filter(member => {
+                  const memberId = member.userId?._id || member.userId;
+                  return memberId !== currentUser?.id;
+                });
+                const totalOthers = otherMembers.length;
+                
+                const getAvailableCount = (type) => {
+                  return otherMembers.filter(member => {
+                    const memberId = member.userId?._id || member.userId;
+                    return !sentAppreciations.has(`${memberId}:${type}`);
+                  }).length;
+                };
+                
+                const starAvailable = getAvailableCount('star');
+                const fireAvailable = getAvailableCount('fire');
+                const shieldAvailable = getAvailableCount('shield');
+                
+                return (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+                    <Button
+                      variant="outlined"
+                      size="large"
+                      startIcon={<Star />}
+                      onClick={() => handleAppreciationTypeSelect('star')}
+                      disabled={starAvailable === 0}
+                      sx={{ 
+                        justifyContent: 'flex-start',
+                        py: 2,
+                        borderColor: starAvailable === 0 ? 'grey.400' : 'warning.main',
+                        color: starAvailable === 0 ? 'grey.500' : 'warning.main',
+                        opacity: starAvailable === 0 ? 0.6 : 1,
+                        '&:hover': {
+                          borderColor: 'warning.dark',
+                          bgcolor: 'warning.50'
+                        }
+                      }}
+                    >
+                      <Box sx={{ textAlign: 'left', flex: 1 }}>
+                        <Typography variant="body1" fontWeight="bold">⭐ Star</Typography>
+                        <Typography variant="caption" color="text.secondary">Good effort / appreciated</Typography>
+                      </Box>
+                      {starAvailable < totalOthers && (
+                        <Chip 
+                          label={starAvailable === 0 ? '✓ All sent' : `${starAvailable} left`}
+                          size="small"
+                          color={starAvailable === 0 ? 'success' : 'default'}
+                          sx={{ ml: 1, fontSize: '0.7rem' }}
+                        />
+                      )}
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      size="large"
+                      startIcon={<Whatshot />}
+                      onClick={() => handleAppreciationTypeSelect('fire')}
+                      disabled={fireAvailable === 0}
+                      sx={{ 
+                        justifyContent: 'flex-start',
+                        py: 2,
+                        borderColor: fireAvailable === 0 ? 'grey.400' : 'error.main',
+                        color: fireAvailable === 0 ? 'grey.500' : 'error.main',
+                        opacity: fireAvailable === 0 ? 0.6 : 1,
+                        '&:hover': {
+                          borderColor: 'error.dark',
+                          bgcolor: 'error.50'
+                        }
+                      }}
+                    >
+                      <Box sx={{ textAlign: 'left', flex: 1 }}>
+                        <Typography variant="body1" fontWeight="bold">🔥 Fire</Typography>
+                        <Typography variant="caption" color="text.secondary">You really showed up today</Typography>
+                      </Box>
+                      {fireAvailable < totalOthers && (
+                        <Chip 
+                          label={fireAvailable === 0 ? '✓ All sent' : `${fireAvailable} left`}
+                          size="small"
+                          color={fireAvailable === 0 ? 'success' : 'default'}
+                          sx={{ ml: 1, fontSize: '0.7rem' }}
+                        />
+                      )}
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      size="large"
+                      startIcon={<Shield />}
+                      onClick={() => handleAppreciationTypeSelect('shield')}
+                      disabled={shieldAvailable === 0}
+                      sx={{ 
+                        justifyContent: 'flex-start',
+                        py: 2,
+                        borderColor: shieldAvailable === 0 ? 'grey.400' : 'info.main',
+                        color: shieldAvailable === 0 ? 'grey.500' : 'info.main',
+                        opacity: shieldAvailable === 0 ? 0.6 : 1,
+                        '&:hover': {
+                          borderColor: 'info.dark',
+                          bgcolor: 'info.50'
+                        }
+                      }}
+                    >
+                      <Box sx={{ textAlign: 'left', flex: 1 }}>
+                        <Typography variant="body1" fontWeight="bold">🛡️ Shield</Typography>
+                        <Typography variant="caption" color="text.secondary">Reliable / kept the streak alive</Typography>
+                      </Box>
+                      {shieldAvailable < totalOthers && (
+                        <Chip 
+                          label={shieldAvailable === 0 ? '✓ All sent' : `${shieldAvailable} left`}
+                          size="small"
+                          color={shieldAvailable === 0 ? 'success' : 'default'}
+                          sx={{ ml: 1, fontSize: '0.7rem' }}
+                        />
+                      )}
+                    </Button>
                   </Box>
-                </Button>
-                <Button
-                  variant="outlined"
-                  size="large"
-                  startIcon={<Whatshot />}
-                  onClick={() => handleAppreciationTypeSelect('fire')}
-                  sx={{ 
-                    justifyContent: 'flex-start',
-                    py: 2,
-                    borderColor: 'error.main',
-                    color: 'error.main',
-                    '&:hover': {
-                      borderColor: 'error.dark',
-                      bgcolor: 'error.50'
-                    }
-                  }}
-                >
-                  <Box sx={{ textAlign: 'left', flex: 1 }}>
-                    <Typography variant="body1" fontWeight="bold">🔥 Fire</Typography>
-                    <Typography variant="caption" color="text.secondary">You really showed up today</Typography>
-                  </Box>
-                </Button>
-                <Button
-                  variant="outlined"
-                  size="large"
-                  startIcon={<Shield />}
-                  onClick={() => handleAppreciationTypeSelect('shield')}
-                  sx={{ 
-                    justifyContent: 'flex-start',
-                    py: 2,
-                    borderColor: 'info.main',
-                    color: 'info.main',
-                    '&:hover': {
-                      borderColor: 'info.dark',
-                      bgcolor: 'info.50'
-                    }
-                  }}
-                >
-                  <Box sx={{ textAlign: 'left', flex: 1 }}>
-                    <Typography variant="body1" fontWeight="bold">🛡️ Shield</Typography>
-                    <Typography variant="caption" color="text.secondary">Reliable / kept the streak alive</Typography>
-                  </Box>
-                </Button>
-              </Box>
+                );
+              })()
             ) : (
               // Step 2: Select member
               <List sx={{ pt: 0 }}>

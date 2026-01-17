@@ -376,11 +376,12 @@ const ProfilePage = () => {
   return (
     <Box sx={{ 
       width: '100%', 
-      maxWidth: '100vw', 
+      maxWidth: '100%', 
       overflowX: 'hidden',
       boxSizing: 'border-box',
-      px: { xs: 2, sm: 2, md: 4, lg: 6 },
+      px: { xs: 1.5, sm: 2, md: 4, lg: 6 },
       py: { md: 2 },
+      '& *': { boxSizing: 'border-box' }, // Force all children to use border-box
     }}>
       {/* Header */}
       <Box sx={{ mb: { xs: 2, md: 4 } }}>
@@ -404,9 +405,21 @@ const ProfilePage = () => {
         </Alert>
       )}
 
-      <Grid container spacing={{ xs: 2, md: 4 }} sx={{ width: '100%', maxWidth: '100%', ml: 0, mr: 0, mt: 0 }}>
+      <Grid container spacing={{ xs: 1.5, sm: 2, md: 4 }} sx={{ 
+        width: { xs: '100%', md: 'calc(100% + 32px)' }, 
+        maxWidth: '100%', 
+        ml: { xs: 0, md: '-16px' }, 
+        mr: 0, 
+        mt: 0,
+        overflow: 'hidden',
+      }}>
         {/* Left Sidebar - Profile Info */}
-        <Grid item xs={12} md={4} lg={3} sx={{ maxWidth: '100%', pl: { xs: '0 !important' }, pr: { xs: 0, md: 2 } }}>
+        <Grid item xs={12} md={4} lg={3} sx={{ 
+          maxWidth: '100%', 
+          width: '100%',
+          pl: { xs: '0 !important', md: '16px !important' }, 
+          pr: { xs: '0 !important', md: 2 } 
+        }}>
           <Paper sx={{ p: { xs: 2, md: 3 }, textAlign: 'center', mb: { xs: 2, md: 3 }, boxShadow: { md: 2 } }}>
             <Avatar
               src={user?.avatar || undefined}
@@ -510,7 +523,12 @@ const ProfilePage = () => {
         </Grid>
 
         {/* Right Content Area */}
-        <Grid item xs={12} md={8} lg={9} sx={{ maxWidth: '100%', pl: { xs: '0 !important', md: 2 }, pr: { xs: 0 } }}>
+        <Grid item xs={12} md={8} lg={9} sx={{ 
+          maxWidth: '100%', 
+          width: '100%',
+          pl: { xs: '0 !important', md: 2 }, 
+          pr: { xs: '0 !important', md: 0 } 
+        }}>
           <Paper sx={{ mb: { xs: 2, md: 3 } }}>
             <Tabs 
               value={tabValue} 
@@ -550,7 +568,11 @@ const ProfilePage = () => {
           {/* Overview Tab */}
           {tabValue === 0 && (
             <Box sx={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
-              <Grid container spacing={{ xs: 1.5, md: 3 }} sx={{ width: 'calc(100% + 12px)', ml: '-6px', mt: 0 }}>
+              <Grid container spacing={{ xs: 1, sm: 1.5, md: 3 }} sx={{ 
+                width: { xs: '100%', sm: 'calc(100% + 12px)' }, 
+                ml: { xs: 0, sm: '-6px' }, 
+                mt: 0 
+              }}>
                 {/* Stat Cards */}
                 <Grid item xs={6}>
                   <Card sx={{ height: '100%' }}>
