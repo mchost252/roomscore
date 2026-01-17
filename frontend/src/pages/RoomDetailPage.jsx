@@ -29,7 +29,9 @@ import {
   Divider,
   useTheme,
   Switch,
-  FormControlLabel
+  FormControlLabel,
+  ToggleButton,
+  ToggleButtonGroup
 } from '@mui/material';
 import {
   ArrowBack,
@@ -108,6 +110,7 @@ const RoomDetailPage = () => {
     description: '',
     points: 10,
     frequency: 'daily',
+    daysOfWeek: [],
     category: 'other'
   });
   const [addingTask, setAddingTask] = useState(false);
@@ -2242,16 +2245,53 @@ const RoomDetailPage = () => {
                 select
                 label="Frequency"
                 value={newTask.frequency}
-                onChange={(e) => setNewTask({ ...newTask, frequency: e.target.value })}
+                onChange={(e) => setNewTask({ ...newTask, frequency: e.target.value, daysOfWeek: [] })}
                 sx={{ flex: 1 }}
                 SelectProps={{ native: true }}
               >
                 <option value="daily">Daily</option>
                 <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
-                <option value="one-time">One Time</option>
+                <option value="custom">Custom Days</option>
               </TextField>
             </Box>
+            {/* Custom Days Selector */}
+            {newTask.frequency === 'custom' && (
+              <Box>
+                <Typography variant="body2" color="text.secondary" gutterBottom>
+                  Select days for this task:
+                </Typography>
+                <ToggleButtonGroup
+                  value={newTask.daysOfWeek}
+                  onChange={(e, newDays) => setNewTask({ ...newTask, daysOfWeek: newDays })}
+                  aria-label="days of week"
+                  size="small"
+                  sx={{ flexWrap: 'wrap', gap: 0.5 }}
+                >
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
+                    <ToggleButton 
+                      key={day} 
+                      value={index}
+                      sx={{ 
+                        minWidth: 40, 
+                        px: 1,
+                        '&.Mui-selected': {
+                          bgcolor: 'primary.main',
+                          color: 'primary.contrastText',
+                          '&:hover': { bgcolor: 'primary.dark' }
+                        }
+                      }}
+                    >
+                      {day}
+                    </ToggleButton>
+                  ))}
+                </ToggleButtonGroup>
+                {newTask.frequency === 'custom' && newTask.daysOfWeek.length === 0 && (
+                  <Typography variant="caption" color="error" sx={{ mt: 0.5, display: 'block' }}>
+                    Please select at least one day
+                  </Typography>
+                )}
+              </Box>
+            )}
             <Button
               variant="contained"
               onClick={async () => {
@@ -2265,12 +2305,22 @@ const RoomDetailPage = () => {
                   setTimeout(() => setError(null), 5000);
                   return;
                 }
+                if (newTask.frequency === 'custom' && newTask.daysOfWeek.length === 0) {
+                  setError('Please select at least one day for custom tasks');
+                  setTimeout(() => setError(null), 5000);
+                  return;
+                }
                 try {
                   setAddingTask(true);
-                  const response = await api.post(`/rooms/${roomId}/tasks`, newTask);
+                  const taskData = {
+                    ...newTask,
+                    taskType: newTask.frequency,
+                    daysOfWeek: newTask.frequency === 'custom' ? newTask.daysOfWeek : []
+                  };
+                  const response = await api.post(`/rooms/${roomId}/tasks`, taskData);
                   setSuccess('Task added successfully!');
                   setTimeout(() => setSuccess(null), 3000);
-                  setNewTask({ title: '', description: '', points: 10, frequency: 'daily', category: 'other' });
+                  setNewTask({ title: '', description: '', points: 10, frequency: 'daily', daysOfWeek: [], category: 'other' });
                   
                   // Don't add to local state here - socket event will handle it
                   // This prevents duplicate tasks
