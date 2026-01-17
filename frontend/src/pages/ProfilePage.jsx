@@ -143,13 +143,37 @@ const ProfilePage = () => {
     try {
       setLoading(true);
       
-      // Load user stats
+      // Fetch rooms to calculate real stats
+      let totalPoints = 0;
+      let roomsJoined = 0;
+      
+      try {
+        const roomsResponse = await api.get('/rooms');
+        const rooms = roomsResponse.data.rooms || [];
+        roomsJoined = rooms.length;
+        
+        // Calculate total points from all rooms
+        // Each room has a members array with points for the current user
+        rooms.forEach(room => {
+          const userMember = room.members?.find(m => 
+            m.userId === user?.id || m.userId === user?._id || 
+            m.user?.id === user?.id || m.user?._id === user?._id
+          );
+          if (userMember) {
+            totalPoints += userMember.points || 0;
+          }
+        });
+      } catch (err) {
+        console.error('Error loading rooms for stats:', err);
+      }
+      
+      // Load user stats - use correct field names from user object
       setUserStats({
-        totalPoints: user?.totalPoints || 0,
-        currentStreak: user?.currentStreak || 0,
+        totalPoints: totalPoints,
+        currentStreak: user?.streak || user?.currentStreak || 0,
         longestStreak: user?.longestStreak || 0,
-        roomsJoined: 0, // This would come from API
-        tasksCompleted: 0 // This would come from API
+        roomsJoined: roomsJoined,
+        tasksCompleted: user?.totalTasksCompleted || 0
       });
 
       // Load notifications (first page)
