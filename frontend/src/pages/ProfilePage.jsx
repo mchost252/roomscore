@@ -352,10 +352,10 @@ const ProfilePage = () => {
   return (
     <Box sx={{ 
       width: '100%', 
-      maxWidth: '100%', 
+      maxWidth: '100vw', 
       overflowX: 'hidden',
       boxSizing: 'border-box',
-      px: { xs: 1, md: 0 }, // Add slight padding on mobile
+      px: { xs: 2, sm: 2, md: 3 },
     }}>
       {/* Header */}
       <Box sx={{ mb: { xs: 2, md: 4 } }}>
@@ -379,9 +379,9 @@ const ProfilePage = () => {
         </Alert>
       )}
 
-      <Grid container spacing={{ xs: 1, md: 3 }} sx={{ width: '100%', maxWidth: '100%', margin: 0, minHeight: 0 }}>
+      <Grid container spacing={{ xs: 2, md: 3 }} sx={{ width: '100%', maxWidth: '100%', ml: 0, mr: 0, mt: 0 }}>
         {/* Left Sidebar - Profile Info */}
-        <Grid item xs={12} md={4} sx={{ maxWidth: '100%' }}>
+        <Grid item xs={12} md={4} sx={{ maxWidth: '100%', pl: { xs: '0 !important' }, pr: { xs: 0 } }}>
           <Paper sx={{ p: { xs: 2, md: 3 }, textAlign: 'center', mb: { xs: 2, md: 3 } }}>
             <Avatar
               src={user?.avatar || undefined}
@@ -485,7 +485,7 @@ const ProfilePage = () => {
         </Grid>
 
         {/* Right Content Area */}
-        <Grid item xs={12} md={8} sx={{ maxWidth: '100%' }}>
+        <Grid item xs={12} md={8} sx={{ maxWidth: '100%', pl: { xs: '0 !important' }, pr: { xs: 0 } }}>
           <Paper sx={{ mb: { xs: 2, md: 3 } }}>
             <Tabs 
               value={tabValue} 
@@ -525,21 +525,21 @@ const ProfilePage = () => {
           {/* Overview Tab */}
           {tabValue === 0 && (
             <Box sx={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
-              <Grid container spacing={{ xs: 1, md: 3 }} sx={{ width: '100%', maxWidth: '100%', margin: 0 }}>
+              <Grid container spacing={{ xs: 1.5, md: 3 }} sx={{ width: 'calc(100% + 12px)', ml: '-6px', mt: 0 }}>
                 {/* Stat Cards */}
-                <Grid item xs={6} sm={6} sx={{ maxWidth: '100%' }}>
-                  <Card>
+                <Grid item xs={6}>
+                  <Card sx={{ height: '100%' }}>
                     <CardContent sx={{ p: { xs: 1.5, md: 2 }, '&:last-child': { pb: { xs: 1.5, md: 2 } } }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <Box>
-                          <Typography variant="body2" color="text.secondary" gutterBottom sx={{ fontSize: { xs: '0.65rem', md: '0.875rem' } }}>
+                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                          <Typography variant="body2" color="text.secondary" gutterBottom noWrap sx={{ fontSize: { xs: '0.65rem', md: '0.875rem' } }}>
                             Total Points
                           </Typography>
-                          <Typography variant="h4" fontWeight="bold" sx={{ fontSize: { xs: '1.25rem', md: '2.125rem' } }}>
+                          <Typography variant="h4" fontWeight="bold" sx={{ fontSize: { xs: '1.2rem', md: '2rem' } }}>
                             {userStats?.totalPoints || 0}
                           </Typography>
                         </Box>
-                        <Avatar sx={{ bgcolor: 'primary.main', width: { xs: 28, md: 40 }, height: { xs: 28, md: 40 } }}>
+                        <Avatar sx={{ bgcolor: 'primary.main', width: { xs: 28, md: 40 }, height: { xs: 28, md: 40 }, flexShrink: 0, ml: 1 }}>
                           <EmojiEvents sx={{ fontSize: { xs: 16, md: 24 } }} />
                         </Avatar>
                       </Box>
@@ -547,22 +547,22 @@ const ProfilePage = () => {
                   </Card>
                 </Grid>
 
-                <Grid item xs={6} sm={6} sx={{ maxWidth: '100%' }}>
-                  <Card>
+                <Grid item xs={6}>
+                  <Card sx={{ height: '100%' }}>
                     <CardContent sx={{ p: { xs: 1.5, md: 2 }, '&:last-child': { pb: { xs: 1.5, md: 2 } } }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <Box>
-                          <Typography variant="body2" color="text.secondary" gutterBottom sx={{ fontSize: { xs: '0.65rem', md: '0.875rem' } }}>
+                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                          <Typography variant="body2" color="text.secondary" gutterBottom noWrap sx={{ fontSize: { xs: '0.65rem', md: '0.875rem' } }}>
                             Current Streak
                           </Typography>
-                          <Typography variant="h4" fontWeight="bold" sx={{ fontSize: { xs: '1.25rem', md: '2.125rem' } }}>
+                          <Typography variant="h4" fontWeight="bold" sx={{ fontSize: { xs: '1.2rem', md: '2rem' } }}>
                             {userStats?.currentStreak || 0}
-                            <Typography component="span" variant="body1" sx={{ ml: 0.5, fontSize: { xs: '0.7rem', md: '1rem' } }}>
+                            <Typography component="span" variant="body1" sx={{ ml: 0.5, fontSize: { xs: '0.6rem', md: '0.875rem' } }}>
                               days
                             </Typography>
                           </Typography>
                         </Box>
-                        <Avatar sx={{ bgcolor: 'error.main', width: { xs: 28, md: 40 }, height: { xs: 28, md: 40 } }}>
+                        <Avatar sx={{ bgcolor: 'error.main', width: { xs: 28, md: 40 }, height: { xs: 28, md: 40 }, flexShrink: 0, ml: 1 }}>
                           <LocalFireDepartment sx={{ fontSize: { xs: 16, md: 24 } }} />
                         </Avatar>
                       </Box>
@@ -570,22 +570,22 @@ const ProfilePage = () => {
                   </Card>
                 </Grid>
 
-                <Grid item xs={6} sm={6} sx={{ maxWidth: '100%' }}>
-                  <Card>
+                <Grid item xs={6}>
+                  <Card sx={{ height: '100%' }}>
                     <CardContent sx={{ p: { xs: 1.5, md: 2 }, '&:last-child': { pb: { xs: 1.5, md: 2 } } }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <Box>
-                          <Typography variant="body2" color="text.secondary" gutterBottom sx={{ fontSize: { xs: '0.65rem', md: '0.875rem' } }}>
+                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                          <Typography variant="body2" color="text.secondary" gutterBottom noWrap sx={{ fontSize: { xs: '0.65rem', md: '0.875rem' } }}>
                             Longest Streak
                           </Typography>
-                          <Typography variant="h4" fontWeight="bold" sx={{ fontSize: { xs: '1.25rem', md: '2.125rem' } }}>
+                          <Typography variant="h4" fontWeight="bold" sx={{ fontSize: { xs: '1.2rem', md: '2rem' } }}>
                             {userStats?.longestStreak || 0}
-                            <Typography component="span" variant="body1" sx={{ ml: 0.5, fontSize: { xs: '0.7rem', md: '1rem' } }}>
+                            <Typography component="span" variant="body1" sx={{ ml: 0.5, fontSize: { xs: '0.6rem', md: '0.875rem' } }}>
                               days
                             </Typography>
                           </Typography>
                         </Box>
-                        <Avatar sx={{ bgcolor: 'success.main', width: { xs: 28, md: 40 }, height: { xs: 28, md: 40 } }}>
+                        <Avatar sx={{ bgcolor: 'success.main', width: { xs: 28, md: 40 }, height: { xs: 28, md: 40 }, flexShrink: 0, ml: 1 }}>
                           <TrendingUp sx={{ fontSize: { xs: 16, md: 24 } }} />
                         </Avatar>
                       </Box>
@@ -593,19 +593,19 @@ const ProfilePage = () => {
                   </Card>
                 </Grid>
 
-                <Grid item xs={6} sm={6} sx={{ maxWidth: '100%' }}>
-                  <Card>
+                <Grid item xs={6}>
+                  <Card sx={{ height: '100%' }}>
                     <CardContent sx={{ p: { xs: 1.5, md: 2 }, '&:last-child': { pb: { xs: 1.5, md: 2 } } }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <Box>
-                          <Typography variant="body2" color="text.secondary" gutterBottom sx={{ fontSize: { xs: '0.65rem', md: '0.875rem' } }}>
+                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                          <Typography variant="body2" color="text.secondary" gutterBottom noWrap sx={{ fontSize: { xs: '0.65rem', md: '0.875rem' } }}>
                             Rooms Joined
                           </Typography>
-                          <Typography variant="h4" fontWeight="bold" sx={{ fontSize: { xs: '1.25rem', md: '2.125rem' } }}>
+                          <Typography variant="h4" fontWeight="bold" sx={{ fontSize: { xs: '1.2rem', md: '2rem' } }}>
                             {userStats?.roomsJoined || 0}
                           </Typography>
                         </Box>
-                        <Avatar sx={{ bgcolor: 'warning.main', width: { xs: 28, md: 40 }, height: { xs: 28, md: 40 } }}>
+                        <Avatar sx={{ bgcolor: 'warning.main', width: { xs: 28, md: 40 }, height: { xs: 28, md: 40 }, flexShrink: 0, ml: 1 }}>
                           <Person sx={{ fontSize: { xs: 16, md: 24 } }} />
                         </Avatar>
                       </Box>
