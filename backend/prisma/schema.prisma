@@ -60,6 +60,7 @@ model Room {
   description      String?
   joinCode         String    @unique
   isPrivate        Boolean   @default(false)
+  requireApproval  Boolean   @default(false) // If true, new members need owner approval
   maxMembers       Int       @default(10)
   // Chat retention for room chat messages (days). Enforced server-side. Max 5.
   chatRetentionDays Int      @default(5)

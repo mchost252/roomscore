@@ -27,6 +27,7 @@ const formatRoomResponse = (room) => ({
   ...room,
   _id: room.id, // For frontend compatibility
   isPublic: !room.isPrivate, // Frontend compatibility - convert isPrivate to isPublic
+  requireApproval: room.requireApproval || false,
   owner: room.owner ? { ...room.owner, _id: room.owner.id } : { _id: room.ownerId },
   members: room.members?.map(m => ({
     ...m,
@@ -223,7 +224,7 @@ router.get('/', protect, async (req, res, next) => {
 // @access  Private
 router.post('/', protect, validate(createRoomSchema), async (req, res, next) => {
   try {
-    const { name, description, isPublic, maxMembers, tasks, duration, chatRetentionDays } = req.body;
+    const { name, description, isPublic, maxMembers, tasks, duration, chatRetentionDays, requireApproval } = req.body;
 
     // Calculate expiry date based on duration (max 1 month)
     const endDate = calculateExpiryDate(duration || '1_month');
@@ -239,6 +240,7 @@ router.post('/', protect, validate(createRoomSchema), async (req, res, next) => 
         ownerId: req.user.id,
         joinCode,
         isPrivate: !isPublic,
+        requireApproval: requireApproval === true,
         maxMembers: maxMembers || 50,
         chatRetentionDays: retentionDays,
         endDate,
@@ -426,8 +428,9 @@ router.post('/join', protect, validate(joinRoomSchema), async (req, res, next) =
       });
     }
 
-    // Check room capacity
-    if (room.members.length >= room.maxMembers) {
+    // Check room capacity (only count active members)
+    const activeMembers = room.members.filter(m => m.status === 'active');
+    if (activeMembers.length >= room.maxMembers) {
       return res.status(400).json({
         success: false,
         message: 'Room has reached maximum capacity'
@@ -435,19 +438,52 @@ router.post('/join', protect, validate(joinRoomSchema), async (req, res, next) =
     }
 
     // Get existing members before adding new one (for notifications)
-    const existingMembers = room.members.map(m => m.userId);
+    const existingMembers = room.members.filter(m => m.status === 'active').map(m => m.userId);
 
-    // Add member
+    // Check if room requires approval
+    const needsApproval = room.requireApproval === true;
+    const memberStatus = needsApproval ? 'pending' : 'active';
+
+    // Add member (pending or active based on requireApproval)
     await prisma.roomMember.create({
       data: {
         roomId: room.id,
         userId: req.user.id,
         role: 'member',
-        points: 0
+        points: 0,
+        status: memberStatus
       }
     });
 
-    // Create system message
+    // If needs approval, notify owner and return early
+    if (needsApproval) {
+      // Notify room owner
+      await NotificationService.createNotification({
+        recipientId: room.ownerId,
+        type: 'join_request',
+        title: `Join Request for ${room.name}`,
+        message: `${req.user.username} wants to join your room`,
+        roomId: room.id,
+        data: { requesterId: req.user.id, requesterName: req.user.username }
+      });
+
+      // Emit socket event to owner
+      const io = req.app.get('io');
+      io.to(`user:${room.ownerId}`).emit('room:joinRequest', {
+        roomId: room.id,
+        roomName: room.name,
+        user: { id: req.user.id, _id: req.user.id, username: req.user.username, avatar: req.user.avatar }
+      });
+
+      logger.info(`User ${req.user.email} requested to join room: ${room.name} (pending approval)`);
+      return res.json({
+        success: true,
+        pending: true,
+        message: 'Your join request has been sent. Waiting for owner approval.'
+      });
+    }
+
+    // Create system message (only if approved)
     await prisma.chatMessage.create({
       data: {
         roomId: room.id,
@@ -840,16 +876,178 @@ router.get('/:id/chat', protect, isRoomMember, async (req, res, next) => {
   }
 });
 
+// @route   PUT /api/rooms/:id/members/:userId/approve
+// @desc    Approve a pending member
+// @access  Private (owner only)
+router.put('/:id/members/:userId/approve', protect, isRoomOwner, async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    
+    const member = await prisma.roomMember.findFirst({
+      where: {
+        roomId: req.room.id,
+        userId: userId,
+        status: 'pending'
+      }
+    });
+
+    if (!member) {
+      return res.status(404).json({
+        success: false,
+        message: 'Pending member not found'
+      });
+    }
+
+    // Update member status to active
+    await prisma.roomMember.update({
+      where: { id: member.id },
+      data: { status: 'active' }
+    });
+
+    // Get user info
+    const approvedUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, username: true, avatar: true }
+    });
+
+    // Create system message
+    await prisma.chatMessage.create({
+      data: {
+        roomId: req.room.id,
+        userId: userId,
+        content: `${approvedUser?.username || 'User'} joined the room`,
+        type: 'system'
+      }
+    });
+
+    // Notify the approved user
+    await NotificationService.createNotification({
+      recipientId: userId,
+      type: 'join_approved',
+      title: `Welcome to ${req.room.name}!`,
+      message: 'Your join request has been approved',
+      roomId: req.room.id
+    });
+
+    // Emit socket events
+    const io = req.app.get('io');
+    io.to(`user:${userId}`).emit('room:joinApproved', {
+      roomId: req.room.id,
+      roomName: req.room.name
+    });
+    io.to(req.room.id).emit('member:joined', {
+      roomId: req.room.id,
+      user: { id: userId, _id: userId, username: approvedUser?.username, avatar: approvedUser?.avatar }
+    });
+
+    logger.info(`User ${userId} approved to join room: ${req.room.name}`);
+    res.json({
+      success: true,
+      message: 'Member approved successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   DELETE /api/rooms/:id/members/:userId/reject
+// @desc    Reject a pending member
+// @access  Private (owner only)
+router.delete('/:id/members/:userId/reject', protect, isRoomOwner, async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    
+    const member = await prisma.roomMember.findFirst({
+      where: {
+        roomId: req.room.id,
+        userId: userId,
+        status: 'pending'
+      }
+    });
+
+    if (!member) {
+      return res.status(404).json({
+        success: false,
+        message: 'Pending member not found'
+      });
+    }
+
+    // Delete the pending member
+    await prisma.roomMember.delete({
+      where: { id: member.id }
+    });
+
+    // Notify the rejected user
+    await NotificationService.createNotification({
+      recipientId: userId,
+      type: 'join_rejected',
+      title: `Join Request Declined`,
+      message: `Your request to join ${req.room.name} was declined`,
+      roomId: req.room.id
+    });
+
+    // Emit socket event
+    const io = req.app.get('io');
+    io.to(`user:${userId}`).emit('room:joinRejected', {
+      roomId: req.room.id,
+      roomName: req.room.name
+    });
+
+    logger.info(`User ${userId} rejected from room: ${req.room.name}`);
+    res.json({
+      success: true,
+      message: 'Member request rejected'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /api/rooms/:id/pending
+// @desc    Get pending member requests
+// @access  Private (owner only)
+router.get('/:id/pending', protect, isRoomOwner, async (req, res, next) => {
+  try {
+    const pendingMembers = await prisma.roomMember.findMany({
+      where: {
+        roomId: req.room.id,
+        status: 'pending'
+      },
+      include: {
+        user: { select: { id: true, username: true, avatar: true, email: true } }
+      }
+    });
+
+    const formatted = pendingMembers.map(m => ({
+      _id: m.id,
+      oderId: m.userId,
+      user: { ...m.user, _id: m.user.id },
+      requestedAt: m.joinedAt
+    }));
+
+    res.json({
+      success: true,
+      count: formatted.length,
+      pendingMembers: formatted
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // @route   PUT /api/rooms/:id/settings
 // @desc    Update room settings
 // @access  Private (owner only)
 router.put('/:id/settings', protect, isRoomOwner, async (req, res, next) => {
   try {
-    const { isPublic, chatRetentionDays } = req.body;
+    const { isPublic, chatRetentionDays, requireApproval } = req.body;
 
     const updateData = {};
     if (typeof isPublic === 'boolean') {
       updateData.isPrivate = !isPublic;
+    }
+    if (typeof requireApproval === 'boolean') {
+      updateData.requireApproval = requireApproval;
     }
 
     if (chatRetentionDays !== undefined) {

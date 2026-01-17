@@ -376,12 +376,14 @@ const ProfilePage = () => {
   return (
     <Box sx={{ 
       width: '100%', 
-      maxWidth: '100%', 
+      maxWidth: '100vw', 
       overflowX: 'hidden',
       boxSizing: 'border-box',
-      px: { xs: 1.5, sm: 2, md: 4, lg: 6 },
+      px: { xs: 1, sm: 2, md: 4, lg: 6 },
       py: { md: 2 },
-      '& *': { boxSizing: 'border-box' }, // Force all children to use border-box
+      '& *': { boxSizing: 'border-box' },
+      // Prevent any child from causing horizontal scroll
+      '& > *': { maxWidth: '100%' },
     }}>
       {/* Header */}
       <Box sx={{ mb: { xs: 2, md: 4 } }}>
@@ -405,12 +407,10 @@ const ProfilePage = () => {
         </Alert>
       )}
 
-      <Grid container spacing={{ xs: 1.5, sm: 2, md: 4 }} sx={{ 
-        width: '100%', 
-        maxWidth: '100%', 
-        ml: 0, 
-        mr: 0, 
-        mt: 0,
+      <Grid container spacing={{ xs: 1, sm: 2, md: 4 }} sx={{ 
+        width: 'calc(100% + 8px)', 
+        maxWidth: 'calc(100% + 8px)', 
+        margin: '0 -4px',
         overflowX: 'hidden',
       }}>
         {/* Left Sidebar - Profile Info */}

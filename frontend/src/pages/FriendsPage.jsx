@@ -28,6 +28,7 @@ import {
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useDeviceType } from '../hooks/useDeviceType';
+import { useSocket } from '../context/SocketContext';
 import { fetchAvatars, getCachedAvatar } from '../hooks/useAvatar';
 import api from '../utils/api';
 import { getErrorMessage } from '../utils/errorMessages';
@@ -36,6 +37,7 @@ const FriendsPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { isMobile } = useDeviceType();
+  const { socket, on, off } = useSocket();
   // Check if navigated from notification with specific tab
   const initialTab = location.state?.tab ?? 0;
   const [tab, setTab] = useState(initialTab);
@@ -95,6 +97,40 @@ const FriendsPage = () => {
       console.log('Could not load sent requests:', err.message);
     }
   };
+
+  // Listen for socket events (friend removed, friend request, etc.)
+  useEffect(() => {
+    if (!on || !off) return;
+
+    const handleFriendRemoved = ({ friendId }) => {
+      // Remove the friend from local state immediately
+      setFriends(prev => prev.filter(f => f._id !== friendId));
+      // Also update cache
+      sessionStorage.removeItem('friends_cache');
+    };
+
+    const handleFriendRequest = ({ request, requester }) => {
+      // Add new friend request to the list
+      if (requester) {
+        setRequests(prev => [...prev, { ...request, requester }]);
+      }
+    };
+
+    const handleFriendAccepted = () => {
+      // Refresh friends list when a request is accepted
+      loadFriends(true);
+    };
+
+    on('friend:removed', handleFriendRemoved);
+    on('friend:request', handleFriendRequest);
+    on('friend:accepted', handleFriendAccepted);
+
+    return () => {
+      off('friend:removed', handleFriendRemoved);
+      off('friend:request', handleFriendRequest);
+      off('friend:accepted', handleFriendAccepted);
+    };
+  }, [on, off]);
 
   const loadFriends = async (silentRefresh = false) => {
     try {
@@ -278,11 +314,16 @@ const FriendsPage = () => {
 
   const handleRemoveFriend = async (friendId) => {
     try {
+      // Optimistic UI update - remove immediately
+      setFriends(prev => prev.filter(f => f._id !== friendId));
       await api.delete(`/friends/${friendId}`);
       setSuccess('Friend removed');
       setTimeout(() => setSuccess(null), 2000);
-      loadFriends(true);
+      // Clear cache
+      sessionStorage.removeItem('friends_cache');
     } catch (err) {
+      // Revert on error by reloading
+      loadFriends(true);
       const { icon, message } = getErrorMessage(err, 'friend');
       setError(`${icon} ${message}`);
       setTimeout(() => setError(null), 3000);
