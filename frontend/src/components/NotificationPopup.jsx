@@ -18,10 +18,12 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import useNotifications from '../hooks/useNotifications';
+import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 
 const NotificationPopup = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { unreadCount, clearUnreadCount } = useNotifications();
   const [anchorEl, setAnchorEl] = useState(null);
   const [notifications, setNotifications] = useState([]);
@@ -30,6 +32,7 @@ const NotificationPopup = () => {
   const open = Boolean(anchorEl);
 
   const handleClick = (event) => {
+    if (!user) return; // Don't open if not logged in
     setAnchorEl(event.currentTarget);
     loadNotifications();
     // Mark all notifications as read when popup is opened
@@ -37,12 +40,16 @@ const NotificationPopup = () => {
   };
 
   const markAllAsRead = async () => {
+    if (!user) return; // Don't make API call if not logged in
     try {
       await api.put('/notifications/read-all');
       // Clear the unread count in the UI immediately
       clearUnreadCount();
     } catch (error) {
-      console.error('Error marking notifications as read:', error);
+      // Only log if not a 401 (user might have logged out)
+      if (error.response?.status !== 401) {
+        console.error('Error marking notifications as read:', error);
+      }
     }
   };
 
@@ -51,12 +58,16 @@ const NotificationPopup = () => {
   };
 
   const loadNotifications = async () => {
+    if (!user) return; // Don't make API call if not logged in
     try {
       setLoading(true);
       const response = await api.get('/notifications?limit=3');
       setNotifications(response.data.notifications || []);
     } catch (error) {
-      console.error('Error loading notifications:', error);
+      // Only log if not a 401 (user might have logged out)
+      if (error.response?.status !== 401) {
+        console.error('Error loading notifications:', error);
+      }
     } finally {
       setLoading(false);
     }
