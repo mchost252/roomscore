@@ -26,7 +26,7 @@ import {
   Search,
   Message as MessageIcon
 } from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useDeviceType } from '../hooks/useDeviceType';
 import { fetchAvatars, getCachedAvatar } from '../hooks/useAvatar';
 import api from '../utils/api';
@@ -34,10 +34,14 @@ import { getErrorMessage } from '../utils/errorMessages';
 
 const FriendsPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { isMobile } = useDeviceType();
-  const [tab, setTab] = useState(0);
+  // Check if navigated from notification with specific tab
+  const initialTab = location.state?.tab ?? 0;
+  const [tab, setTab] = useState(initialTab);
   const [friends, setFriends] = useState([]);
   const [requests, setRequests] = useState([]);
+  const [sentRequests, setSentRequests] = useState([]); // Track sent requests
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -75,9 +79,22 @@ const FriendsPage = () => {
       // If we already have cached data, treat as silent refresh so we don't wipe UI
       loadFriends(friends.length > 0);
       loadRequests(requests.length > 0);
+      loadSentRequests(); // Load sent requests to track pending ones
       sessionStorage.setItem('friends_last_fetch', now.toString());
     }
   }, []);
+
+  // Load sent friend requests (pending)
+  const loadSentRequests = async () => {
+    try {
+      const res = await api.get('/friends/requests/sent');
+      const sentData = res.data.requests || [];
+      setSentRequests(sentData.map(r => r.recipient?._id || r.recipientId));
+    } catch (err) {
+      // Endpoint might not exist yet, ignore error
+      console.log('Could not load sent requests:', err.message);
+    }
+  };
 
   const loadFriends = async (silentRefresh = false) => {
     try {
@@ -208,13 +225,23 @@ const FriendsPage = () => {
   const handleSendRequest = async (userId) => {
     try {
       await api.post('/friends/request', { recipientId: userId });
-      setSuccess('Friend request sent!');
+      // Track this sent request locally
+      setSentRequests(prev => [...prev, userId]);
+      setSuccess('Friend request sent! ✉️');
       setTimeout(() => setSuccess(null), 2000);
-      setSearchResults([]);
-      setSearchQuery('');
+      // Update search results to show "Request Sent" instead of clearing
+      setSearchResults(prev => prev.map(user => 
+        user._id === userId ? { ...user, requestSent: true } : user
+      ));
     } catch (err) {
       const { icon, message } = getErrorMessage(err, 'friend');
-      setError(`${icon} ${message}`);
+      // Show more user-friendly error for already sent requests
+      if (err.response?.status === 400 && err.response?.data?.message?.includes('already')) {
+        setError('📨 Friend request already sent to this user');
+        setSentRequests(prev => [...prev, userId]);
+      } else {
+        setError(`${icon} ${message}`);
+      }
       setTimeout(() => setError(null), 3000);
     }
   };
@@ -236,6 +263,11 @@ const FriendsPage = () => {
   const handleReject = async (requestId) => {
     try {
       await api.put(`/friends/reject/${requestId}`);
+      // Remove from UI immediately for better UX
+      setRequests(prev => prev.filter(r => r._id !== requestId));
+      setSuccess('Friend request declined');
+      setTimeout(() => setSuccess(null), 2000);
+      // Also refresh in background
       loadRequests(true);
     } catch (err) {
       const { icon, message } = getErrorMessage(err, 'friend');
@@ -426,35 +458,50 @@ const FriendsPage = () => {
 
             {searchResults.length > 0 && (
               <List>
-                {searchResults.map((user) => (
-                  <ListItem
-                    key={user._id}
-                    secondaryAction={
-                      <Button
-                        variant="contained"
-                        startIcon={<PersonAdd />}
-                        onClick={() => handleSendRequest(user._id)}
-                      >
-                        Add Friend
-                      </Button>
-                    }
-                  >
-                    <ListItemAvatar>
-                      <Avatar src={avatars[String(user._id)] || user.avatar}>
-                        {user.username?.[0]?.toUpperCase()}
-                      </Avatar>
-                    </ListItemAvatar>
-                    <ListItemText
-                      primary={user.username}
-                      secondary={
-                        <>
-                          <Chip label={`${user.totalPoints || 0} pts`} size="small" sx={{ mr: 1 }} />
-                          <Chip label={`${user.currentStreak || 0} day streak`} size="small" />
-                        </>
+                {searchResults.map((user) => {
+                  const isRequestSent = user.requestSent || sentRequests.includes(user._id);
+                  return (
+                    <ListItem
+                      key={user._id}
+                      secondaryAction={
+                        isRequestSent ? (
+                          <Button
+                            variant="outlined"
+                            disabled
+                            color="success"
+                            size="small"
+                          >
+                            ✓ Request Sent
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="contained"
+                            startIcon={<PersonAdd />}
+                            onClick={() => handleSendRequest(user._id)}
+                            size="small"
+                          >
+                            Add Friend
+                          </Button>
+                        )
                       }
-                    />
-                  </ListItem>
-                ))}
+                    >
+                      <ListItemAvatar>
+                        <Avatar src={avatars[String(user._id)] || user.avatar}>
+                          {user.username?.[0]?.toUpperCase()}
+                        </Avatar>
+                      </ListItemAvatar>
+                      <ListItemText
+                        primary={user.username}
+                        secondary={
+                          <>
+                            <Chip label={`${user.totalPoints || 0} pts`} size="small" sx={{ mr: 1 }} />
+                            <Chip label={`${user.currentStreak || 0} day streak`} size="small" />
+                          </>
+                        }
+                      />
+                    </ListItem>
+                  );
+                })}
               </List>
             )}
           </>

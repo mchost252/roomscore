@@ -82,14 +82,25 @@ const NotificationPopup = () => {
 
       handleClose();
 
-      // Navigate to related page
-      if (notification.relatedRoom) {
+      // Navigate to related page based on notification type
+      if (notification.type === 'friend_request' || notification.type === 'friend_request_accepted') {
+        // Navigate to friends page, requests tab for friend requests
+        navigate('/friends', { state: { tab: notification.type === 'friend_request' ? 1 : 0 } });
+      } else if (notification.relatedRoom) {
         const roomId = notification.relatedRoom._id || notification.relatedRoom;
         navigate(`/rooms/${roomId}`);
       } else if (notification.type === 'direct_message') {
         const senderId = notification.data?.senderId;
         if (senderId) navigate(`/messages/${senderId}`);
         else navigate('/messages');
+      } else if (notification.type === 'nudge') {
+        // Navigate to the room where nudge was sent
+        const roomId = notification.data?.roomId || notification.relatedRoom?._id;
+        if (roomId) navigate(`/rooms/${roomId}`);
+        else navigate('/dashboard');
+      } else {
+        // Default: go to dashboard
+        navigate('/dashboard');
       }
     } catch (error) {
       console.error('Error marking notification as read:', error);

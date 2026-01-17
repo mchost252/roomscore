@@ -406,19 +406,18 @@ const ProfilePage = () => {
       )}
 
       <Grid container spacing={{ xs: 1.5, sm: 2, md: 4 }} sx={{ 
-        width: { xs: '100%', md: 'calc(100% + 32px)' }, 
+        width: '100%', 
         maxWidth: '100%', 
-        ml: { xs: 0, md: '-16px' }, 
+        ml: 0, 
         mr: 0, 
         mt: 0,
-        overflow: 'hidden',
+        overflowX: 'hidden',
       }}>
         {/* Left Sidebar - Profile Info */}
         <Grid item xs={12} md={4} lg={3} sx={{ 
           maxWidth: '100%', 
           width: '100%',
-          pl: { xs: '0 !important', md: '16px !important' }, 
-          pr: { xs: '0 !important', md: 2 } 
+          boxSizing: 'border-box',
         }}>
           <Paper sx={{ p: { xs: 2, md: 3 }, textAlign: 'center', mb: { xs: 2, md: 3 }, boxShadow: { md: 2 } }}>
             <Avatar

@@ -327,6 +327,35 @@ router.get('/requests', protect, async (req, res, next) => {
   }
 });
 
+// @route   GET /api/friends/requests/sent
+// @desc    Get pending friend requests (sent by user)
+// @access  Private
+router.get('/requests/sent', protect, async (req, res, next) => {
+  try {
+    const requests = await prisma.friend.findMany({
+      where: {
+        fromUserId: req.user.id,
+        status: 'pending'
+      },
+      include: {
+        toUser: { select: { id: true, username: true, email: true } }
+      }
+    });
+
+    // Format for frontend compatibility
+    const formattedRequests = requests.map(r => ({
+      ...r,
+      _id: r.id,
+      recipientId: r.toUserId,
+      recipient: r.toUser ? { ...r.toUser, _id: r.toUser.id } : null
+    }));
+
+    res.json({ success: true, requests: formattedRequests });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // @route   DELETE /api/friends/:friendId
 // @desc    Remove friend
 // @access  Private
