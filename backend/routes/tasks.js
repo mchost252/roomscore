@@ -82,7 +82,7 @@ router.get('/:roomId/tasks', protect, isRoomMember, async (req, res, next) => {
 // @access  Private (must be member, check permissions)
 router.post('/:roomId/tasks', protect, isRoomMember, validate(createTaskSchema), async (req, res, next) => {
   try {
-    const { title, description, points, taskType } = req.body;
+    const { title, description, points, taskType, frequency, daysOfWeek } = req.body;
 
     // Check permissions (only owner can create tasks for now)
     const isOwner = req.room.ownerId === req.user.id;
@@ -94,12 +94,22 @@ router.post('/:roomId/tasks', protect, isRoomMember, validate(createTaskSchema),
       });
     }
 
+    // Determine taskType - support both taskType and frequency fields
+    const finalTaskType = taskType || frequency || 'daily';
+
+    // Validate daysOfWeek for custom frequency
+    let finalDaysOfWeek = [];
+    if (finalTaskType === 'custom' && Array.isArray(daysOfWeek)) {
+      finalDaysOfWeek = daysOfWeek.filter(d => d >= 0 && d <= 6);
+    }
+
     const task = await prisma.roomTask.create({
       data: {
         roomId: req.params.roomId,
         title,
         description: description || null,
-        taskType: taskType || 'daily',
+        taskType: finalTaskType,
+        daysOfWeek: finalDaysOfWeek,
         points: points || 10,
         isActive: true
       }

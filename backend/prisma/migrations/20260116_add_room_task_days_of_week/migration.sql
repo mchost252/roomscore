@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "RoomTask" ADD COLUMN "daysOfWeek" INTEGER[] DEFAULT ARRAY[]::INTEGER[];

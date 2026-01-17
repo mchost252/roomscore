@@ -114,6 +114,7 @@ model RoomTask {
   title       String
   description String?
   taskType    String   @default("daily") // daily, weekly, custom
+  daysOfWeek  Int[]    @default([]) // For custom frequency: 0=Sun, 1=Mon, ..., 6=Sat
   points      Int      @default(10)
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())

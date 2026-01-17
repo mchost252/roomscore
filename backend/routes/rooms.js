@@ -119,6 +119,7 @@ router.get('/', protect, async (req, res, next) => {
             title: true,
             description: true,
             taskType: true,
+            daysOfWeek: true,
             points: true,
             isActive: true,
             createdAt: true
@@ -202,12 +203,20 @@ router.post('/', protect, validate(createRoomSchema), async (req, res, next) => 
           }
         },
         tasks: tasks && tasks.length > 0 ? {
-          create: tasks.map(task => ({
-            title: task.title,
-            description: task.description || null,
-            taskType: task.taskType || 'daily',
-            points: Math.min(10, Math.max(1, task.points || 5)) // Clamp points to 1-10
-          }))
+          create: tasks.map(task => {
+            const taskType = task.taskType || task.frequency || 'daily';
+            let daysOfWeek = [];
+            if (taskType === 'custom' && Array.isArray(task.daysOfWeek)) {
+              daysOfWeek = task.daysOfWeek.filter(d => d >= 0 && d <= 6);
+            }
+            return {
+              title: task.title,
+              description: task.description || null,
+              taskType: taskType,
+              daysOfWeek: daysOfWeek,
+              points: Math.min(10, Math.max(1, task.points || 5)) // Clamp points to 1-10
+            };
+          })
         } : undefined
       },
       include: {

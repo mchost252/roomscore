@@ -57,6 +57,21 @@ export default function useNotifications() {
     fetchUnread(true);
   }, [user]); // Remove fetchUnread from deps to prevent re-fetching loop
 
+  // Refetch when page becomes visible (user returns to tab/app)
+  useEffect(() => {
+    if (!user) return;
+    
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Force refetch when user returns to the app
+        fetchUnread(true);
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [user, fetchUnread]);
+
   useEffect(() => {
     if (!user) return;
 
@@ -86,6 +101,8 @@ export default function useNotifications() {
   // Function to clear count (called after viewing notifications)
   const clearUnreadCount = useCallback(() => {
     setUnreadCount(0);
+    // Update lastFetch to prevent immediate refetch from overriding
+    lastFetchRef.current = Date.now();
   }, []);
 
   return { unreadCount, loading, error, refreshUnread: fetchUnread, clearUnreadCount };

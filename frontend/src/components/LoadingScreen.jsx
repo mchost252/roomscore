@@ -1,14 +1,25 @@
-import React, { memo } from 'react';
+import React, { memo, useState, useEffect } from 'react';
 import { Box, Typography, useTheme } from '@mui/material';
 
 /**
  * Constellation K Loading Screen
  * Creates a "K" shape using animated stars connected by constellation lines
  * Stars pulse and lines draw in sequence for a magical effect
+ * Animation loops continuously while loading
  */
 const LoadingScreen = memo(() => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
+  // Key to force animation restart - increments every cycle
+  const [animationKey, setAnimationKey] = useState(0);
+  
+  // Restart animation every 3 seconds to create continuous loop
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setAnimationKey(prev => prev + 1);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
   
   // Define star positions to form a "K" shape
   // K consists of: vertical line (left) + two diagonal lines (right)
@@ -61,6 +72,7 @@ const LoadingScreen = memo(() => {
     >
       {/* Constellation Container */}
       <Box
+        key={animationKey}
         sx={{
           position: 'relative',
           width: 60,
