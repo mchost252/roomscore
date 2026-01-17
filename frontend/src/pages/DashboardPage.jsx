@@ -595,12 +595,7 @@ const DashboardPage = () => {
         </Alert>
       )}
 
-      {/* Stale Data Indicator */}
-      {isStaleData && (
-        <Alert severity="info" sx={{ mb: 3 }}>
-          Showing cached data. Refreshing in background...
-        </Alert>
-      )}
+      {/* Stale data is handled silently - no user-facing indicator needed */}
 
       {/* Stats Grid */}
       <Grid container spacing={{ xs: 1.5, md: 3 }} sx={{ mb: { xs: 2, md: 4 } }}>
