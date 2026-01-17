@@ -532,8 +532,12 @@ const MessagesPage = () => {
     }
 
     const messageText = newMessage.trim();
-    setNewMessage(''); // Clear input immediately for better UX
-    const replyToId = replyTo?._id || null;
+    const currentReplyTo = replyTo; // Capture current reply state
+    const replyToId = currentReplyTo?._id || null;
+    
+    // Clear input and reply state immediately for better UX
+    setNewMessage('');
+    setReplyTo(null);
     
     // Create optimistic message for instant UI feedback
     const tempId = `temp_${Date.now()}`;
@@ -543,7 +547,7 @@ const MessagesPage = () => {
       createdAt: new Date().toISOString(),
       sender: { _id: getUserId(user), id: getUserId(user), username: user.username },
       recipient: { _id: reliableFriendId, id: reliableFriendId },
-      replyTo: replyToId ? { _id: replyToId } : null
+      replyTo: currentReplyTo ? { _id: replyToId, message: currentReplyTo.message } : null
     };
     
     // Show message immediately
@@ -557,12 +561,12 @@ const MessagesPage = () => {
       });
       // Replace optimistic message with real one
       setMessages(prev => prev.map(m => m._id === tempId ? res.data.message : m));
-      setReplyTo(null);
     } catch (err) {
       console.error('Error sending message:', err);
       // Remove optimistic message on error
       setMessages(prev => prev.filter(m => m._id !== tempId));
       setNewMessage(messageText); // Restore message on error
+      setReplyTo(currentReplyTo); // Restore reply state on error
     }
   };
 

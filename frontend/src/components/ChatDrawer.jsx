@@ -70,12 +70,21 @@ const ChatDrawer = ({
   
   const quickEmojis = ['👍', '❤️', '😂', '🔥', '🎉'];
 
-  // Auto-scroll to bottom when new messages arrive
+  // Auto-scroll to bottom when new messages arrive or chat opens
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
+
+  // Scroll to bottom when chat opens
+  useEffect(() => {
+    if (open && messagesEndRef.current) {
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      }, 100);
+    }
+  }, [open]);
 
   const handleSend = () => {
     if (message.trim()) {
@@ -467,6 +476,35 @@ const ChatDrawer = ({
 
         <Divider />
 
+        {/* Reply banner - positioned above input */}
+        {replyTo && (
+          <Paper 
+            elevation={0} 
+            sx={{ 
+              px: 2, 
+              py: 1, 
+              borderBottom: 1, 
+              borderColor: 'divider', 
+              bgcolor: theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.05)', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 1 
+            }}
+          >
+            <Box sx={{ flex: 1, borderLeft: '3px solid', borderColor: 'primary.main', pl: 1.5 }}>
+              <Typography variant="caption" color="primary" fontWeight={600}>
+                Replying to {replyTo?.sender?.username || 'message'}
+              </Typography>
+              <Typography variant="body2" noWrap sx={{ opacity: 0.7, fontSize: '0.8rem' }}>
+                {replyTo?.message}
+              </Typography>
+            </Box>
+            <IconButton size="small" onClick={() => setReplyTo(null)}>
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Paper>
+        )}
+
         {/* Input Area */}
         <Paper
           elevation={3}
@@ -594,18 +632,6 @@ const ChatDrawer = ({
         </Paper>
 
         {/* Emoji Picker Popover */}
-        {/* Reply banner */}
-        {replyTo && (
-          <Paper elevation={0} sx={{ px: 2, py: 1, borderTop: 1, borderColor: 'divider', bgcolor: 'action.hover', display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="caption" sx={{ flex: 1 }}>
-              Replying to {replyTo?.sender?.username || 'message'}: {replyTo?.message?.slice(0, 60)}{replyTo?.message?.length > 60 ? '...' : ''}
-            </Typography>
-            <IconButton size="small" onClick={() => setReplyTo(null)}>
-              <CloseIcon fontSize="small" />
-            </IconButton>
-          </Paper>
-        )}
-
         <Popover
           open={Boolean(emojiAnchor)}
           anchorEl={emojiAnchor}

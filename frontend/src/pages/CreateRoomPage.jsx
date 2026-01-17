@@ -47,7 +47,8 @@ const CreateRoomPage = () => {
     isPublic: false,
     maxMembers: 20,
     duration: '1_month',
-    requireApproval: false
+    requireApproval: false,
+    chatRetentionDays: 3 // Default 3 days, range 1-5
   });
 
   // Tasks
@@ -55,7 +56,7 @@ const CreateRoomPage = () => {
   const [newTask, setNewTask] = useState({
     title: '',
     description: '',
-    points: 10,
+    points: 5, // Default 5 points
     frequency: 'daily'
   });
 
@@ -71,11 +72,17 @@ const CreateRoomPage = () => {
       return;
     }
 
+    // Validate task points (1-10 range)
+    if (newTask.points < 1 || newTask.points > 10) {
+      setError({ isTimeout: false, text: '⭐ Task points must be between 1 and 10' });
+      return;
+    }
+
     setTasks(prev => [...prev, { ...newTask, id: Date.now() }]);
     setNewTask({
       title: '',
       description: '',
-      points: 10,
+      points: 5,
       frequency: 'daily'
     });
     setError(null);
@@ -94,6 +101,10 @@ const CreateRoomPage = () => {
       }
       if (roomData.maxMembers < 2 || roomData.maxMembers > 100) {
         setError({ isTimeout: false, text: '👥 Max members must be between 2 and 100' });
+        return;
+      }
+      if (roomData.chatRetentionDays < 1 || roomData.chatRetentionDays > 5) {
+        setError({ isTimeout: false, text: '💬 Chat retention must be between 1 and 5 days' });
         return;
       }
     }
@@ -127,7 +138,8 @@ const CreateRoomPage = () => {
         isPublic: roomData.isPublic,
         maxMembers: roomData.maxMembers,
         duration: roomData.duration,
-        requireApproval: roomData.requireApproval
+        requireApproval: roomData.requireApproval,
+        chatRetentionDays: roomData.chatRetentionDays
       };
 
       const roomResponse = await api.post('/rooms', roomPayload);
@@ -258,6 +270,35 @@ const CreateRoomPage = () => {
             <Divider sx={{ my: 2 }} />
 
             <Typography variant="subtitle2" gutterBottom fontWeight="bold">
+              Chat Settings
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              How long should chat messages be kept?
+            </Typography>
+
+            <TextField
+              fullWidth
+              type="number"
+              label="Chat Retention Days"
+              value={roomData.chatRetentionDays}
+              onChange={(e) => {
+                const val = parseInt(e.target.value);
+                if (val >= 1 && val <= 5) {
+                  handleRoomDataChange('chatRetentionDays', val);
+                } else if (e.target.value === '' || val < 1) {
+                  handleRoomDataChange('chatRetentionDays', 1);
+                } else if (val > 5) {
+                  handleRoomDataChange('chatRetentionDays', 5);
+                }
+              }}
+              inputProps={{ min: 1, max: 5 }}
+              helperText="Messages older than this will be automatically deleted (1-5 days)"
+              sx={{ mb: 3 }}
+            />
+
+            <Divider sx={{ my: 2 }} />
+
+            <Typography variant="subtitle2" gutterBottom fontWeight="bold">
               Member Approval
             </Typography>
 
@@ -324,10 +365,20 @@ const CreateRoomPage = () => {
                 <TextField
                   size="small"
                   type="number"
-                  label="Points"
+                  label="Points (1-10)"
                   value={newTask.points}
-                  onChange={(e) => setNewTask(prev => ({ ...prev, points: parseInt(e.target.value) || 10 }))}
-                  inputProps={{ min: 1, max: 100 }}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value);
+                    if (val >= 1 && val <= 10) {
+                      setNewTask(prev => ({ ...prev, points: val }));
+                    } else if (e.target.value === '' || val < 1) {
+                      setNewTask(prev => ({ ...prev, points: 1 }));
+                    } else if (val > 10) {
+                      setNewTask(prev => ({ ...prev, points: 10 }));
+                    }
+                  }}
+                  inputProps={{ min: 1, max: 10 }}
+                  helperText="1-10"
                   sx={{ flex: 1 }}
                 />
                 <TextField

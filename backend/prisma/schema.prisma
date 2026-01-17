@@ -232,13 +232,15 @@ model Notification {
 
 // ==================== DIRECT MESSAGE ====================
 model DirectMessage {
-  id         String   @id @default(cuid())
-  fromUserId String
-  toUserId   String
-  content    String
-  read       Boolean  @default(false)
-  deletedFor String[] @default([]) // Array of userIds who deleted this message
-  createdAt  DateTime @default(now())
+  id           String   @id @default(cuid())
+  fromUserId   String
+  toUserId     String
+  content      String
+  read         Boolean  @default(false)
+  deletedFor   String[] @default([]) // Array of userIds who deleted this message
+  replyToId    String?  // ID of message being replied to
+  replyToText  String?  // Cached text of replied message (for display even if original deleted)
+  createdAt    DateTime @default(now())
 
   fromUser   User     @relation("DirectMessageFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
   toUser     User     @relation("DirectMessageTo", fields: [toUserId], references: [id], onDelete: Cascade)

@@ -182,7 +182,8 @@ router.get('/:friendId', protect, async (req, res, next) => {
       message: m.content,
       sender: { ...m.fromUser, _id: m.fromUser.id },
       recipient: { ...m.toUser, _id: m.toUser.id },
-      isRead: m.read
+      isRead: m.read,
+      replyTo: m.replyToText ? { _id: m.replyToId, message: m.replyToText } : null
     }));
 
     res.json({ success: true, messages: formattedMessages });
@@ -283,7 +284,7 @@ router.delete('/:friendId', protect, async (req, res, next) => {
 // @access  Private
 router.post('/:friendId', protect, async (req, res, next) => {
   try {
-    const { message } = req.body;
+    const { message, replyTo } = req.body;
     const userId = req.user.id;
     const friendId = req.params.friendId;
 
@@ -306,12 +307,24 @@ router.post('/:friendId', protect, async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Not friends with this user' });
     }
 
+    // Get reply message text if replying
+    let replyToText = null;
+    if (replyTo) {
+      const replyMsg = await prisma.directMessage.findUnique({
+        where: { id: replyTo },
+        select: { content: true }
+      });
+      replyToText = replyMsg?.content?.substring(0, 100) || null; // Limit to 100 chars
+    }
+
     const dm = await prisma.directMessage.create({
       data: {
         fromUserId: userId,
         toUserId: friendId,
         content: message.trim(),
-        read: false
+        read: false,
+        replyToId: replyTo || null,
+        replyToText: replyToText
       },
       include: {
         fromUser: { select: { id: true, username: true } },
@@ -325,7 +338,8 @@ router.post('/:friendId', protect, async (req, res, next) => {
       _id: dm.id,
       message: dm.content,
       sender: { ...dm.fromUser, _id: dm.fromUser.id },
-      recipient: { ...dm.toUser, _id: dm.toUser.id }
+      recipient: { ...dm.toUser, _id: dm.toUser.id },
+      replyTo: replyToText ? { _id: replyTo, message: replyToText } : null
     };
 
     // Emit socket event
