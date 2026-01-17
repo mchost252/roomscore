@@ -346,15 +346,15 @@ router.post('/:roomId/tasks/:taskId/complete', protect, isRoomMember, async (req
     
     // Helper to get today's date in user's timezone
     const getUserLocalDate = (tz) => {
-      const now = new Date();
+      const d = new Date();
       const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
-      return formatter.format(now); // Returns YYYY-MM-DD
+      return formatter.format(d); // Returns YYYY-MM-DD
     };
     
-    const todayStr = getUserLocalDate(userTimezone);
-    const todayStart = new Date(todayStr + 'T00:00:00Z');
-    const yesterdayStart = new Date(todayStart);
-    yesterdayStart.setUTCDate(yesterdayStart.getUTCDate() - 1);
+    const userTodayStr = getUserLocalDate(userTimezone);
+    const userTodayStart = new Date(userTodayStr + 'T00:00:00Z');
+    const userYesterdayStart = new Date(userTodayStart);
+    userYesterdayStart.setUTCDate(userYesterdayStart.getUTCDate() - 1);
     const now = new Date();
 
     let newStreak = 1;
@@ -372,12 +372,12 @@ router.post('/:roomId/tasks/:taskId/complete', protect, isRoomMember, async (req
         ));
         
         // Check if last completion was today (already completed today, no streak change)
-        if (lastCompletionDay.getTime() === todayStart.getTime()) {
+        if (lastCompletionDay.getTime() === userTodayStart.getTime()) {
           newStreak = existingProgress.currentStreak;
           newLongestStreak = existingProgress.longestStreak;
         }
         // Check if last completion was yesterday (continue streak)
-        else if (lastCompletionDay.getTime() === yesterdayStart.getTime()) {
+        else if (lastCompletionDay.getTime() === userYesterdayStart.getTime()) {
           newStreak = existingProgress.currentStreak + 1;
           newLongestStreak = Math.max(existingProgress.longestStreak, newStreak);
         }
@@ -429,10 +429,10 @@ router.post('/:roomId/tasks/:taskId/complete', protect, isRoomMember, async (req
         lastStreakDay.getUTCDate()
       ));
       
-      if (lastStreakDayStart.getTime() === todayStart.getTime()) {
+      if (lastStreakDayStart.getTime() === userTodayStart.getTime()) {
         // Already completed today, keep current streak
         globalStreak = user.streak;
-      } else if (lastStreakDayStart.getTime() === yesterdayStart.getTime()) {
+      } else if (lastStreakDayStart.getTime() === userYesterdayStart.getTime()) {
         // Continue streak
         globalStreak = user.streak + 1;
         globalLongestStreak = Math.max(globalLongestStreak, globalStreak);
@@ -469,10 +469,10 @@ router.post('/:roomId/tasks/:taskId/complete', protect, isRoomMember, async (req
           lastActivityDay.getUTCDate()
         ));
 
-        if (lastActivityDayStart.getTime() === todayStart.getTime()) {
+        if (lastActivityDayStart.getTime() === userTodayStart.getTime()) {
           // Already had activity today, keep current streak
           roomStreak = room.streak;
-        } else if (lastActivityDayStart.getTime() === yesterdayStart.getTime()) {
+        } else if (lastActivityDayStart.getTime() === userYesterdayStart.getTime()) {
           // Continue room streak
           roomStreak = room.streak + 1;
           roomLongestStreak = Math.max(roomLongestStreak, roomStreak);
