@@ -381,18 +381,30 @@ const RoomListPage = () => {
 
           {!isMember && room.isPublic && (
             <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
-              <Button 
-                variant="contained" 
-                size="small" 
-                fullWidth
-                startIcon={<PersonAdd />}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleCardClick(e);
-                }}
-              >
-                Join Room
-              </Button>
+              {memberCount >= (room.maxMembers || 50) ? (
+                <Button 
+                  variant="outlined" 
+                  size="small" 
+                  fullWidth
+                  disabled
+                  color="error"
+                >
+                  Room Full ({memberCount}/{room.maxMembers || 50})
+                </Button>
+              ) : (
+                <Button 
+                  variant="contained" 
+                  size="small" 
+                  fullWidth
+                  startIcon={<PersonAdd />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleCardClick(e);
+                  }}
+                >
+                  {room.requireApproval ? 'Request to Join' : 'Join Room'}
+                </Button>
+              )}
             </Box>
           )}
         </CardContent>

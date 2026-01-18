@@ -1353,19 +1353,37 @@ const RoomDetailPage = () => {
                 )}
               </Box>
 
-              {!room.tasks || room.tasks.length === 0 ? (
+              {(() => {
+                // Filter tasks to show only those scheduled for today
+                const today = new Date().getDay(); // 0 = Sunday, 1 = Monday, etc.
+                const todaysTasks = (room.tasks || []).filter(t => {
+                  if (!t.isActive) return false;
+                  // Daily tasks always show
+                  if (t.taskType === 'daily' || !t.taskType) return true;
+                  // Weekly tasks show every day (or could be specific day)
+                  if (t.taskType === 'weekly') return true;
+                  // Custom tasks only show on selected days
+                  if (t.taskType === 'custom' && Array.isArray(t.daysOfWeek)) {
+                    return t.daysOfWeek.includes(today);
+                  }
+                  return true;
+                });
+                
+                return todaysTasks.length === 0 ? (
                 <Box sx={{ textAlign: 'center', py: 6 }}>
                   <Assignment sx={{ fontSize: 60, color: 'text.secondary', mb: 2 }} />
                   <Typography variant="h6" color="text.secondary" gutterBottom>
-                    No tasks yet
+                    {room.tasks?.length > 0 ? 'No tasks for today' : 'No tasks yet'}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    {isOwner ? 'Add tasks to get started' : 'The owner hasn\'t added tasks yet'}
+                    {room.tasks?.length > 0 
+                      ? 'Check back on other days for more tasks' 
+                      : (isOwner ? 'Add tasks to get started' : 'The owner hasn\'t added tasks yet')}
                   </Typography>
                 </Box>
               ) : (
                 <List>
-                  {room.tasks.filter(t => t.isActive).map((task, index) => {
+                  {todaysTasks.map((task, index) => {
                     const completed = isTaskCompletedToday(task);
                     return (
                       <React.Fragment key={task._id}>
@@ -1487,7 +1505,8 @@ const RoomDetailPage = () => {
                     );
                   })}
                 </List>
-              )}
+              );
+              })()}
             </Paper>
           )}
 

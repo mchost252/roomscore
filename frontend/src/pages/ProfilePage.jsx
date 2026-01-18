@@ -407,11 +407,15 @@ const ProfilePage = () => {
         </Alert>
       )}
 
-      <Grid container spacing={{ xs: 1, sm: 2, md: 4 }} sx={{ 
-        width: 'calc(100% + 8px)', 
-        maxWidth: 'calc(100% + 8px)', 
-        margin: '0 -4px',
+      <Grid container spacing={{ xs: 1.5, sm: 2, md: 4 }} sx={{ 
+        width: '100%', 
+        maxWidth: '100%', 
+        margin: 0,
         overflowX: 'hidden',
+        '& > .MuiGrid-item': {
+          paddingLeft: { xs: '12px', sm: '16px', md: '32px' },
+          paddingTop: { xs: '12px', sm: '16px', md: '32px' },
+        }
       }}>
         {/* Left Sidebar - Profile Info */}
         <Grid item xs={12} md={4} lg={3} sx={{ 
