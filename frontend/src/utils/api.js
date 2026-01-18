@@ -24,12 +24,101 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 30000, // 30 second timeout for slow connections
+  timeout: 15000, // 15 second timeout (reduced for faster feedback on mobile)
 });
+
+// ==================== REQUEST DEDUPLICATION ====================
+// Prevents duplicate in-flight requests (common on mobile with double-taps)
+const pendingRequests = new Map();
+
+const generateRequestKey = (config) => {
+  const { method, url, params, data } = config;
+  return `${method}:${url}:${JSON.stringify(params || {})}:${JSON.stringify(data || {})}`;
+};
+
+// Dedupe GET requests only (safe to dedupe)
+const shouldDedupe = (config) => {
+  return config.method?.toLowerCase() === 'get' && !config._skipDedupe;
+};
+
+// ==================== OPTIMISTIC UPDATE HELPERS ====================
+// Store for rollback data
+const optimisticRollbacks = new Map();
+
+/**
+ * Execute an optimistic update with automatic rollback on failure
+ * @param {string} key - Unique key for this operation
+ * @param {Function} optimisticFn - Function to apply optimistic update (receives current state)
+ * @param {Function} apiFn - Async function that makes the API call
+ * @param {Function} rollbackFn - Function to rollback on failure (receives saved state)
+ * @param {Function} successFn - Optional function to call on success with API response
+ */
+export const optimisticUpdate = async (key, optimisticFn, apiFn, rollbackFn, successFn) => {
+  // Save current state for potential rollback
+  const savedState = optimisticFn();
+  optimisticRollbacks.set(key, savedState);
+  
+  try {
+    const result = await apiFn();
+    optimisticRollbacks.delete(key);
+    if (successFn) successFn(result);
+    return { success: true, data: result };
+  } catch (error) {
+    // Rollback on failure
+    const rollbackState = optimisticRollbacks.get(key);
+    if (rollbackState !== undefined && rollbackFn) {
+      rollbackFn(rollbackState);
+    }
+    optimisticRollbacks.delete(key);
+    return { success: false, error };
+  }
+};
+
+// ==================== PREFETCH HELPER ====================
+const prefetchCache = new Map();
+const PREFETCH_COOLDOWN = 30000; // 30 seconds between prefetches of same resource
+
+/**
+ * Prefetch data for faster subsequent navigation
+ * @param {string} url - API endpoint to prefetch
+ * @param {object} options - Optional config
+ */
+export const prefetch = (url, options = {}) => {
+  const cacheKey = cacheManager.generateKey(url, options.params);
+  const now = Date.now();
+  
+  // Check cooldown to prevent excessive prefetching
+  const lastPrefetch = prefetchCache.get(cacheKey);
+  if (lastPrefetch && (now - lastPrefetch) < PREFETCH_COOLDOWN) {
+    return; // Skip - recently prefetched
+  }
+  
+  // Check if already cached and fresh
+  const cached = cacheManager.getWithStale(cacheKey);
+  if (cached.data && !cached.isStale) {
+    return; // Already have fresh data
+  }
+  
+  // Prefetch in background (low priority)
+  prefetchCache.set(cacheKey, now);
+  
+  // Use requestIdleCallback if available, otherwise setTimeout
+  const scheduleTask = window.requestIdleCallback || ((cb) => setTimeout(cb, 100));
+  
+  scheduleTask(() => {
+    api.get(url, { 
+      ...options, 
+      _skipDedupe: true,
+      headers: { ...options.headers, 'x-prefetch': '1' }
+    }).catch(() => {
+      // Silently fail prefetch - it's not critical
+    });
+  });
+};
 
 // Retry configuration for failed requests (handles Neon cold starts and network issues)
 const MAX_RETRIES = 2;
-const RETRY_DELAY = 1500; // 1.5 second base delay
+const RETRY_DELAY = 1000; // 1 second base delay (reduced for faster mobile feedback)
 
 // Helper to check if request should be retried
 const shouldRetry = (error) => {
@@ -48,11 +137,55 @@ const shouldRetry = (error) => {
 // Sleep helper
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// ==================== REQUEST DEDUPLICATION INTERCEPTOR ====================
+api.interceptors.request.use(
+  (config) => {
+    if (shouldDedupe(config)) {
+      const requestKey = generateRequestKey(config);
+      
+      // Check if this exact request is already in flight
+      if (pendingRequests.has(requestKey)) {
+        // Return the existing promise instead of making a new request
+        const controller = new AbortController();
+        config.signal = controller.signal;
+        
+        // Wait for the existing request and return its result
+        return pendingRequests.get(requestKey).then((response) => {
+          controller.abort(); // Cancel this duplicate request
+          return Promise.reject({ __DEDUPE__: true, response });
+        }).catch((error) => {
+          if (error.__DEDUPE__) throw error;
+          controller.abort();
+          return Promise.reject(error);
+        });
+      }
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
 // Add retry interceptor (runs before other interceptors)
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Clean up pending request tracking
+    const requestKey = generateRequestKey(response.config);
+    pendingRequests.delete(requestKey);
+    return response;
+  },
   async (error) => {
+    // Handle deduplication - return the cached response
+    if (error.__DEDUPE__) {
+      return error.response;
+    }
+    
     const config = error.config;
+    
+    // Clean up pending request on error
+    if (config) {
+      const requestKey = generateRequestKey(config);
+      pendingRequests.delete(requestKey);
+    }
     
     // Don't retry if we've already retried max times, shouldn't retry, or no config
     if (!config || config._retryCount >= MAX_RETRIES || !shouldRetry(error)) {
@@ -71,8 +204,6 @@ api.interceptors.response.use(
       delay = Math.max(delay, 5000);
     }
     
-    console.log(`🔄 Retrying request (${config._retryCount}/${MAX_RETRIES}): ${config.method?.toUpperCase()} ${config.url} after ${delay}ms`);
-    
     // Wait before retrying
     await sleep(delay);
     
@@ -84,13 +215,15 @@ api.interceptors.response.use(
 // Cache configuration for different endpoints - use exact match or regex
 // Mobile-optimized with longer TTLs for persistent cache
 const CACHE_CONFIG = {
-  '/auth/profile': { ttl: 10 * 60 * 1000, cacheable: true, exact: true, persistent: true },
-  '/rooms': { ttl: 2 * 60 * 1000, cacheable: true, exact: true, persistent: true },
-  '/rooms/': { ttl: 60 * 1000, cacheable: true, exact: false, persistent: true }, // Individual room details
-  '/notifications': { ttl: 30 * 1000, cacheable: true, exact: true },
-  '/notifications/unread-count': { ttl: 30 * 1000, cacheable: true, exact: true },
-  '/direct-messages/conversations': { ttl: 30 * 1000, cacheable: true, exact: true },
-  '/friends': { ttl: 60 * 1000, cacheable: true, exact: true, persistent: true },
+  '/auth/profile': { ttl: 15 * 60 * 1000, cacheable: true, exact: true, persistent: true }, // 15 min - rarely changes
+  '/rooms': { ttl: 3 * 60 * 1000, cacheable: true, exact: true, persistent: true }, // 3 min - main list
+  '/rooms/': { ttl: 2 * 60 * 1000, cacheable: true, exact: false, persistent: true }, // 2 min - room details
+  '/notifications': { ttl: 60 * 1000, cacheable: true, exact: true }, // 1 min
+  '/notifications/unread-count': { ttl: 60 * 1000, cacheable: true, exact: true }, // 1 min
+  '/direct-messages/conversations': { ttl: 60 * 1000, cacheable: true, exact: true, persistent: true }, // 1 min
+  '/direct-messages/unread-count': { ttl: 60 * 1000, cacheable: true, exact: true }, // 1 min
+  '/friends': { ttl: 5 * 60 * 1000, cacheable: true, exact: true, persistent: true }, // 5 min - rarely changes
+  '/orbit-summary': { ttl: 5 * 60 * 1000, cacheable: true, exact: false }, // 5 min - daily summary
 };
 
 // Track rate limit state to prevent request storms
@@ -127,7 +260,6 @@ api.interceptors.request.use(
       const cachedResult = cacheManager.getWithStale(cacheKey);
       
       if (cachedResult.data) {
-        console.log('📦 Rate limited - returning cached data for:', config.url);
         config.adapter = () => {
           return Promise.resolve({
             data: cachedResult.data,
@@ -173,6 +305,21 @@ api.interceptors.request.use(
         // Store cache config for response interceptor
         config.cacheConfig = cacheConfig;
         config.cacheKey = cacheKey;
+        
+        // Track this request for deduplication (only for GET requests)
+        if (shouldDedupe(config) && !config._skipDedupe) {
+          const requestKey = generateRequestKey(config);
+          // Create a deferred promise that will be resolved when this request completes
+          let resolvePromise, rejectPromise;
+          const pendingPromise = new Promise((resolve, reject) => {
+            resolvePromise = resolve;
+            rejectPromise = reject;
+          });
+          pendingPromise._resolve = resolvePromise;
+          pendingPromise._reject = rejectPromise;
+          pendingRequests.set(requestKey, pendingPromise);
+          config._requestKey = requestKey;
+        }
       }
     }
 
@@ -190,12 +337,30 @@ api.interceptors.response.use(
     if (response.config.cacheConfig && !response.cached) {
       const { cacheKey, cacheConfig } = response.config;
       cacheManager.set(cacheKey, response.data, cacheConfig.ttl);
-      // Silently cache response
     }
+    
+    // Resolve pending promise for deduplication
+    if (response.config._requestKey) {
+      const pending = pendingRequests.get(response.config._requestKey);
+      if (pending && pending._resolve) {
+        pending._resolve(response);
+      }
+      pendingRequests.delete(response.config._requestKey);
+    }
+    
     return response;
   },
   async (error) => {
     const originalRequest = error.config;
+    
+    // Reject pending promise for deduplication on error
+    if (originalRequest?._requestKey) {
+      const pending = pendingRequests.get(originalRequest._requestKey);
+      if (pending && pending._reject) {
+        pending._reject(error);
+      }
+      pendingRequests.delete(originalRequest._requestKey);
+    }
 
     // Handle 429 Rate Limit errors
     if (error.response?.status === 429) {

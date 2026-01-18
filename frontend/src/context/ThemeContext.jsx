@@ -245,7 +245,15 @@ export const ThemeProvider = ({ children }) => {
               root: {
                 borderRadius: 10,
                 padding: '10px 20px',
-                transition: 'all 0.2s ease',
+                // MOBILE: Use transform for GPU-accelerated transitions
+                transition: 'transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease',
+                // Touch-friendly: minimum tap target
+                minHeight: 44,
+                // Prevent text selection on double-tap
+                WebkitUserSelect: 'none',
+                userSelect: 'none',
+                // Faster touch response
+                touchAction: 'manipulation',
               },
               contained: {
                 boxShadow: mode === 'dark'
@@ -255,13 +263,22 @@ export const ThemeProvider = ({ children }) => {
                   boxShadow: mode === 'dark'
                     ? '0 6px 20px 0 rgba(96, 165, 250, 0.35)'
                     : '0 6px 20px 0 rgba(59, 130, 246, 0.35)',
-                  transform: 'translateY(-1px)',
+                  // Only apply hover transform on non-touch devices
+                  '@media (hover: hover)': {
+                    transform: 'translateY(-1px)',
+                  },
+                },
+                '&:active': {
+                  transform: 'scale(0.98)',
                 },
               },
               outlined: {
                 borderWidth: '2px',
                 '&:hover': {
                   borderWidth: '2px',
+                },
+                '&:active': {
+                  transform: 'scale(0.98)',
                 },
               },
             },
@@ -276,10 +293,17 @@ export const ThemeProvider = ({ children }) => {
                 border: mode === 'dark' 
                   ? '1px solid rgba(255,255,255,0.05)'
                   : '1px solid rgba(0,0,0,0.05)',
-                backdropFilter: 'blur(10px)',
+                // MOBILE OPTIMIZATION: Reduce backdrop-filter usage (GPU intensive)
+                // Only use on desktop, skip on mobile for better performance
+                '@media (min-width: 768px)': {
+                  backdropFilter: 'blur(10px)',
+                },
                 background: mode === 'dark'
-                  ? 'rgba(30, 41, 59, 0.8)'
-                  : 'rgba(255, 255, 255, 0.9)',
+                  ? 'rgba(30, 41, 59, 0.95)' // Slightly more opaque for mobile (no blur)
+                  : 'rgba(255, 255, 255, 0.98)',
+                // GPU acceleration hints
+                transform: 'translateZ(0)',
+                willChange: 'transform',
               },
             },
           },
@@ -300,11 +324,16 @@ export const ThemeProvider = ({ children }) => {
             styleOverrides: {
               root: {
                 boxShadow: 'none',
-                backdropFilter: 'blur(10px)',
+                // MOBILE OPTIMIZATION: Skip backdrop-filter on mobile
+                '@media (min-width: 768px)': {
+                  backdropFilter: 'blur(10px)',
+                },
                 background: mode === 'dark'
-                  ? 'rgba(15, 23, 42, 0.8)'
-                  : 'rgba(255, 255, 255, 0.8)',
+                  ? 'rgba(15, 23, 42, 0.98)'
+                  : 'rgba(255, 255, 255, 0.98)',
                 borderBottom: `1px solid ${mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+                // GPU acceleration
+                transform: 'translateZ(0)',
               },
             },
           },
@@ -368,7 +397,16 @@ export const ThemeProvider = ({ children }) => {
             styleOverrides: {
               root: {
                 borderRadius: 10,
-                transition: 'all 0.2s ease',
+                // GPU-accelerated transitions
+                transition: 'transform 0.15s ease, background-color 0.15s ease',
+                // Touch-friendly tap target
+                minHeight: 48,
+                // Faster touch response
+                touchAction: 'manipulation',
+                WebkitTapHighlightColor: 'transparent',
+                '&:active': {
+                  transform: 'scale(0.98)',
+                },
               },
             },
           },

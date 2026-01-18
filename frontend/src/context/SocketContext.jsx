@@ -20,19 +20,27 @@ export const SocketProvider = ({ children }) => {
   const [onlineUsers, setOnlineUsers] = useState(new Set());
   const socketRef = useRef(null);
   const reconnectAttempts = useRef(0);
+  const visibilityRef = useRef(true);
 
   useEffect(() => {
     if (user && !socketRef.current) {
       const token = localStorage.getItem('token');
       
+      // Mobile-optimized socket configuration
       const newSocket = io(API_BASE_URL, {
         auth: { token },
+        // Prefer WebSocket for lower latency, fall back to polling
         transports: ['websocket', 'polling'],
+        // Aggressive reconnection for mobile (handles network switches)
         reconnection: true,
-        reconnectionAttempts: 15,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 10000,
-        timeout: 30000
+        reconnectionAttempts: 20,
+        reconnectionDelay: 500, // Start faster
+        reconnectionDelayMax: 5000, // Cap lower for mobile
+        randomizationFactor: 0.3, // Less randomization for predictable reconnect
+        timeout: 15000, // Reduced timeout for faster failure detection
+        // Mobile battery optimization
+        forceNew: false,
+        multiplex: true,
       });
 
       newSocket.on('connect', () => {
@@ -112,7 +120,37 @@ export const SocketProvider = ({ children }) => {
       socketRef.current = newSocket;
       setSocket(newSocket);
 
+      // Mobile optimization: Handle visibility changes for battery saving
+      const handleVisibilityChange = () => {
+        const isVisible = document.visibilityState === 'visible';
+        visibilityRef.current = isVisible;
+        
+        if (isVisible && socketRef.current) {
+          // App came to foreground - ensure connection
+          if (!socketRef.current.connected) {
+            socketRef.current.connect();
+          }
+          // Refresh online users
+          socketRef.current.emit('users:getOnline');
+        }
+      };
+
+      // Handle app foreground event (Capacitor mobile)
+      const handleForeground = () => {
+        if (socketRef.current && !socketRef.current.connected) {
+          socketRef.current.connect();
+        }
+      };
+
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('app:foreground', handleForeground);
+      window.addEventListener('focus', handleVisibilityChange);
+
       return () => {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.removeEventListener('app:foreground', handleForeground);
+        window.removeEventListener('focus', handleVisibilityChange);
+        
         if (socketRef.current) {
           socketRef.current.disconnect();
           socketRef.current = null;

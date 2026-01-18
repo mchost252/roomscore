@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
 import {
   Grid,
   Paper,
@@ -31,33 +31,38 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { useNavigate } from 'react-router-dom';
-import api, { invalidateCache } from '../utils/api';
+import api, { invalidateCache, prefetch } from '../utils/api';
 import cacheManager from '../utils/cache';
 import OnboardingModal from '../components/OnboardingModal';
 import { getErrorMessage } from '../utils/errorMessages';
 import WhatsNewCard from '../components/WhatsNewCard';
 import useVisibilityRefresh from '../hooks/useVisibilityRefresh';
 
-// Stat Card Component
-const StatCard = ({ icon: Icon, label, value, color, subtext }) => {
+// Stat Card Component - Memoized to prevent unnecessary re-renders
+const StatCard = memo(({ icon: Icon, label, value, color, subtext }) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   
+  // Memoize styles to prevent recalculation
+  const cardSx = useMemo(() => ({
+    height: '100%',
+    background: isDark
+      ? `linear-gradient(135deg, ${alpha(color, 0.15)} 0%, ${alpha(color, 0.05)} 100%)`
+      : `linear-gradient(135deg, ${alpha(color, 0.1)} 0%, ${alpha(color, 0.02)} 100%)`,
+    border: `1px solid ${alpha(color, isDark ? 0.2 : 0.15)}`,
+    // MOBILE: GPU-accelerated transform instead of all
+    transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+    // Only apply hover on non-touch devices
+    '@media (hover: hover)': {
+      '&:hover': {
+        transform: 'translateY(-4px)',
+        boxShadow: `0 12px 24px ${alpha(color, 0.2)}`,
+      },
+    },
+  }), [isDark, color]);
+  
   return (
-    <Card
-      sx={{
-        height: '100%',
-        background: isDark
-          ? `linear-gradient(135deg, ${alpha(color, 0.15)} 0%, ${alpha(color, 0.05)} 100%)`
-          : `linear-gradient(135deg, ${alpha(color, 0.1)} 0%, ${alpha(color, 0.02)} 100%)`,
-        border: `1px solid ${alpha(color, isDark ? 0.2 : 0.15)}`,
-        transition: 'all 0.3s ease',
-        '&:hover': {
-          transform: 'translateY(-4px)',
-          boxShadow: `0 12px 24px ${alpha(color, 0.2)}`,
-        },
-      }}
-    >
+    <Card sx={cardSx}>
       <CardContent sx={{ p: { xs: 1.5, md: 3 } }}>
         <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <Box>
@@ -100,7 +105,7 @@ const StatCard = ({ icon: Icon, label, value, color, subtext }) => {
       </CardContent>
     </Card>
   );
-};
+});
 
 // Constellation Progress Ring Component
 const ConstellationProgressRing = ({ progress, size = 60 }) => {
@@ -206,8 +211,8 @@ const ConstellationProgressRing = ({ progress, size = 60 }) => {
   );
 };
 
-// Room Card Component
-const RoomCard = ({ room, user, onClick }) => {
+// Room Card Component - Memoized with prefetching
+const RoomCard = memo(({ room, user, onClick }) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const isOwner = room.owner._id === user?.id || room.owner === user?.id;
@@ -228,24 +233,46 @@ const RoomCard = ({ room, user, onClick }) => {
     ? Math.max(0, Math.ceil((new Date(expiryDate) - new Date()) / (1000 * 60 * 60 * 24)))
     : null;
 
+  // Prefetch room data on hover/touch for faster navigation
+  const handlePrefetch = useCallback(() => {
+    if (room._id) {
+      prefetch(`/rooms/${room._id}`);
+    }
+  }, [room._id]);
+
+  // Memoize card styles
+  const cardSx = useMemo(() => ({
+    cursor: 'pointer',
+    height: '100%',
+    // MOBILE: GPU-accelerated transitions
+    transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+    // Touch feedback
+    touchAction: 'manipulation',
+    WebkitTapHighlightColor: 'transparent',
+    '&:active': {
+      transform: 'scale(0.98)',
+    },
+    // Only apply hover on non-touch devices
+    '@media (hover: hover)': {
+      '&:hover': {
+        transform: 'translateY(-4px)',
+        boxShadow: isDark
+          ? '0 12px 24px rgba(0,0,0,0.4)'
+          : '0 12px 24px rgba(0,0,0,0.1)',
+        '& .arrow-icon': {
+          transform: 'translateX(4px)',
+          opacity: 1,
+        },
+      },
+    },
+  }), [isDark]);
+
   return (
     <Card
       onClick={onClick}
-      sx={{
-        cursor: 'pointer',
-        height: '100%',
-        transition: 'all 0.3s ease',
-        '&:hover': {
-          transform: 'translateY(-4px)',
-          boxShadow: isDark
-            ? '0 12px 24px rgba(0,0,0,0.4)'
-            : '0 12px 24px rgba(0,0,0,0.1)',
-          '& .arrow-icon': {
-            transform: 'translateX(4px)',
-            opacity: 1,
-          },
-        },
-      }}
+      onMouseEnter={handlePrefetch}
+      onTouchStart={handlePrefetch}
+      sx={cardSx}
     >
       <CardContent sx={{ p: { xs: 2, md: 3 }, height: '100%', display: 'flex', flexDirection: 'column' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
@@ -346,7 +373,7 @@ const RoomCard = ({ room, user, onClick }) => {
       </CardContent>
     </Card>
   );
-};
+});
 
 const DashboardPage = () => {
   const theme = useTheme();

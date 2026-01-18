@@ -48,21 +48,46 @@
         padding-left: var(--safe-area-inset-left);
         padding-right: var(--safe-area-inset-right);
         overscroll-behavior-y: contain;
+        /* GPU acceleration for smoother scrolling */
+        -webkit-transform: translateZ(0);
+        transform: translateZ(0);
       }
       
       #root {
         min-height: 100vh;
         min-height: 100dvh;
+        /* Prevent layout shifts */
+        contain: layout style;
       }
       
       button, a {
         -webkit-user-select: none;
         user-select: none;
         -webkit-tap-highlight-color: transparent;
+        /* Faster touch response */
+        touch-action: manipulation;
       }
       
       * {
         -webkit-overflow-scrolling: touch;
+      }
+      
+      /* Mobile performance: reduce motion for users who prefer it */
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+          scroll-behavior: auto !important;
+        }
+      }
+      
+      /* Hide scrollbar on mobile for cleaner look */
+      @media (max-width: 768px) {
+        ::-webkit-scrollbar {
+          width: 4px;
+          height: 4px;
+        }
       }
       
       /* Custom scrollbar for webkit browsers */
@@ -79,6 +104,23 @@
       }
       ::-webkit-scrollbar-thumb:hover {
         background: rgba(96, 165, 250, 0.5);
+      }
+      
+      /* Critical loading spinner (shown before React hydrates) */
+      .initial-loader {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 40px;
+        height: 40px;
+        border: 3px solid rgba(96, 165, 250, 0.2);
+        border-top-color: #60A5FA;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to { transform: translate(-50%, -50%) rotate(360deg); }
       }
     </style>
   </head>

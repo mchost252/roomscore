@@ -9,6 +9,7 @@ const logger = require('../utils/logger');
 // @route   GET /api/direct-messages/conversations
 // @desc    Get user's conversations (list of friends with last message)
 // @access  Private
+// OPTIMIZED: Batch queries instead of N+1 Promise.all
 router.get('/conversations', protect, async (req, res, next) => {
   try {
     const userId = req.user.id;
@@ -23,8 +24,8 @@ router.get('/conversations', protect, async (req, res, next) => {
         ]
       },
       include: {
-        fromUser: { select: { id: true, username: true } },
-        toUser: { select: { id: true, username: true } }
+        fromUser: { select: { id: true, username: true, avatar: true } },
+        toUser: { select: { id: true, username: true, avatar: true } }
       }
     });
 
@@ -37,43 +38,70 @@ router.get('/conversations', protect, async (req, res, next) => {
       f.fromUserId === userId ? f.toUserId : f.fromUserId
     );
 
-    // Get last messages for each conversation (excluding deleted)
-    const conversations = await Promise.all(friendships.map(async (friendship) => {
+    // OPTIMIZATION: Batch fetch all unread counts in ONE query using groupBy
+    const unreadCounts = await prisma.directMessage.groupBy({
+      by: ['fromUserId'],
+      where: {
+        fromUserId: { in: friendIds },
+        toUserId: userId,
+        read: false,
+        NOT: { deletedFor: { has: userId } }
+      },
+      _count: { id: true }
+    });
+    
+    // Create a map for quick lookup
+    const unreadCountMap = new Map(
+      unreadCounts.map(uc => [uc.fromUserId, uc._count.id])
+    );
+
+    // OPTIMIZATION: Fetch last messages in batch using raw query with DISTINCT ON
+    // This gets the most recent message per conversation in a single query
+    const lastMessagesRaw = await prisma.$queryRaw`
+      SELECT DISTINCT ON (conversation_id) *
+      FROM (
+        SELECT 
+          dm.*,
+          CASE 
+            WHEN dm."fromUserId" = ${userId} THEN dm."toUserId"
+            ELSE dm."fromUserId"
+          END as conversation_id
+        FROM "DirectMessage" dm
+        WHERE (
+          (dm."fromUserId" = ${userId} AND dm."toUserId" = ANY(${friendIds}::text[]))
+          OR 
+          (dm."toUserId" = ${userId} AND dm."fromUserId" = ANY(${friendIds}::text[]))
+        )
+        AND NOT (${userId} = ANY(dm."deletedFor"))
+        ORDER BY conversation_id, dm."createdAt" DESC
+      ) sub
+      ORDER BY conversation_id, "createdAt" DESC
+    `;
+
+    // Create map for last messages
+    const lastMessageMap = new Map();
+    for (const msg of lastMessagesRaw) {
+      const friendId = msg.fromUserId === userId ? msg.toUserId : msg.fromUserId;
+      lastMessageMap.set(friendId, msg);
+    }
+
+    // Build conversations from friendships
+    const conversations = friendships.map(friendship => {
       const friendId = friendship.fromUserId === userId ? friendship.toUserId : friendship.fromUserId;
       const friendData = friendship.fromUserId === userId ? friendship.toUser : friendship.fromUser;
-
-      // Get last message (not deleted by current user)
-      const lastMessage = await prisma.directMessage.findFirst({
-        where: {
-          OR: [
-            { fromUserId: userId, toUserId: friendId },
-            { fromUserId: friendId, toUserId: userId }
-          ],
-          NOT: {
-            deletedFor: { has: userId }
-          }
-        },
-        orderBy: { createdAt: 'desc' }
-      });
-
-      // Get unread count (not deleted by current user)
-      const unreadCount = await prisma.directMessage.count({
-        where: {
-          fromUserId: friendId,
-          toUserId: userId,
-          read: false,
-          NOT: {
-            deletedFor: { has: userId }
-          }
-        }
-      });
+      const lastMessage = lastMessageMap.get(friendId);
+      const unreadCount = unreadCountMap.get(friendId) || 0;
 
       return {
         friend: { ...friendData, _id: friendData.id },
-        lastMessage: lastMessage ? { ...lastMessage, _id: lastMessage.id, message: lastMessage.content } : null,
+        lastMessage: lastMessage ? { 
+          ...lastMessage, 
+          _id: lastMessage.id, 
+          message: lastMessage.content 
+        } : null,
         unreadCount
       };
-    }));
+    });
 
     // Calculate total unread
     const totalUnread = conversations.reduce((sum, c) => sum + c.unreadCount, 0);
