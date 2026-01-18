@@ -411,6 +411,13 @@ const DailyOrbitSummaryModal = ({
       onClose={handleClose}
       maxWidth="sm"
       fullWidth
+      scroll="paper"
+      sx={{
+        '& .MuiDialog-container': {
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+      }}
       PaperProps={{
         sx: {
           borderRadius: { xs: 2, sm: 4 },
@@ -419,8 +426,8 @@ const DailyOrbitSummaryModal = ({
           boxShadow: isDark 
             ? '0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 100px rgba(96, 165, 250, 0.1)'
             : '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-          maxHeight: { xs: '90vh', sm: '85vh' },
-          m: { xs: 1, sm: 2 },
+          maxHeight: { xs: '85vh', sm: '80vh' },
+          m: { xs: 2, sm: 3 },
         }
       }}
     >

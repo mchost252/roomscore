@@ -114,10 +114,17 @@ const PushNotificationPrompt = () => {
       onClose={handleSkip}
       maxWidth="xs"
       fullWidth
+      sx={{
+        '& .MuiDialog-container': {
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+      }}
       PaperProps={{
         sx: {
           borderRadius: 3,
           p: 1,
+          m: { xs: 2, sm: 3 },
         }
       }}
     >

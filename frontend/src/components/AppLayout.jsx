@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
@@ -17,6 +17,11 @@ import {
   useTheme,
   alpha,
   Backdrop,
+  BottomNavigation,
+  BottomNavigationAction,
+  Paper,
+  Menu,
+  MenuItem,
 } from '@mui/material';
 import {
   Dashboard,
@@ -32,10 +37,13 @@ import {
   Menu as MenuIcon,
   ChevronLeft,
   ChevronRight,
+  MoreVert,
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { useTheme as useCustomTheme } from '../context/ThemeContext';
+import { useSocket } from '../context/SocketContext';
 import NotificationPopup from './NotificationPopup';
+import api from '../utils/api';
 
 // Sidebar widths
 const SIDEBAR_WIDTH_COLLAPSED = 72;
@@ -56,11 +64,79 @@ const AppLayout = ({ children }) => {
   const location = useLocation();
   const { user, logout } = useAuth();
   const { mode, setThemeMode } = useCustomTheme();
+  const { socket } = useSocket();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  const [mobileMenuAnchor, setMobileMenuAnchor] = useState(null);
+  const [unreadMessages, setUnreadMessages] = useState(0);
 
   const isDark = mode === 'dark';
   const sidebarWidth = sidebarExpanded ? SIDEBAR_WIDTH_EXPANDED : SIDEBAR_WIDTH_COLLAPSED;
+
+  // Fetch unread message count
+  const fetchUnreadCount = useCallback(async () => {
+    if (!user) return;
+    try {
+      const res = await api.get('/direct-messages/unread-count');
+      setUnreadMessages(res.data.unreadCount || 0);
+    } catch (err) {
+      // Silent fail
+    }
+  }, [user]);
+
+  // Fetch on mount and when user changes
+  useEffect(() => {
+    if (user) {
+      fetchUnreadCount();
+    }
+  }, [user, fetchUnreadCount]);
+
+  // Listen for socket events to update unread count
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleNewMessage = (message) => {
+      const senderId = message.sender?._id || message.sender?.id || message.fromUserId;
+      const currentUserId = user?._id || user?.id;
+      const isViewingThisSender = location.pathname.includes(`/messages/${senderId}`);
+      
+      if (senderId && senderId !== currentUserId && !isViewingThisSender) {
+        setUnreadMessages(prev => prev + 1);
+      }
+    };
+
+    const handleMessagesRead = () => {
+      fetchUnreadCount();
+    };
+
+    socket.on('new_direct_message', handleNewMessage);
+    socket.on('dm:read', handleMessagesRead);
+
+    return () => {
+      socket.off('new_direct_message', handleNewMessage);
+      socket.off('dm:read', handleMessagesRead);
+    };
+  }, [socket, user, location.pathname, fetchUnreadCount]);
+
+  // Clear unread count when visiting messages page
+  useEffect(() => {
+    if (location.pathname.startsWith('/messages/')) {
+      setTimeout(() => {
+        api.get('/direct-messages/unread-count')
+          .then(res => setUnreadMessages(res.data.unreadCount || 0))
+          .catch(() => {});
+      }, 500);
+    }
+  }, [location.pathname]);
+
+  // Get bottom nav value
+  const getNavValue = () => {
+    if (location.pathname === '/dashboard') return 0;
+    if (location.pathname.startsWith('/rooms')) return 1;
+    if (location.pathname === '/friends') return 2;
+    if (location.pathname.startsWith('/messages')) return 3;
+    return -1;
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -93,7 +169,8 @@ const AppLayout = ({ children }) => {
         backdropFilter: 'blur(10px)',
         borderRight: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
         transition: 'width 0.3s ease, padding 0.3s ease',
-        overflow: 'hidden',
+        overflowX: 'hidden',
+        overflowY: 'auto',
       }}
     >
       {/* Logo and Toggle */}
@@ -582,26 +659,34 @@ const AppLayout = ({ children }) => {
             alignItems: 'center',
             justifyContent: 'space-between',
             px: 2,
-            py: 1.5,
+            py: 1,
+            height: 56,
             bgcolor: isDark 
-              ? 'rgba(15, 23, 42, 0.95)' 
-              : 'rgba(255, 255, 255, 0.95)',
-            backdropFilter: 'blur(10px)',
+              ? 'rgba(15, 23, 42, 0.98)' 
+              : 'rgba(255, 255, 255, 0.98)',
             borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
             zIndex: (theme) => theme.zIndex.appBar,
           }}
         >
-          {/* Left side - Menu + Logo */}
+          {/* Left side - Logo */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <IconButton
-              onClick={() => setMobileOpen(true)}
+            <Box
+              onClick={() => navigate('/dashboard')}
               sx={{
-                color: isDark ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.8)',
+                width: 36,
+                height: 36,
+                borderRadius: 1.5,
+                overflow: 'hidden',
+                cursor: 'pointer',
               }}
             >
-              <MenuIcon />
-            </IconButton>
-            
+              <Box
+                component="img"
+                src="/icon-192x192.png"
+                alt="Krios"
+                sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+            </Box>
             <Typography
               variant="h6"
               onClick={() => navigate('/dashboard')}
@@ -617,11 +702,114 @@ const AppLayout = ({ children }) => {
             </Typography>
           </Box>
 
-          {/* Right side - Notifications only (profile accessible via sidebar menu) */}
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          {/* Right side - Notifications + Menu */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <NotificationPopup />
+            <IconButton
+              onClick={(e) => setMobileMenuAnchor(e.currentTarget)}
+              sx={{ color: isDark ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.7)' }}
+            >
+              <MoreVert />
+            </IconButton>
           </Box>
+
+          {/* Mobile Menu */}
+          <Menu
+            anchorEl={mobileMenuAnchor}
+            open={Boolean(mobileMenuAnchor)}
+            onClose={() => setMobileMenuAnchor(null)}
+            transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+            anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+            PaperProps={{
+              sx: {
+                minWidth: 200,
+                mt: 1,
+                bgcolor: isDark ? '#1e293b' : '#fff',
+              }
+            }}
+          >
+            <Box sx={{ px: 2, py: 1.5 }}>
+              <Typography variant="subtitle1" fontWeight={600}>
+                {user?.username}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" noWrap>
+                {user?.email}
+              </Typography>
+            </Box>
+            <Divider />
+            <MenuItem onClick={() => { navigate('/profile'); setMobileMenuAnchor(null); }}>
+              <ListItemIcon><Person fontSize="small" /></ListItemIcon>
+              Profile
+            </MenuItem>
+            <MenuItem onClick={() => { setThemeMode(isDark ? 'light' : 'dark'); setMobileMenuAnchor(null); }}>
+              <ListItemIcon>{isDark ? <Brightness7 fontSize="small" /> : <Brightness4 fontSize="small" />}</ListItemIcon>
+              {isDark ? 'Light Mode' : 'Dark Mode'}
+            </MenuItem>
+            <MenuItem onClick={() => { navigate('/rooms/create'); setMobileMenuAnchor(null); }}>
+              <ListItemIcon><Add fontSize="small" /></ListItemIcon>
+              Create Room
+            </MenuItem>
+            <Divider />
+            <MenuItem onClick={handleLogout} sx={{ color: 'error.main' }}>
+              <ListItemIcon><Logout fontSize="small" sx={{ color: 'error.main' }} /></ListItemIcon>
+              Logout
+            </MenuItem>
+          </Menu>
         </Box>
+
+        {/* Mobile Bottom Navigation */}
+        <Paper
+          sx={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            display: { xs: 'block', md: 'none' },
+            zIndex: (theme) => theme.zIndex.appBar,
+            borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+          }}
+          elevation={0}
+        >
+          <BottomNavigation
+            value={getNavValue()}
+            onChange={(event, newValue) => {
+              if (newValue === 0) navigate('/dashboard');
+              if (newValue === 1) navigate('/rooms');
+              if (newValue === 2) navigate('/friends');
+              if (newValue === 3) navigate('/messages');
+            }}
+            showLabels
+            sx={{
+              bgcolor: isDark ? 'rgba(15, 23, 42, 0.98)' : 'rgba(255, 255, 255, 0.98)',
+              height: 56,
+              '& .MuiBottomNavigationAction-root': {
+                color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
+                minWidth: 'auto',
+                '&.Mui-selected': {
+                  color: isDark ? '#60A5FA' : '#3B82F6',
+                },
+              },
+              '& .MuiBottomNavigationAction-label': {
+                fontSize: '0.65rem',
+                '&.Mui-selected': {
+                  fontSize: '0.7rem',
+                },
+              },
+            }}
+          >
+            <BottomNavigationAction label="Home" icon={<Dashboard />} />
+            <BottomNavigationAction label="Rooms" icon={<Groups />} />
+            <BottomNavigationAction label="Friends" icon={<People />} />
+            <BottomNavigationAction 
+              label="Messages" 
+              icon={
+                <Badge badgeContent={unreadMessages} color="error" max={99}>
+                  <Message />
+                </Badge>
+              } 
+            />
+          </BottomNavigation>
+        </Paper>
 
         {/* Page Content */}
         <Box
@@ -630,7 +818,8 @@ const AppLayout = ({ children }) => {
             overflow: 'auto',
             p: { xs: 2, md: 3 },
             pt: { xs: 'calc(56px + 16px)', md: 3 }, // Header height (56px) + spacing (16px)
-            pb: { xs: 'calc(56px + 16px)', md: 3 }, // Bottom nav height (56px) + spacing (16px)
+            pb: { xs: 'calc(56px + 24px)', md: 3 }, // Bottom nav height (56px) + spacing (24px)
+            minHeight: 0, // Allow proper flex shrinking
           }}
         >
           {children}

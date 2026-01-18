@@ -184,7 +184,8 @@ const ChatDrawer = ({
     >
       <Box
         sx={{
-          height: '100vh',
+          height: '100dvh', // Use dynamic viewport height for mobile
+          minHeight: '100vh', // Fallback
           display: 'flex',
           flexDirection: 'column',
           bgcolor: 'background.default'
@@ -510,11 +511,13 @@ const ChatDrawer = ({
           elevation={3}
           sx={{
             p: 2,
+            pb: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 16px)', md: 2 },
             display: 'flex',
             gap: 1,
             alignItems: 'flex-end',
             borderRadius: 0,
-            bgcolor: 'background.default'
+            bgcolor: 'background.default',
+            flexShrink: 0,
           }}
         >
           <TextField
