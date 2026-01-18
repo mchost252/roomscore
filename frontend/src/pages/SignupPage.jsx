@@ -144,6 +144,7 @@ const SignupPage = () => {
   const handleOnboardingClose = () => {
     setShowOnboarding(false);
     localStorage.removeItem('isNewUser');
+    localStorage.setItem('onboardingCompleted', 'true'); // Mark as completed so Dashboard doesn't show it again
     navigate('/dashboard');
   };
 
