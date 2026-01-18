@@ -137,55 +137,11 @@ const shouldRetry = (error) => {
 // Sleep helper
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// ==================== REQUEST DEDUPLICATION INTERCEPTOR ====================
-api.interceptors.request.use(
-  (config) => {
-    if (shouldDedupe(config)) {
-      const requestKey = generateRequestKey(config);
-      
-      // Check if this exact request is already in flight
-      if (pendingRequests.has(requestKey)) {
-        // Return the existing promise instead of making a new request
-        const controller = new AbortController();
-        config.signal = controller.signal;
-        
-        // Wait for the existing request and return its result
-        return pendingRequests.get(requestKey).then((response) => {
-          controller.abort(); // Cancel this duplicate request
-          return Promise.reject({ __DEDUPE__: true, response });
-        }).catch((error) => {
-          if (error.__DEDUPE__) throw error;
-          controller.abort();
-          return Promise.reject(error);
-        });
-      }
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
-// Add retry interceptor (runs before other interceptors)
+// Add retry interceptor
 api.interceptors.response.use(
-  (response) => {
-    // Clean up pending request tracking
-    const requestKey = generateRequestKey(response.config);
-    pendingRequests.delete(requestKey);
-    return response;
-  },
+  (response) => response,
   async (error) => {
-    // Handle deduplication - return the cached response
-    if (error.__DEDUPE__) {
-      return error.response;
-    }
-    
     const config = error.config;
-    
-    // Clean up pending request on error
-    if (config) {
-      const requestKey = generateRequestKey(config);
-      pendingRequests.delete(requestKey);
-    }
     
     // Don't retry if we've already retried max times, shouldn't retry, or no config
     if (!config || config._retryCount >= MAX_RETRIES || !shouldRetry(error)) {
@@ -305,21 +261,6 @@ api.interceptors.request.use(
         // Store cache config for response interceptor
         config.cacheConfig = cacheConfig;
         config.cacheKey = cacheKey;
-        
-        // Track this request for deduplication (only for GET requests)
-        if (shouldDedupe(config) && !config._skipDedupe) {
-          const requestKey = generateRequestKey(config);
-          // Create a deferred promise that will be resolved when this request completes
-          let resolvePromise, rejectPromise;
-          const pendingPromise = new Promise((resolve, reject) => {
-            resolvePromise = resolve;
-            rejectPromise = reject;
-          });
-          pendingPromise._resolve = resolvePromise;
-          pendingPromise._reject = rejectPromise;
-          pendingRequests.set(requestKey, pendingPromise);
-          config._requestKey = requestKey;
-        }
       }
     }
 
@@ -339,28 +280,10 @@ api.interceptors.response.use(
       cacheManager.set(cacheKey, response.data, cacheConfig.ttl);
     }
     
-    // Resolve pending promise for deduplication
-    if (response.config._requestKey) {
-      const pending = pendingRequests.get(response.config._requestKey);
-      if (pending && pending._resolve) {
-        pending._resolve(response);
-      }
-      pendingRequests.delete(response.config._requestKey);
-    }
-    
     return response;
   },
   async (error) => {
     const originalRequest = error.config;
-    
-    // Reject pending promise for deduplication on error
-    if (originalRequest?._requestKey) {
-      const pending = pendingRequests.get(originalRequest._requestKey);
-      if (pending && pending._reject) {
-        pending._reject(error);
-      }
-      pendingRequests.delete(originalRequest._requestKey);
-    }
 
     // Handle 429 Rate Limit errors
     if (error.response?.status === 429) {
