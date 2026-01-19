@@ -107,50 +107,98 @@ cron.schedule('0 8 * * *', async () => {
   }
 });
 
-// Deactivate expired rooms daily at 1 AM
+// Delete expired rooms daily at 1 AM (cleanup database space)
 cron.schedule('0 1 * * *', async () => {
   try {
     logger.info('Running expired rooms cleanup job...');
     const now = new Date();
     
-    // Find all active rooms that have expired
-    const expiredRooms = await Room.find({
-      isActive: true,
-      expiresAt: { $lte: now }
-    }).populate('members.userId', '_id');
+    // Find all rooms that have expired using Prisma
+    const expiredRooms = await prisma.room.findMany({
+      where: {
+        expiresAt: { lte: now }
+      },
+      include: {
+        members: {
+          select: { userId: true }
+        }
+      }
+    });
     
-    let deactivatedCount = 0;
+    let deletedCount = 0;
     for (const room of expiredRooms) {
       // Get all member IDs for notifications
       const memberIds = room.members
-        .map(m => m.userId?._id?.toString())
+        .map(m => m.userId)
         .filter(Boolean);
       
-      // Deactivate the room
-      room.isActive = false;
-      room.deletedAt = now;
-      await room.save();
-      
-      // Notify all members that the room has expired
+      // Notify all members that the room has expired BEFORE deleting
       for (const memberId of memberIds) {
         try {
           await NotificationService.createNotification({
-            userId: memberId,
-            type: 'room_expired',
+            recipientId: memberId,
+            type: 'system',
             title: `Room Expired`,
-            message: `${room.name} has reached its end date and is now closed`,
-            relatedRoom: room._id
+            message: `${room.name} has reached its end date and has been closed`,
+            roomId: room.id
           });
         } catch (err) {
           logger.error('Error creating room expired notification:', err);
         }
       }
       
-      deactivatedCount++;
-      logger.info(`Deactivated expired room: ${room.name}`);
+      // DELETE all related data in a transaction to save database space
+      try {
+        await prisma.$transaction(async (tx) => {
+          // Delete task completions for this room
+          await tx.taskCompletion.deleteMany({
+            where: { roomId: room.id }
+          });
+
+          // Delete user room progress
+          await tx.userRoomProgress.deleteMany({
+            where: { roomId: room.id }
+          });
+
+          // Delete room tasks
+          await tx.roomTask.deleteMany({
+            where: { roomId: room.id }
+          });
+
+          // Delete chat messages
+          await tx.chatMessage.deleteMany({
+            where: { roomId: room.id }
+          });
+
+          // Delete room members
+          await tx.roomMember.deleteMany({
+            where: { roomId: room.id }
+          });
+
+          // Delete appreciations related to this room
+          await tx.appreciation.deleteMany({
+            where: { roomId: room.id }
+          });
+
+          // Delete nudges related to this room
+          await tx.nudge.deleteMany({
+            where: { roomId: room.id }
+          });
+
+          // Finally, delete the room itself
+          await tx.room.delete({
+            where: { id: room.id }
+          });
+        });
+        
+        deletedCount++;
+        logger.info(`Deleted expired room and all related data: ${room.name}`);
+      } catch (txErr) {
+        logger.error(`Error deleting expired room ${room.name}:`, txErr);
+      }
     }
     
-    logger.info(`Deactivated ${deactivatedCount} expired rooms`);
+    logger.info(`Deleted ${deletedCount} expired rooms and their data`);
   } catch (error) {
     logger.error('Error in expired rooms cleanup job:', error);
   }

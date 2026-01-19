@@ -130,15 +130,20 @@ const SignupPage = () => {
 
     const result = await register(formData.email, formData.password, formData.username);
 
+    setLoading(false);
+    
     if (result.success) {
+      console.log('✅ Signup successful, showing onboarding...');
       localStorage.setItem('isNewUser', 'true');
-      setShowOnboarding(true);
+      // Small delay to ensure state is ready
+      setTimeout(() => {
+        setShowOnboarding(true);
+      }, 100);
     } else {
+      console.log('❌ Signup failed:', result.message);
       const { icon, message } = getErrorMessage(result.error || result.message, 'auth');
       setError(`${icon} ${message}`);
     }
-
-    setLoading(false);
   };
 
   const handleOnboardingClose = () => {

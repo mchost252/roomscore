@@ -42,11 +42,10 @@ const PushNotificationPrompt = () => {
         return;
       }
 
-      // Check if user skipped recently (within 7 days) - only after they've visited at least once
-      const hasVisitedBefore = localStorage.getItem('hasVisitedApp');
+      // Check if user clicked "Maybe Later" recently (within 7 days)
       const lastSkipped = localStorage.getItem('pushPromptSkippedAt');
       
-      if (hasVisitedBefore && lastSkipped) {
+      if (lastSkipped) {
         const daysSinceSkip = (Date.now() - parseInt(lastSkipped)) / (1000 * 60 * 60 * 24);
         if (daysSinceSkip < 7) {
           console.log('Push prompt skipped recently, will ask again in', Math.ceil(7 - daysSinceSkip), 'days');

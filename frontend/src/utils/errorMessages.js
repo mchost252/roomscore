@@ -195,14 +195,14 @@ export const getErrorMessage = (error, context = '') => {
         icon: '👤'
       };
     }
-    if (lowerError.includes('email already') || lowerError.includes('already registered')) {
+    if (lowerError.includes('email already') || lowerError.includes('already registered') || lowerError.includes('already exists with this email') || lowerError.includes('exists with this email')) {
       return {
         title: 'Email Already Registered',
         message: 'An account with this email already exists. Try signing in instead.',
         icon: '📧'
       };
     }
-    if (lowerError.includes('username already') || lowerError.includes('username taken')) {
+    if (lowerError.includes('username already') || lowerError.includes('username taken') || lowerError.includes('already exists with this username') || lowerError.includes('exists with this username')) {
       return {
         title: 'Username Taken',
         message: 'This username is already in use. Please choose a different one.',
