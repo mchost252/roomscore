@@ -344,6 +344,24 @@ export const ThemeProvider = ({ children }) => {
               },
             },
           },
+          MuiDialog: {
+            styleOverrides: {
+              root: {
+                // Force dialogs to center on viewport, not page
+                '& .MuiDialog-container': {
+                  alignItems: 'center !important',
+                  justifyContent: 'center !important',
+                },
+              },
+              container: {
+                alignItems: 'center !important',
+                justifyContent: 'center !important',
+              },
+              paper: {
+                margin: 'auto',
+              },
+            },
+          },
           MuiChip: {
             styleOverrides: {
               root: {

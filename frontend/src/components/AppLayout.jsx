@@ -146,8 +146,8 @@ const AppLayout = ({ children }) => {
 
   // Sidebar content
   const SidebarContent = ({ isMobileDrawer = false }) => {
-    const currentWidth = isMobileDrawer ? SIDEBAR_WIDTH_EXPANDED : sidebarWidth;
-    const isExpanded = isMobileDrawer || sidebarExpanded;
+    const currentWidth = isMobileDrawer ? SIDEBAR_WIDTH_MOBILE : sidebarWidth;
+    const isExpanded = isMobileDrawer ? false : sidebarExpanded;
     
     return (
     <Box
@@ -607,30 +607,14 @@ const AppLayout = ({ children }) => {
           zIndex: (theme) => theme.zIndex.appBar,
         }}
       >
-        {/* Hamburger Menu */}
-        <IconButton
-          onClick={() => setMobileOpen(true)}
-          sx={{ color: isDark ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.8)' }}
-        >
-          <MenuIcon />
-        </IconButton>
-
-        {/* Logo */}
-        <Box
-          onClick={() => navigate('/dashboard')}
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1,
-            cursor: 'pointer',
-          }}
-        >
-          <Box
-            component="img"
-            src="/icon-192x192.png"
-            alt="Krios"
-            sx={{ width: 32, height: 32, borderRadius: 1 }}
-          />
+        {/* Hamburger Menu + App Name */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <IconButton
+            onClick={() => setMobileOpen(true)}
+            sx={{ color: isDark ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.8)' }}
+          >
+            <MenuIcon />
+          </IconButton>
           <Typography
             variant="h6"
             sx={{
@@ -648,7 +632,7 @@ const AppLayout = ({ children }) => {
         <NotificationPopup />
       </Box>
 
-      {/* Mobile Drawer - Temporary */}
+      {/* Mobile Drawer - Temporary (collapsed icons only) */}
       <Drawer
         variant="temporary"
         open={mobileOpen}
@@ -657,7 +641,7 @@ const AppLayout = ({ children }) => {
         sx={{
           display: { xs: 'block', md: 'none' },
           '& .MuiDrawer-paper': {
-            width: SIDEBAR_WIDTH_EXPANDED,
+            width: SIDEBAR_WIDTH_MOBILE,
             boxSizing: 'border-box',
             border: 'none',
           },

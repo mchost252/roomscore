@@ -174,6 +174,10 @@ const ChatDrawer = ({
       anchor="right"
       open={open}
       onClose={onClose}
+      ModalProps={{
+        keepMounted: true,
+        disableScrollLock: true, // Prevent page shift when drawer opens
+      }}
       PaperProps={{
         sx: {
           width: isMobile ? '100%' : 450,
@@ -447,8 +451,8 @@ const ChatDrawer = ({
                             sx={{ 
                               fontSize: '11px',
                               color: isMine 
-                                ? theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.45)'
-                                : 'rgba(0,0,0,0.45)',
+                                ? theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.5)'
+                                : theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)',
                               lineHeight: 1,
                             }}
                           >

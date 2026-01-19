@@ -407,7 +407,7 @@ const ProfilePage = () => {
         </Alert>
       )}
 
-      <Grid container spacing={{ xs: 2, sm: 2.5, md: 3 }} sx={{ 
+      <Grid container spacing={{ xs: 2, sm: 2.5, md: 3, lg: 4 }} sx={{ 
         width: '100%', 
         maxWidth: '100%', 
         margin: 0,
