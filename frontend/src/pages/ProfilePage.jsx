@@ -565,9 +565,9 @@ const ProfilePage = () => {
           {/* Overview Tab */}
           {tabValue === 0 && (
             <Box sx={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
-              <Grid container spacing={{ xs: 1, sm: 1.5, md: 3 }} sx={{ 
-                width: { xs: '100%', sm: 'calc(100% + 12px)' }, 
-                ml: { xs: 0, sm: '-6px' }, 
+              <Grid container spacing={{ xs: 1.5, sm: 1.5, md: 3 }} sx={{ 
+                width: '100%', 
+                ml: 0, 
                 mt: 0 
               }}>
                 {/* Stat Cards */}

@@ -1301,9 +1301,9 @@ const RoomDetailPage = () => {
         </Alert>
       )}
 
-      <Grid container spacing={{ xs: 0, md: 3 }} sx={{ width: '100%', ml: 0 }}>
+      <Grid container spacing={{ xs: 2, md: 3 }} sx={{ width: '100%', m: 0 }}>
         {/* Main Content */}
-        <Grid item xs={12} md={8} sx={{ pl: '0 !important', pr: { xs: '0 !important', md: 'inherit' } }}>
+        <Grid item xs={12} md={8} sx={{ pl: '0 !important', pt: '0 !important' }}>
           <Paper sx={{ mb: { xs: 2, md: 3 } }}>
             <Tabs 
               value={tabValue} 
@@ -1796,7 +1796,7 @@ const RoomDetailPage = () => {
         </Grid>
 
         {/* Sidebar */}
-        <Grid item xs={12} md={4}>
+        <Grid item xs={12} md={4} sx={{ pl: { xs: '0 !important', md: 'inherit' }, pt: { xs: 2, md: 0 } }}>
           {/* Pending Members (Owner Only) */}
           {isOwner && room?.requireApproval && pendingMembers.length > 0 && (
             <Paper sx={{ p: 2, mb: 2, borderLeft: 4, borderColor: 'warning.main', width: '100%', maxWidth: '100%' }}>

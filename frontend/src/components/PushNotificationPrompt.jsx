@@ -28,17 +28,18 @@ const PushNotificationPrompt = () => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    // Wait for user to be loaded
-    if (!user?.id) {
-      console.log('[PushPrompt] No user yet');
+    // Wait for user to be loaded - check for both id and _id formats
+    const userId = user?.id || user?._id;
+    if (!userId) {
+      console.log('[PushPrompt] No user yet, user object:', user);
       return;
     }
     
-    console.log('[PushPrompt] Checking for user:', user.id);
+    console.log('[PushPrompt] Checking for user:', userId);
     
     // Account-specific keys
-    const userSkipKey = `pushPromptSkippedAt_${user.id}`;
-    const userEnabledKey = `pushEnabled_${user.id}`;
+    const userSkipKey = `pushPromptSkippedAt_${userId}`;
+    const userEnabledKey = `pushEnabled_${userId}`;
     
     // Check if THIS user already has push enabled
     if (localStorage.getItem(userEnabledKey) === 'true') {
@@ -76,19 +77,20 @@ const PushNotificationPrompt = () => {
     }, 2000);
     
     return () => clearTimeout(timer);
-  }, [user?.id]);
+  }, [user]);
 
   const handleEnable = async () => {
     setLoading(true);
     setError(null);
+    const userId = user?.id || user?._id;
 
     try {
       const result = await subscribeToPush();
       
       if (result.success) {
         // Account-specific keys
-        const userEnabledKey = `pushEnabled_${user?.id}`;
-        const userSkipKey = `pushPromptSkippedAt_${user?.id}`;
+        const userEnabledKey = `pushEnabled_${userId}`;
+        const userSkipKey = `pushPromptSkippedAt_${userId}`;
         localStorage.setItem(userEnabledKey, 'true');
         localStorage.removeItem(userSkipKey); // Clear skip timestamp for this user
         setOpen(false);
@@ -104,7 +106,8 @@ const PushNotificationPrompt = () => {
 
   const handleSkip = () => {
     // Remember when THIS user skipped, so we can ask again after 7 days
-    const userSkipKey = `pushPromptSkippedAt_${user?.id}`;
+    const userId = user?.id || user?._id;
+    const userSkipKey = `pushPromptSkippedAt_${userId}`;
     localStorage.setItem(userSkipKey, Date.now().toString());
     setOpen(false);
   };
