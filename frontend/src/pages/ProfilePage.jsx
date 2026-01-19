@@ -379,8 +379,8 @@ const ProfilePage = () => {
       maxWidth: '100%', 
       overflowX: 'hidden',
       boxSizing: 'border-box',
-      px: { xs: 1, sm: 2, md: 2, lg: 3 },
-      py: { xs: 1, md: 2 },
+      px: { xs: 1.5, sm: 2, md: 3, lg: 4 },
+      py: { xs: 1.5, md: 2.5 },
       '& *': { boxSizing: 'border-box' },
       // Prevent any child from causing horizontal scroll
       '& > *': { maxWidth: '100%' },

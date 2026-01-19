@@ -153,7 +153,8 @@ const AppLayout = ({ children }) => {
     <Box
       sx={{
         width: currentWidth,
-        height: '100%',
+        height: '100dvh',
+        maxHeight: '100dvh',
         display: 'flex',
         flexDirection: 'column',
         alignItems: isExpanded ? 'flex-start' : 'center',
@@ -577,7 +578,7 @@ const AppLayout = ({ children }) => {
   };
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh', minHeight: '100dvh' }}>
+    <Box sx={{ display: 'flex', height: '100dvh', overflow: 'hidden' }}>
       {/* Backdrop overlay when desktop sidebar is expanded */}
       <Backdrop
         open={sidebarExpanded && !isMobile}
@@ -644,6 +645,10 @@ const AppLayout = ({ children }) => {
             width: SIDEBAR_WIDTH_MOBILE,
             boxSizing: 'border-box',
             border: 'none',
+            position: 'fixed',
+            top: 0,
+            height: '100dvh',
+            maxHeight: '100dvh',
           },
         }}
       >
@@ -670,7 +675,9 @@ const AppLayout = ({ children }) => {
               transition: 'width 0.3s ease',
               overflowX: 'hidden',
               position: 'fixed',
-              height: '100vh',
+              top: 0,
+              height: '100dvh',
+              maxHeight: '100dvh',
               zIndex: (theme) => theme.zIndex.drawer,
             },
           }}
@@ -684,8 +691,8 @@ const AppLayout = ({ children }) => {
         component="main"
         sx={{
           flexGrow: 1,
-          minHeight: '100vh',
-          minHeight: '100dvh',
+          height: '100dvh',
+          overflow: 'hidden',
           bgcolor: isDark 
             ? 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)'
             : 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
@@ -700,7 +707,8 @@ const AppLayout = ({ children }) => {
         <Box
           sx={{
             flex: 1,
-            overflow: 'auto',
+            overflowY: 'auto',
+            overflowX: 'hidden',
             p: { xs: 1.5, md: 3 },
             pt: { xs: 'calc(56px + 12px)', md: 3 }, // Account for mobile header
             minHeight: 0,

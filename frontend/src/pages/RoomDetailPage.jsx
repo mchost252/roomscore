@@ -1083,6 +1083,8 @@ const RoomDetailPage = () => {
       width: '100%', 
       maxWidth: '100%', 
       overflowX: 'hidden',
+      // Prevent any accidental horizontal scroll caused by inner flex rows
+      '& *': { maxWidth: '100%' },
       px: { xs: 1.5, sm: 2, md: 3 },
       py: { xs: 2, md: 4 },
       boxSizing: 'border-box',
@@ -2437,7 +2439,8 @@ const RoomDetailPage = () => {
         messages={chatMessages}
         onSendMessage={handleSendMessageFromDrawer}
         currentUser={user}
-        roomName={room?.name || 'Room Chat'}
+        // Keep chat header stable; room name is shown in the room page already
+        roomName={'Room Chat'}
         roomMembers={room?.members || []}
         onSendAppreciation={handleAppreciation}
         appreciationRemaining={appreciationRemaining}

@@ -181,15 +181,16 @@ const ChatDrawer = ({
       PaperProps={{
         sx: {
           width: isMobile ? '100%' : 450,
-          maxWidth: '100vw'
+          maxWidth: '100vw',
+          height: '100dvh',
+          maxHeight: '100dvh',
         }
       }}
       transitionDuration={300}
     >
       <Box
         sx={{
-          height: '100dvh', // Use dynamic viewport height for mobile
-          minHeight: '100vh', // Fallback
+          height: '100%', // Fill the drawer paper
           display: 'flex',
           flexDirection: 'column',
           bgcolor: 'background.default'

@@ -344,6 +344,15 @@ export const ThemeProvider = ({ children }) => {
               },
             },
           },
+          MuiModal: {
+            styleOverrides: {
+              root: {
+                // Ensure the modal itself is fixed to viewport
+                position: 'fixed',
+                inset: 0,
+              },
+            },
+          },
           MuiDialog: {
             styleOverrides: {
               root: {
@@ -351,14 +360,12 @@ export const ThemeProvider = ({ children }) => {
                 '& .MuiDialog-container': {
                   alignItems: 'center !important',
                   justifyContent: 'center !important',
+                  // ensure fixed-height centering
+                  height: '100% !important',
                 },
               },
-              container: {
-                alignItems: 'center !important',
-                justifyContent: 'center !important',
-              },
               paper: {
-                margin: 'auto',
+                margin: 0,
               },
             },
           },
