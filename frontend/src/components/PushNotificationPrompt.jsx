@@ -12,6 +12,7 @@ import {
 import { Notifications, NotificationsOff } from '@mui/icons-material';
 import { subscribeToPush, getPushPermission, ensureServiceWorkerRegistered } from '../utils/pushClient';
 import api from '../utils/api';
+import { useAuth } from '../context/AuthContext';
 
 /**
  * Push Notification Prompt
@@ -21,11 +22,15 @@ import api from '../utils/api';
  * - Re-prompts after 7 days if user clicked "Maybe Later"
  */
 const PushNotificationPrompt = () => {
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    // Wait for user to be loaded
+    if (!user?.id) return;
+    
     // Check if we should show the prompt
     const checkPrompt = async () => {
       // Don't show if push not supported
@@ -42,13 +47,17 @@ const PushNotificationPrompt = () => {
         return;
       }
 
-      // Check if user clicked "Maybe Later" recently (within 7 days)
-      const lastSkipped = localStorage.getItem('pushPromptSkippedAt');
+      // Account-specific keys to track prompt state per user
+      const userSkipKey = `pushPromptSkippedAt_${user.id}`;
+      const userEnabledKey = `pushEnabled_${user.id}`;
+      
+      // Check if THIS user clicked "Maybe Later" recently (within 7 days)
+      const lastSkipped = localStorage.getItem(userSkipKey);
       
       if (lastSkipped) {
         const daysSinceSkip = (Date.now() - parseInt(lastSkipped)) / (1000 * 60 * 60 * 24);
         if (daysSinceSkip < 7) {
-          console.log('Push prompt skipped recently, will ask again in', Math.ceil(7 - daysSinceSkip), 'days');
+          console.log('Push prompt skipped recently for this user, will ask again in', Math.ceil(7 - daysSinceSkip), 'days');
           return;
         }
       }
@@ -62,7 +71,7 @@ const PushNotificationPrompt = () => {
             if (subscription) {
               // Already subscribed, no need to prompt
               console.log('Push already subscribed');
-              localStorage.setItem('pushEnabled', 'true');
+              localStorage.setItem(userEnabledKey, 'true');
               return;
             }
           }
@@ -73,9 +82,8 @@ const PushNotificationPrompt = () => {
         }
       }
 
-      // Always show prompt if notification not enabled (unless user clicked "Maybe Later" recently)
-      // This ensures all users are prompted to enable notifications for better experience
-      console.log('Push notifications not enabled, showing prompt after delay');
+      // Always show prompt if notification not enabled for THIS user
+      console.log('Push notifications not enabled for this user, showing prompt after delay');
       
       // Show prompt after a delay to allow onboarding to complete first
       setTimeout(() => {
@@ -84,7 +92,7 @@ const PushNotificationPrompt = () => {
     };
 
     checkPrompt();
-  }, []);
+  }, [user?.id]);
 
   const handleEnable = async () => {
     setLoading(true);
@@ -94,8 +102,11 @@ const PushNotificationPrompt = () => {
       const result = await subscribeToPush();
       
       if (result.success) {
-        localStorage.setItem('pushEnabled', 'true');
-        localStorage.removeItem('pushPromptSkippedAt'); // Clear skip timestamp
+        // Account-specific keys
+        const userEnabledKey = `pushEnabled_${user?.id}`;
+        const userSkipKey = `pushPromptSkippedAt_${user?.id}`;
+        localStorage.setItem(userEnabledKey, 'true');
+        localStorage.removeItem(userSkipKey); // Clear skip timestamp for this user
         setOpen(false);
       } else {
         setError(result.message || 'Failed to enable notifications');
@@ -108,8 +119,9 @@ const PushNotificationPrompt = () => {
   };
 
   const handleSkip = () => {
-    // Remember when user skipped, so we can ask again after 7 days
-    localStorage.setItem('pushPromptSkippedAt', Date.now().toString());
+    // Remember when THIS user skipped, so we can ask again after 7 days
+    const userSkipKey = `pushPromptSkippedAt_${user?.id}`;
+    localStorage.setItem(userSkipKey, Date.now().toString());
     setOpen(false);
   };
 

@@ -148,8 +148,16 @@ const SignupPage = () => {
 
   const handleOnboardingClose = () => {
     setShowOnboarding(false);
+    // Get user ID from the response - we're now logged in after register()
+    const storedUser = localStorage.getItem('user');
+    const userId = storedUser ? JSON.parse(storedUser)?.id : null;
+    
     localStorage.removeItem('isNewUser');
-    localStorage.setItem('onboardingCompleted', 'true'); // Mark as completed so Dashboard doesn't show it again
+    // Account-specific key so each user gets their own onboarding
+    if (userId) {
+      localStorage.setItem(`onboardingCompleted_${userId}`, 'true');
+    }
+    localStorage.setItem('onboardingCompleted', 'true'); // Fallback global key
     navigate('/dashboard');
   };
 

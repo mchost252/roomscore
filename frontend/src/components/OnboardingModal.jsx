@@ -5,78 +5,77 @@ import {
   Box,
   Typography,
   Button,
-  Stepper,
-  Step,
-  StepLabel,
   IconButton,
   useTheme,
   useMediaQuery,
   Fade,
-  Slide
+  alpha
 } from '@mui/material';
 import {
   Close as CloseIcon,
-  Dashboard as DashboardIcon,
-  Group as GroupIcon,
-  Assignment as TaskIcon,
-  Chat as ChatIcon,
+  RocketLaunch,
+  Groups,
+  EmojiEvents,
+  Notifications,
   ArrowForward,
-  ArrowBack
+  ArrowBack,
+  CheckCircle
 } from '@mui/icons-material';
 
 const onboardingSteps = [
   {
-    title: 'Welcome to Krios! 👋',
-    subtitle: 'Overview',
-    description: 'Build better habits with friends! Track tasks, earn points, and stay accountable together in real-time.',
-    icon: DashboardIcon,
+    title: 'Welcome to Krios!',
+    emoji: '🚀',
+    description: 'Your journey to better habits starts here. Build accountability with friends.',
+    icon: RocketLaunch,
+    color: '#5865F2', // Discord blurple
     features: [
-      { label: 'Today\'s Focus', desc: 'See all your tasks synced across rooms' },
-      { label: 'Smart Theme', desc: 'Auto-adapts to your device settings' },
-      { label: 'Fast & Optimized', desc: 'Lightning-fast mobile experience' },
-      { label: 'Real-time Sync', desc: 'Instant updates when friends complete tasks' }
+      'Track daily tasks together',
+      'Earn points & build streaks',
+      'Real-time progress updates'
     ]
   },
   {
-    title: 'Create & Join Rooms 🏠',
-    subtitle: 'Rooms',
-    description: 'Rooms are shared accountability spaces where you and friends complete tasks together.',
-    icon: GroupIcon,
+    title: 'Join Forces',
+    emoji: '👥',
+    description: 'Create rooms or join friends. Compete on leaderboards and chat in real-time.',
+    icon: Groups,
+    color: '#57F287', // Discord green
     features: [
-      { label: 'Create Rooms', desc: 'Set up habit groups with custom tasks' },
-      { label: 'Join via Code', desc: 'Use invite codes to join friends' },
-      { label: 'Live Leaderboards', desc: 'Compete and track progress' },
-      { label: 'Room Chat', desc: 'Discuss and motivate each other' }
+      'Create & join rooms with codes',
+      'Live leaderboards & rankings',
+      'Built-in room chat'
     ]
   },
   {
-    title: 'Complete Tasks & Earn Points 📝',
-    subtitle: 'Tasks',
-    description: 'Complete daily, weekly, or monthly tasks to earn points and build your streak!',
-    icon: TaskIcon,
+    title: 'Crush Your Goals',
+    emoji: '🏆',
+    description: 'Complete tasks, earn points, and watch your streak grow day by day.',
+    icon: EmojiEvents,
+    color: '#FEE75C', // Discord yellow
     features: [
-      { label: 'Flexible Tasks', desc: 'Daily, weekly, or monthly options' },
-      { label: 'Points & Streaks', desc: 'Earn rewards for consistency' },
-      { label: 'Dashboard Sync', desc: 'Task completions show everywhere instantly' },
-      { label: 'Team Progress', desc: 'See when friends complete tasks' }
+      'Daily, weekly & monthly tasks',
+      'Points for every completion',
+      'Streak tracking & rewards'
     ]
   },
   {
-    title: 'Stay Connected 💬',
-    subtitle: 'Social',
-    description: 'Get notified instantly when friends complete tasks, send messages, and more!',
-    icon: ChatIcon,
+    title: 'Stay in the Loop',
+    emoji: '🔔',
+    description: 'Never miss a beat. Get notified when friends complete tasks.',
+    icon: Notifications,
+    color: '#EB459E', // Discord fuchsia
     features: [
-      { label: 'Push Notifications', desc: 'Get alerts for task completions' },
-      { label: 'Direct Messages', desc: 'Private chats with friends' },
-      { label: 'Friend Activity', desc: 'See what your friends are achieving' },
-      { label: 'Quick Access', desc: 'Profile & settings in the top menu' }
+      'Push notifications',
+      'Direct messages',
+      'Friend activity feed'
     ]
   }
 ];
 
 const OnboardingModal = ({ open, onClose }) => {
   const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [activeStep, setActiveStep] = useState(0);
 
@@ -102,11 +101,8 @@ const OnboardingModal = ({ open, onClose }) => {
   return (
     <Dialog
       open={open}
-      onClose={(event, reason) => {
-        // Block all closing except via buttons - user must complete or skip onboarding
-        // Do nothing on backdrop click or escape key
-      }}
-      maxWidth="sm"
+      onClose={(event, reason) => {}}
+      maxWidth="xs"
       fullWidth
       disableEscapeKeyDown
       disablePortal={false}
@@ -118,36 +114,47 @@ const OnboardingModal = ({ open, onClose }) => {
       }}
       slotProps={{
         backdrop: {
-          sx: { backgroundColor: 'rgba(0, 0, 0, 0.8)' } // Darker backdrop
+          sx: { 
+            backgroundColor: isDark ? 'rgba(0, 0, 0, 0.85)' : 'rgba(0, 0, 0, 0.6)',
+            backdropFilter: 'blur(8px)'
+          }
         }
       }}
       PaperProps={{
         sx: {
-          borderRadius: 2,
-          minHeight: { xs: '85vh', sm: '500px' },
-          maxHeight: { xs: '90vh', sm: '80vh' },
+          borderRadius: 3,
+          minHeight: { xs: 'auto', sm: '480px' },
+          maxHeight: { xs: '85vh', sm: '600px' },
           mx: { xs: 2, sm: 3 },
-          my: isMobile ? 0 : 'auto',
-          // iOS safe area support
-          paddingBottom: isMobile ? 'env(safe-area-inset-bottom, 20px)' : 0,
-          paddingTop: isMobile ? 'env(safe-area-inset-top, 0px)' : 0
+          overflow: 'hidden',
+          background: isDark 
+            ? 'linear-gradient(180deg, #1e1f22 0%, #2b2d31 100%)'
+            : 'linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%)',
+          border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.08)',
+          boxShadow: isDark 
+            ? '0 8px 32px rgba(0,0,0,0.5)' 
+            : '0 8px 32px rgba(0,0,0,0.15)',
         }
       }}
     >
+      {/* Skip button */}
       <IconButton
         onClick={handleSkip}
         sx={{
           position: 'absolute',
-          right: 8,
-          top: isMobile ? 'calc(8px + env(safe-area-inset-top, 0px))' : 8,
-          color: 'text.secondary',
+          right: 12,
+          top: 12,
+          color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)',
           zIndex: 1,
-          // Larger touch target for mobile
-          minWidth: 44,
-          minHeight: 44
+          minWidth: 36,
+          minHeight: 36,
+          '&:hover': {
+            color: isDark ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.7)',
+            bgcolor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'
+          }
         }}
       >
-        <CloseIcon />
+        <CloseIcon fontSize="small" />
       </IconButton>
 
       <DialogContent sx={{ 
@@ -155,20 +162,15 @@ const OnboardingModal = ({ open, onClose }) => {
         display: 'flex', 
         flexDirection: 'column', 
         height: '100%',
-        overflow: 'auto',
-        // Ensure content is scrollable on small screens
-        WebkitOverflowScrolling: 'touch'
+        overflow: 'hidden'
       }}>
-        {/* Stepper */}
-        <Box sx={{ px: 3, pt: isMobile ? 4 : 3, pb: 2 }}>
-          <Stepper activeStep={activeStep} alternativeLabel>
-            {onboardingSteps.map((step, index) => (
-              <Step key={index}>
-                <StepLabel>{step.subtitle}</StepLabel>
-              </Step>
-            ))}
-          </Stepper>
-        </Box>
+        {/* Colored header bar */}
+        <Box
+          sx={{
+            height: 6,
+            background: `linear-gradient(90deg, ${onboardingSteps.map(s => s.color).join(', ')})`,
+          }}
+        />
 
         {/* Content */}
         <Box
@@ -177,144 +179,188 @@ const OnboardingModal = ({ open, onClose }) => {
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            justifyContent: 'center',
-            px: 3,
-            py: 4,
-            textAlign: 'center'
+            px: { xs: 3, sm: 4 },
+            py: { xs: 3, sm: 4 },
+            textAlign: 'center',
+            overflow: 'auto'
           }}
         >
-          <Fade in={true} timeout={500} key={activeStep}>
+          <Fade in={true} timeout={400} key={activeStep}>
             <Box sx={{ width: '100%' }}>
-              {/* Icon */}
+              {/* Icon with glow effect */}
               <Box
                 sx={{
-                  width: 100,
-                  height: 100,
-                  borderRadius: '50%',
-                  background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+                  width: { xs: 72, sm: 88 },
+                  height: { xs: 72, sm: 88 },
+                  borderRadius: '20px',
+                  background: currentStep.color,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   mx: 'auto',
-                  mb: 3,
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.15)'
+                  mb: 2.5,
+                  boxShadow: `0 8px 32px ${alpha(currentStep.color, 0.4)}`,
+                  transform: 'rotate(-5deg)',
+                  transition: 'all 0.3s ease',
+                  '&:hover': {
+                    transform: 'rotate(0deg) scale(1.05)',
+                  }
                 }}
               >
-                <IconComponent sx={{ fontSize: 50, color: 'white' }} />
+                <IconComponent sx={{ fontSize: { xs: 36, sm: 44 }, color: 'white' }} />
               </Box>
 
-              {/* Title */}
-              <Typography variant="h4" fontWeight="bold" gutterBottom>
-                {currentStep.title}
+              {/* Emoji + Title */}
+              <Typography 
+                variant="h5" 
+                fontWeight={700}
+                sx={{ 
+                  mb: 1,
+                  fontSize: { xs: '1.4rem', sm: '1.6rem' },
+                  color: isDark ? '#fff' : '#1a1a1a'
+                }}
+              >
+                {currentStep.emoji} {currentStep.title}
               </Typography>
 
               {/* Description */}
               <Typography
-                variant="body1"
-                color="text.secondary"
-                sx={{ mb: 4, maxWidth: 400, mx: 'auto' }}
+                variant="body2"
+                sx={{ 
+                  mb: 3, 
+                  maxWidth: 320, 
+                  mx: 'auto',
+                  color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)',
+                  fontSize: { xs: '0.9rem', sm: '0.95rem' },
+                  lineHeight: 1.6
+                }}
               >
                 {currentStep.description}
               </Typography>
 
-              {/* Features */}
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 2 }}>
+              {/* Features list - Discord style */}
+              <Box sx={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: 1.5,
+                maxWidth: 300,
+                mx: 'auto'
+              }}>
                 {currentStep.features.map((feature, index) => (
-                  <Slide
+                  <Box
                     key={index}
-                    direction="up"
-                    in={true}
-                    timeout={300 + index * 100}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1.5,
+                      textAlign: 'left',
+                      p: 1.5,
+                      borderRadius: 2,
+                      bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+                      transition: 'all 0.2s ease',
+                      '&:hover': {
+                        bgcolor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                        transform: 'translateX(4px)'
+                      }
+                    }}
                   >
-                    <Box
+                    <CheckCircle 
+                      sx={{ 
+                        fontSize: 20, 
+                        color: currentStep.color,
+                        flexShrink: 0
+                      }} 
+                    />
+                    <Typography
+                      variant="body2"
                       sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        textAlign: 'left',
-                        p: 2,
-                        borderRadius: 2,
-                        bgcolor: 'action.hover',
-                        transition: 'all 0.3s ease',
-                        '&:hover': {
-                          bgcolor: 'action.selected',
-                          transform: 'translateX(5px)'
-                        }
+                        color: isDark ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.8)',
+                        fontWeight: 500,
+                        fontSize: '0.875rem'
                       }}
                     >
-                      <Box
-                        sx={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: '50%',
-                          bgcolor: 'primary.main',
-                          mr: 2
-                        }}
-                      />
-                      <Box sx={{ flex: 1 }}>
-                        <Typography variant="subtitle2" fontWeight="bold">
-                          {feature.label}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {feature.desc}
-                        </Typography>
-                      </Box>
-                    </Box>
-                  </Slide>
+                      {feature}
+                    </Typography>
+                  </Box>
                 ))}
               </Box>
             </Box>
           </Fade>
         </Box>
 
-        {/* Navigation Buttons */}
+        {/* Navigation - Discord style */}
         <Box
           sx={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            px: 3,
-            py: 2,
-            // Extra padding for iOS safe area
-            pb: isMobile ? 'calc(16px + env(safe-area-inset-bottom, 20px))' : 2,
-            borderTop: 1,
-            borderColor: 'divider',
-            // Ensure buttons are always visible
+            px: { xs: 3, sm: 4 },
+            py: 2.5,
+            borderTop: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)',
             flexShrink: 0,
-            backgroundColor: 'background.paper',
-            // Sticky at bottom
-            position: 'sticky',
-            bottom: 0,
-            mt: 'auto'
+            bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.02)',
           }}
         >
           <Button
             onClick={activeStep === 0 ? handleSkip : handleBack}
             startIcon={activeStep > 0 && <ArrowBack />}
             sx={{ 
-              minWidth: isMobile ? 90 : 100,
-              // Larger touch target for mobile
-              minHeight: 48,
-              fontSize: isMobile ? '0.9rem' : '0.875rem'
+              minWidth: 80,
+              minHeight: 40,
+              fontSize: '0.875rem',
+              color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)',
+              '&:hover': {
+                bgcolor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'
+              }
             }}
           >
             {activeStep === 0 ? 'Skip' : 'Back'}
           </Button>
 
-          <Typography variant="caption" color="text.secondary">
-            {activeStep + 1} / {onboardingSteps.length}
-          </Typography>
+          {/* Step indicators - dots */}
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            {onboardingSteps.map((step, index) => (
+              <Box
+                key={index}
+                sx={{
+                  width: index === activeStep ? 24 : 8,
+                  height: 8,
+                  borderRadius: 4,
+                  bgcolor: index === activeStep 
+                    ? currentStep.color 
+                    : isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+                  transition: 'all 0.3s ease',
+                  cursor: 'pointer',
+                  '&:hover': {
+                    bgcolor: index === activeStep 
+                      ? currentStep.color 
+                      : isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.25)'
+                  }
+                }}
+                onClick={() => setActiveStep(index)}
+              />
+            ))}
+          </Box>
 
           <Button
             variant="contained"
             onClick={handleNext}
             endIcon={activeStep < onboardingSteps.length - 1 && <ArrowForward />}
             sx={{ 
-              minWidth: isMobile ? 90 : 100,
-              // Larger touch target for mobile
-              minHeight: 48,
-              fontSize: isMobile ? '0.9rem' : '0.875rem',
-              // Make Next/Start button more prominent
-              fontWeight: 'bold'
+              minWidth: 100,
+              minHeight: 40,
+              fontSize: '0.875rem',
+              fontWeight: 600,
+              bgcolor: currentStep.color,
+              color: currentStep.color === '#FEE75C' ? '#1a1a1a' : '#fff',
+              borderRadius: 2,
+              textTransform: 'none',
+              boxShadow: `0 4px 14px ${alpha(currentStep.color, 0.4)}`,
+              '&:hover': {
+                bgcolor: currentStep.color,
+                filter: 'brightness(1.1)',
+                boxShadow: `0 6px 20px ${alpha(currentStep.color, 0.5)}`
+              }
             }}
           >
             {activeStep === onboardingSteps.length - 1 ? "Let's Go!" : 'Next'}

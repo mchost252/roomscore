@@ -399,11 +399,15 @@ const DashboardPage = () => {
   }, 30000); // Minimum 30 seconds between visibility refreshes
 
   useEffect(() => {
-    if (localStorage.getItem('onboardingCompleted') !== 'true') {
-      setShowOnboarding(true);
-    }
-
     if (user) {
+      // Account-specific onboarding check
+      const userOnboardingKey = `onboardingCompleted_${user.id}`;
+      const hasCompletedOnboarding = localStorage.getItem(userOnboardingKey) === 'true';
+      
+      if (!hasCompletedOnboarding) {
+        setShowOnboarding(true);
+      }
+
       setStats({
         // These are derived from server fields. totalPoints is computed from room membership points.
         totalPoints: 0,
@@ -417,7 +421,10 @@ const DashboardPage = () => {
   
   const handleOnboardingClose = () => {
     setShowOnboarding(false);
-    localStorage.setItem('onboardingCompleted', 'true');
+    // Account-specific key so each user gets their own onboarding
+    if (user?.id) {
+      localStorage.setItem(`onboardingCompleted_${user.id}`, 'true');
+    }
   };
 
   const getMyId = () => user?._id || user?.id;
