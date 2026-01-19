@@ -545,16 +545,28 @@ const DashboardPage = () => {
       }
     };
 
+    const handleMemberLeft = (data) => {
+      // If current user left, remove room from dashboard
+      if (data.userId === user?.id) {
+        setRooms(prevRooms => prevRooms.filter(room => room._id !== data.roomId));
+      } else if (data.roomId) {
+        // Otherwise just update member count
+        loadDashboardData(true);
+      }
+    };
+
     socket.on('task:completed', handleTaskCompleted);
     socket.on('task:uncompleted', handleTaskUncompleted);
     socket.on('task:created', handleTaskCreated);
     socket.on('member:joined', handleMemberJoined);
+    socket.on('member:left', handleMemberLeft);
 
     return () => {
       socket.off('task:completed', handleTaskCompleted);
       socket.off('task:uncompleted', handleTaskUncompleted);
       socket.off('task:created', handleTaskCreated);
       socket.off('member:joined', handleMemberJoined);
+      socket.off('member:left', handleMemberLeft);
     };
   }, [socket, user?._id, user?.id]);
 

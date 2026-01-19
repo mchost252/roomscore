@@ -98,15 +98,16 @@ require('./config/passport')(passport);
 
 // Rate limiting - more generous limits for real-time app usage
 const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 5 * 60 * 1000, // 5 minutes instead of 15
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 300, // 300 requests per 5 minutes
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 5 * 60 * 1000, // 5 minutes
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 500, // 500 requests per 5 minutes (100/min)
   message: { success: false, message: 'Too many requests. Please wait a moment and try again.' },
   standardHeaders: true,
   legacyHeaders: false,
   // Skip rate limiting for certain routes
   skip: (req) => {
-    // Don't rate limit health checks
+    // Don't rate limit health checks or socket connections
     if (req.path === '/health') return true;
+    if (req.path.includes('/socket.io')) return true;
     return false;
   }
 });

@@ -280,6 +280,19 @@ export const getErrorMessage = (error, context = '') => {
         return ERROR_MESSAGES.UNAUTHORIZED;
 
       case 403:
+        // Check server message for specific 403 errors
+        if (serverMessage.includes('must be a member') || serverMessage.includes('not a member')) {
+          return {
+            icon: '🚫',
+            message: 'You are not a member of this orbit. Request to join or find another orbit to explore!'
+          };
+        }
+        if (serverMessage.includes('pending approval') || serverMessage.includes('join request is pending')) {
+          return {
+            icon: '⏳',
+            message: 'Your join request is pending approval from the orbit owner. Please wait for them to review it.'
+          };
+        }
         return ERROR_MESSAGES.UNAUTHORIZED;
 
       case 404:
