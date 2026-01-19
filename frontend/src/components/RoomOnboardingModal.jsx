@@ -132,6 +132,16 @@ const RoomOnboardingModal = ({ open, onClose, isAdmin = false, roomId, userId })
     // Mark room onboarding as seen for THIS user and THIS room
     if (userId && roomId) {
       localStorage.setItem(`roomOnboardingSeen_${userId}_${roomId}`, 'true');
+      console.log('[RoomOnboarding] Saved: roomOnboardingSeen_' + userId + '_' + roomId);
+    }
+    onClose();
+  };
+  
+  // Also save when skipping - user shouldn't see it again
+  const handleSkipAndSave = () => {
+    if (userId && roomId) {
+      localStorage.setItem(`roomOnboardingSeen_${userId}_${roomId}`, 'true');
+      console.log('[RoomOnboarding] Skipped & Saved: roomOnboardingSeen_' + userId + '_' + roomId);
     }
     onClose();
   };
@@ -182,7 +192,7 @@ const RoomOnboardingModal = ({ open, onClose, isAdmin = false, roomId, userId })
     >
       {/* Skip/Close button */}
       <IconButton
-        onClick={onClose}
+        onClick={handleSkipAndSave}
         sx={{
           position: 'absolute',
           right: 12,
@@ -359,7 +369,7 @@ const RoomOnboardingModal = ({ open, onClose, isAdmin = false, roomId, userId })
           }}
         >
           <Button
-            onClick={activeStep === 0 ? onClose : handleBack}
+            onClick={activeStep === 0 ? handleSkipAndSave : handleBack}
             startIcon={activeStep > 0 && <ArrowBack />}
             sx={{ 
               minWidth: 80,

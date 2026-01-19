@@ -925,57 +925,54 @@ const RoomDetailPage = () => {
     if (!chatMessage.trim()) return;
 
     const messageText = chatMessage.trim();
+    const tempId = `temp-${Date.now()}`;
     
-    // OPTIMISTIC UPDATE - Add message to UI immediately with correct user data
+    // OPTIMISTIC UPDATE - Add message to UI immediately
     const optimisticMessage = {
-      _id: `temp-${Date.now()}`,
+      _id: tempId,
       message: messageText,
       userId: {
-        _id: user?._id || user?.id,
+        _id: user?.id || user?._id,
         username: user?.username || 'You',
         avatar: user?.avatar || user?.profilePicture || null
       },
       createdAt: new Date().toISOString(),
-      sending: true // Flag to show sending state
+      sending: true
     };
     
-    setChatMessages(prev => [...prev, optimisticMessage]);
+    // Clear input and add message BEFORE async call (faster feel)
     setChatMessage('');
+    setChatMessages(prev => [...prev, optimisticMessage]);
     
-    // Scroll to bottom immediately
-    setTimeout(() => {
+    // Scroll to bottom instantly (no delay)
+    requestAnimationFrame(() => {
       chatContainerRef.current?.scrollTo({
         top: chatContainerRef.current.scrollHeight,
-        behavior: 'smooth'
+        behavior: 'auto' // Instant scroll for speed
       });
-    }, 0);
+    });
 
-    // API call in background
-    try {
-      const response = await api.post(`/rooms/${roomId}/chat`, {
-        message: messageText
-      });
-      
-      // Replace optimistic message with real one
-      setChatMessages(prev => 
-        prev.map(msg => 
-          msg._id === optimisticMessage._id 
-            ? { ...response.data.message, sending: false }
+    // Fire and forget API call - don't wait for response to update UI
+    api.post(`/rooms/${roomId}/chat`, { message: messageText })
+      .then(response => {
+        // Update temp ID to real ID (keeps same position, no flicker)
+        setChatMessages(prev => 
+          prev.map(msg => msg._id === tempId 
+            ? { ...msg, _id: response.data.message._id, sending: false }
             : msg
-        )
-      );
-      
-      // Invalidate chat cache
-      invalidateCache(`/rooms/${roomId}/chat`);
-    } catch (err) {
-      console.error('Error sending message:', err);
-      
-      // Remove optimistic message and show error
-      setChatMessages(prev => prev.filter(msg => msg._id !== optimisticMessage._id));
-      const { icon, message } = getErrorMessage(err);
-      setError(`${icon} ${message}`);
-      setTimeout(() => setError(null), 5000);
-    }
+          )
+        );
+      })
+      .catch(err => {
+        console.error('Error sending message:', err);
+        // Mark message as failed instead of removing
+        setChatMessages(prev => 
+          prev.map(msg => msg._id === tempId 
+            ? { ...msg, sending: false, failed: true }
+            : msg
+          )
+        );
+      });
   };
 
   const handleCopyJoinCode = () => {

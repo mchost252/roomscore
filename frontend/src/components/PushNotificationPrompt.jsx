@@ -27,11 +27,16 @@ const PushNotificationPrompt = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Debug: Log on every render
+  console.log('[PushPrompt] Component rendered, user:', user?.id || user?._id || 'NO USER');
+
   useEffect(() => {
+    console.log('[PushPrompt] useEffect triggered, user:', JSON.stringify(user));
+    
     // Wait for user to be loaded - check for both id and _id formats
     const userId = user?.id || user?._id;
     if (!userId) {
-      console.log('[PushPrompt] No user yet, user object:', user);
+      console.log('[PushPrompt] No user id found');
       return;
     }
     

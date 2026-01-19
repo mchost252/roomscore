@@ -532,42 +532,52 @@ const MessagesPage = () => {
     }
 
     const messageText = newMessage.trim();
-    const currentReplyTo = replyTo; // Capture current reply state
+    const currentReplyTo = replyTo;
     const replyToId = currentReplyTo?._id || null;
+    const tempId = `temp_${Date.now()}`;
     
-    // Clear input and reply state immediately for better UX
+    // Clear input FIRST for instant feel
     setNewMessage('');
     setReplyTo(null);
     
-    // Create optimistic message for instant UI feedback
-    const tempId = `temp_${Date.now()}`;
+    // Create optimistic message
     const optimisticMessage = {
       _id: tempId,
       message: messageText,
       createdAt: new Date().toISOString(),
       sender: { _id: getUserId(user), id: getUserId(user), username: user.username },
       recipient: { _id: reliableFriendId, id: reliableFriendId },
-      replyTo: currentReplyTo ? { _id: replyToId, message: currentReplyTo.message } : null
+      replyTo: currentReplyTo ? { _id: replyToId, message: currentReplyTo.message } : null,
+      sending: true
     };
     
     // Show message immediately
     setMessages(prev => [...prev, optimisticMessage]);
-    scrollToBottom();
     
-    try {
-      const res = await api.post(`/direct-messages/${reliableFriendId}`, {
-        message: messageText,
-        replyTo: replyToId || undefined
+    // Instant scroll (no smooth animation for speed)
+    requestAnimationFrame(() => scrollToBottom());
+    
+    // Fire and forget - don't block UI
+    api.post(`/direct-messages/${reliableFriendId}`, {
+      message: messageText,
+      replyTo: replyToId || undefined
+    })
+      .then(res => {
+        // Update temp ID to real ID (no flicker, keeps position)
+        setMessages(prev => prev.map(m => m._id === tempId 
+          ? { ...res.data.message, sending: false }
+          : m
+        ));
+      })
+      .catch(err => {
+        console.error('Error sending message:', err);
+        // Mark as failed instead of removing
+        setMessages(prev => prev.map(m => m._id === tempId 
+          ? { ...m, sending: false, failed: true }
+          : m
+        ));
+        // Could show retry option here
       });
-      // Replace optimistic message with real one
-      setMessages(prev => prev.map(m => m._id === tempId ? res.data.message : m));
-    } catch (err) {
-      console.error('Error sending message:', err);
-      // Remove optimistic message on error
-      setMessages(prev => prev.filter(m => m._id !== tempId));
-      setNewMessage(messageText); // Restore message on error
-      setReplyTo(currentReplyTo); // Restore reply state on error
-    }
   };
 
   const handleSelectConversation = (friend) => {
