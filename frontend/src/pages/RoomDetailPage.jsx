@@ -1005,7 +1005,7 @@ const RoomDetailPage = () => {
     
     try {
       setLoadingPending(true);
-      const response = await api.get(`/rooms/${roomId}/pending-members`, {
+      const response = await api.get(`/rooms/${roomId}/pending`, {
         headers: { 'x-bypass-cache': true }
       });
       setPendingMembers(response.data.pendingMembers || []);
@@ -1020,7 +1020,7 @@ const RoomDetailPage = () => {
   const handleApproveMember = async (userId) => {
     try {
       setError(null);
-      await api.put(`/rooms/${roomId}/approve-member/${userId}`);
+      await api.put(`/rooms/${roomId}/members/${userId}/approve`);
       setSuccess('Member approved!');
       setTimeout(() => setSuccess(null), 3000);
       
@@ -1046,7 +1046,7 @@ const RoomDetailPage = () => {
   const handleRejectMember = async (userId) => {
     try {
       setError(null);
-      await api.put(`/rooms/${roomId}/reject-member/${userId}`);
+      await api.delete(`/rooms/${roomId}/members/${userId}/reject`);
       setSuccess('Request declined');
       setTimeout(() => setSuccess(null), 3000);
       

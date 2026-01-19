@@ -1058,8 +1058,7 @@ router.get('/:id/pending', protect, isRoomOwner, async (req, res, next) => {
 
     const formatted = pendingMembers.map(m => ({
       _id: m.id,
-      oderId: m.userId,
-      user: { ...m.user, _id: m.user.id },
+      userId: m.user ? { ...m.user, _id: m.user.id } : m.userId,
       requestedAt: m.joinedAt
     }));
 

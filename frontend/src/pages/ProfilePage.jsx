@@ -411,16 +411,20 @@ const ProfilePage = () => {
       <Grid container spacing={{ xs: 2, sm: 2.5, md: 3, lg: 4 }} sx={{ 
         width: '100%', 
         maxWidth: '100%', 
-        margin: 0,
+        margin: '0 auto',
         overflowX: 'hidden',
+        justifyContent: 'center',
       }}>
         {/* Left Sidebar - Profile Info */}
         <Grid item xs={12} md={4} lg={3} sx={{ 
           maxWidth: '100%', 
           width: '100%',
           boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: { xs: 'center', md: 'stretch' },
         }}>
-          <Paper sx={{ p: { xs: 2, md: 3 }, textAlign: 'center', mb: { xs: 2, md: 3 }, boxShadow: { md: 2 } }}>
+          <Paper sx={{ p: { xs: 2, md: 3 }, textAlign: 'center', mb: { xs: 2, md: 3 }, boxShadow: { md: 2 }, width: '100%', maxWidth: { xs: '100%', md: '100%' } }}>
             <Avatar
               src={user?.avatar || undefined}
               sx={{
@@ -483,7 +487,7 @@ const ProfilePage = () => {
           </Paper>
 
           {/* Quick Stats */}
-          <Paper sx={{ p: { xs: 2, md: 3 }, boxShadow: { md: 2 } }}>
+          <Paper sx={{ p: { xs: 2, md: 3 }, boxShadow: { md: 2 }, width: '100%', maxWidth: { xs: '100%', md: '100%' } }}>
             <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
               Quick Stats
             </Typography>
@@ -527,9 +531,12 @@ const ProfilePage = () => {
           maxWidth: '100%', 
           width: '100%',
           pl: { xs: '0 !important', md: 2 }, 
-          pr: { xs: '0 !important', md: 0 } 
+          pr: { xs: '0 !important', md: 0 },
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: { xs: 'center', md: 'stretch' },
         }}>
-          <Paper sx={{ mb: { xs: 2, md: 3 } }}>
+          <Paper sx={{ mb: { xs: 2, md: 3 }, width: '100%', maxWidth: { xs: '100%', md: '100%' } }}>
             <Tabs 
               value={tabValue} 
               onChange={(e, newValue) => setTabValue(newValue)}
