@@ -622,11 +622,14 @@ const RoomDetailPage = () => {
         setError(null);
       }
       
+      // Use cache for initial load (fast), bypass for refreshes
+      const headers = silentRefresh ? { 'x-bypass-cache': 'true' } : {};
+      
       // Load all data in parallel for faster page load
       const [roomResponse, tasksResponse, chatResponse] = await Promise.allSettled([
-        api.get(`/rooms/${roomId}`, { headers: { 'x-bypass-cache': true } }),
-        api.get(`/rooms/${roomId}/tasks`, { headers: { 'x-bypass-cache': true } }),
-        api.get(`/rooms/${roomId}/chat`, { headers: { 'x-bypass-cache': true } })
+        api.get(`/rooms/${roomId}`, { headers }),
+        api.get(`/rooms/${roomId}/tasks`, { headers }),
+        api.get(`/rooms/${roomId}/chat`, { headers })
       ]);
       
       // Handle room data
@@ -1006,9 +1009,7 @@ const RoomDetailPage = () => {
     
     try {
       setLoadingPending(true);
-      const response = await api.get(`/rooms/${roomId}/pending`, {
-        headers: { 'x-bypass-cache': true }
-      });
+      const response = await api.get(`/rooms/${roomId}/pending`);
       setPendingMembers(response.data.pendingMembers || []);
     } catch (err) {
       console.error('Error loading pending members:', err);
