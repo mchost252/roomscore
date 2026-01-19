@@ -359,11 +359,11 @@ const RoomDetailPage = () => {
 
   // Load pending members when room data is available and user is owner
   useEffect(() => {
-    if (room && isOwner && room.settings?.requireApproval) {
+    if (room && isOwner && room.requireApproval) {
       loadPendingMembers();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [room?._id, isOwner, room?.settings?.requireApproval]); // loadPendingMembers intentionally excluded to prevent loops
+  }, [room?._id, isOwner, room?.requireApproval]); // loadPendingMembers intentionally excluded to prevent loops
 
   // Auto-scroll to bottom when new messages arrive or tab changes
   useEffect(() => {
@@ -1002,7 +1002,7 @@ const RoomDetailPage = () => {
 
   // Load pending members (for room owner)
   const loadPendingMembers = async () => {
-    if (!room?.settings?.requireApproval) return;
+    if (!room?.requireApproval) return;
     
     try {
       setLoadingPending(true);
@@ -1799,7 +1799,7 @@ const RoomDetailPage = () => {
         {/* Sidebar */}
         <Grid item xs={12} md={4}>
           {/* Pending Members (Owner Only) */}
-          {isOwner && room?.settings?.requireApproval && pendingMembers.length > 0 && (
+          {isOwner && room?.requireApproval && pendingMembers.length > 0 && (
             <Paper sx={{ p: 2, mb: 2, borderLeft: 4, borderColor: 'warning.main', width: '100%', maxWidth: '100%' }}>
               <Typography variant="subtitle1" fontWeight="bold" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <People color="warning" />
