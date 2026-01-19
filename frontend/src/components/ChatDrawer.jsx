@@ -196,10 +196,12 @@ const ChatDrawer = ({
           elevation={2}
           sx={{
             p: 2,
+            pt: { xs: 'calc(env(safe-area-inset-top, 0px) + 16px)', md: 2 },
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            borderRadius: 0
+            borderRadius: 0,
+            flexShrink: 0,
           }}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -665,6 +667,23 @@ const ChatDrawer = ({
           onClose={() => setAppreciationDialogOpen(false)}
           maxWidth="xs"
           fullWidth
+          disableScrollLock={false}
+          sx={{
+            position: 'fixed',
+            zIndex: 1400,
+            '& .MuiDialog-container': {
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '100%',
+            },
+          }}
+          PaperProps={{
+            sx: {
+              borderRadius: 2,
+              m: { xs: 1.5, sm: 2 },
+              maxHeight: { xs: '80vh', sm: '85vh' },
+            }
+          }}
         >
           <DialogTitle>
             {selectedAppreciationType ? 'Select Member' : 'Choose Appreciation'}

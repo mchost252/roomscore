@@ -46,7 +46,29 @@ const UserProfileDialog = ({ open, onClose, userId }) => {
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog 
+      open={open} 
+      onClose={onClose} 
+      maxWidth="sm" 
+      fullWidth
+      disableScrollLock={false}
+      sx={{
+        position: 'fixed',
+        zIndex: 1300,
+        '& .MuiDialog-container': {
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100%',
+        },
+      }}
+      PaperProps={{
+        sx: {
+          borderRadius: 2,
+          m: { xs: 1.5, sm: 2 },
+          maxHeight: { xs: '80vh', sm: '85vh' },
+        }
+      }}
+    >
       <DialogTitle>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="h6">Profile</Typography>

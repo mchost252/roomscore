@@ -376,10 +376,10 @@ const ProfilePage = () => {
   return (
     <Box sx={{ 
       width: '100%', 
-      maxWidth: '100vw', 
+      maxWidth: '100%', 
       overflowX: 'hidden',
       boxSizing: 'border-box',
-      px: { xs: 1, sm: 2, md: 4, lg: 6 },
+      px: { xs: 0, sm: 1, md: 3, lg: 5 },
       py: { md: 2 },
       '& *': { boxSizing: 'border-box' },
       // Prevent any child from causing horizontal scroll

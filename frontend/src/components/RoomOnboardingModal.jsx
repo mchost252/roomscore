@@ -144,18 +144,22 @@ const RoomOnboardingModal = ({ open, onClose, isAdmin = false }) => {
       maxWidth="sm"
       fullWidth
       scroll="paper"
+      disableScrollLock={false}
       sx={{
+        position: 'fixed',
+        zIndex: 1300,
         '& .MuiDialog-container': {
           alignItems: 'center',
           justifyContent: 'center',
+          height: '100%',
         },
       }}
       PaperProps={{
         sx: {
-          borderRadius: 3,
+          borderRadius: 2,
           overflow: 'hidden',
-          maxHeight: { xs: '85vh', sm: '80vh' },
-          m: { xs: 2, sm: 3 },
+          maxHeight: { xs: '80vh', sm: '75vh' },
+          m: { xs: 1.5, sm: 2 },
         }
       }}
     >

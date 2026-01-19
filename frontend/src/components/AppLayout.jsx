@@ -17,27 +17,19 @@ import {
   useTheme,
   alpha,
   Backdrop,
-  BottomNavigation,
-  BottomNavigationAction,
-  Paper,
-  Menu,
-  MenuItem,
+  useMediaQuery,
 } from '@mui/material';
 import {
   Dashboard,
   Groups,
   People,
   Message,
-  Person,
-  Settings,
   Logout,
   Add,
   Brightness4,
   Brightness7,
-  Menu as MenuIcon,
   ChevronLeft,
   ChevronRight,
-  MoreVert,
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { useTheme as useCustomTheme } from '../context/ThemeContext';
@@ -65,11 +57,10 @@ const AppLayout = ({ children }) => {
   const { user, logout } = useAuth();
   const { mode, setThemeMode } = useCustomTheme();
   const { socket } = useSocket();
-  const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
-  const [mobileMenuAnchor, setMobileMenuAnchor] = useState(null);
   const [unreadMessages, setUnreadMessages] = useState(0);
-
+  
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const isDark = mode === 'dark';
   const sidebarWidth = sidebarExpanded ? SIDEBAR_WIDTH_EXPANDED : SIDEBAR_WIDTH_COLLAPSED;
 
@@ -129,15 +120,6 @@ const AppLayout = ({ children }) => {
     }
   }, [location.pathname]);
 
-  // Get bottom nav value
-  const getNavValue = () => {
-    if (location.pathname === '/dashboard') return 0;
-    if (location.pathname.startsWith('/rooms')) return 1;
-    if (location.pathname === '/friends') return 2;
-    if (location.pathname.startsWith('/messages')) return 3;
-    return -1;
-  };
-
   const handleLogout = async () => {
     await logout();
     navigate('/login');
@@ -149,7 +131,7 @@ const AppLayout = ({ children }) => {
   };
 
   // Sidebar content
-  const SidebarContent = ({ isMobile = false }) => {
+  const SidebarContent = () => {
     const currentWidth = isMobile ? SIDEBAR_WIDTH_MOBILE : sidebarWidth;
     const isExpanded = !isMobile && sidebarExpanded;
     
@@ -263,7 +245,6 @@ const AppLayout = ({ children }) => {
               <ListItemButton
                 onClick={() => {
                   navigate(item.path);
-                  if (isMobile) setMobileOpen(false);
                   if (isExpanded) setSidebarExpanded(false);
                 }}
                 sx={{
@@ -343,7 +324,6 @@ const AppLayout = ({ children }) => {
               <ListItemButton
                 onClick={() => {
                   navigate('/rooms/create');
-                  if (isMobile) setMobileOpen(false);
                   if (isExpanded) setSidebarExpanded(false);
                 }}
                 sx={{
@@ -453,7 +433,6 @@ const AppLayout = ({ children }) => {
           <ListItemButton
             onClick={() => {
               navigate('/profile');
-              if (isMobile) setMobileOpen(false);
               setSidebarExpanded(false);
             }}
             sx={{
@@ -502,7 +481,6 @@ const AppLayout = ({ children }) => {
             <IconButton
               onClick={() => {
                 navigate('/profile');
-                if (isMobile) setMobileOpen(false);
               }}
               sx={{
                 p: 0.5,
@@ -587,20 +565,19 @@ const AppLayout = ({ children }) => {
         }}
       />
 
-      {/* Desktop Sidebar */}
+      {/* Sidebar - Fixed on both mobile and desktop */}
       <Box
         component="nav"
         sx={{
-          width: SIDEBAR_WIDTH_COLLAPSED,
+          width: { xs: SIDEBAR_WIDTH_MOBILE, md: SIDEBAR_WIDTH_COLLAPSED },
           flexShrink: 0,
-          display: { xs: 'none', md: 'block' },
         }}
       >
         <Drawer
           variant="permanent"
           sx={{
             '& .MuiDrawer-paper': {
-              width: sidebarWidth,
+              width: { xs: SIDEBAR_WIDTH_MOBILE, md: sidebarWidth },
               boxSizing: 'border-box',
               border: 'none',
               bgcolor: 'transparent',
@@ -613,24 +590,6 @@ const AppLayout = ({ children }) => {
           <SidebarContent />
         </Drawer>
       </Box>
-
-      {/* Mobile Sidebar */}
-      <Drawer
-        variant="temporary"
-        open={mobileOpen}
-        onClose={() => setMobileOpen(false)}
-        ModalProps={{ keepMounted: true }}
-        sx={{
-          display: { xs: 'block', md: 'none' },
-          '& .MuiDrawer-paper': {
-            width: SIDEBAR_WIDTH_MOBILE,
-            boxSizing: 'border-box',
-            border: 'none',
-          },
-        }}
-      >
-        <SidebarContent isMobile />
-      </Drawer>
 
       {/* Main Content */}
       <Box
@@ -648,177 +607,14 @@ const AppLayout = ({ children }) => {
           flexDirection: 'column',
         }}
       >
-        {/* Mobile Header */}
-        <Box
-          sx={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            display: { xs: 'flex', md: 'none' },
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            px: 2,
-            py: 1,
-            height: 56,
-            bgcolor: isDark 
-              ? 'rgba(15, 23, 42, 0.98)' 
-              : 'rgba(255, 255, 255, 0.98)',
-            borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
-            zIndex: (theme) => theme.zIndex.appBar,
-          }}
-        >
-          {/* Left side - Logo */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Box
-              onClick={() => navigate('/dashboard')}
-              sx={{
-                width: 36,
-                height: 36,
-                borderRadius: 1.5,
-                overflow: 'hidden',
-                cursor: 'pointer',
-              }}
-            >
-              <Box
-                component="img"
-                src="/icon-192x192.png"
-                alt="Krios"
-                sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              />
-            </Box>
-            <Typography
-              variant="h6"
-              onClick={() => navigate('/dashboard')}
-              sx={{
-                fontWeight: 700,
-                cursor: 'pointer',
-                background: 'linear-gradient(135deg, #60A5FA 0%, #F59E0B 100%)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-              }}
-            >
-              Krios
-            </Typography>
-          </Box>
 
-          {/* Right side - Notifications + Menu */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <NotificationPopup />
-            <IconButton
-              onClick={(e) => setMobileMenuAnchor(e.currentTarget)}
-              sx={{ color: isDark ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.7)' }}
-            >
-              <MoreVert />
-            </IconButton>
-          </Box>
-
-          {/* Mobile Menu */}
-          <Menu
-            anchorEl={mobileMenuAnchor}
-            open={Boolean(mobileMenuAnchor)}
-            onClose={() => setMobileMenuAnchor(null)}
-            transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-            anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-            PaperProps={{
-              sx: {
-                minWidth: 200,
-                mt: 1,
-                bgcolor: isDark ? '#1e293b' : '#fff',
-              }
-            }}
-          >
-            <Box sx={{ px: 2, py: 1.5 }}>
-              <Typography variant="subtitle1" fontWeight={600}>
-                {user?.username}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" noWrap>
-                {user?.email}
-              </Typography>
-            </Box>
-            <Divider />
-            <MenuItem onClick={() => { navigate('/profile'); setMobileMenuAnchor(null); }}>
-              <ListItemIcon><Person fontSize="small" /></ListItemIcon>
-              Profile
-            </MenuItem>
-            <MenuItem onClick={() => { setThemeMode(isDark ? 'light' : 'dark'); setMobileMenuAnchor(null); }}>
-              <ListItemIcon>{isDark ? <Brightness7 fontSize="small" /> : <Brightness4 fontSize="small" />}</ListItemIcon>
-              {isDark ? 'Light Mode' : 'Dark Mode'}
-            </MenuItem>
-            <MenuItem onClick={() => { navigate('/rooms/create'); setMobileMenuAnchor(null); }}>
-              <ListItemIcon><Add fontSize="small" /></ListItemIcon>
-              Create Room
-            </MenuItem>
-            <Divider />
-            <MenuItem onClick={handleLogout} sx={{ color: 'error.main' }}>
-              <ListItemIcon><Logout fontSize="small" sx={{ color: 'error.main' }} /></ListItemIcon>
-              Logout
-            </MenuItem>
-          </Menu>
-        </Box>
-
-        {/* Mobile Bottom Navigation */}
-        <Paper
-          sx={{
-            position: 'fixed',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            display: { xs: 'block', md: 'none' },
-            zIndex: (theme) => theme.zIndex.appBar,
-            borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
-          }}
-          elevation={0}
-        >
-          <BottomNavigation
-            value={getNavValue()}
-            onChange={(event, newValue) => {
-              if (newValue === 0) navigate('/dashboard');
-              if (newValue === 1) navigate('/rooms');
-              if (newValue === 2) navigate('/friends');
-              if (newValue === 3) navigate('/messages');
-            }}
-            showLabels
-            sx={{
-              bgcolor: isDark ? 'rgba(15, 23, 42, 0.98)' : 'rgba(255, 255, 255, 0.98)',
-              height: 56,
-              '& .MuiBottomNavigationAction-root': {
-                color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
-                minWidth: 'auto',
-                '&.Mui-selected': {
-                  color: isDark ? '#60A5FA' : '#3B82F6',
-                },
-              },
-              '& .MuiBottomNavigationAction-label': {
-                fontSize: '0.65rem',
-                '&.Mui-selected': {
-                  fontSize: '0.7rem',
-                },
-              },
-            }}
-          >
-            <BottomNavigationAction label="Home" icon={<Dashboard />} />
-            <BottomNavigationAction label="Rooms" icon={<Groups />} />
-            <BottomNavigationAction label="Friends" icon={<People />} />
-            <BottomNavigationAction 
-              label="Messages" 
-              icon={
-                <Badge badgeContent={unreadMessages} color="error" max={99}>
-                  <Message />
-                </Badge>
-              } 
-            />
-          </BottomNavigation>
-        </Paper>
 
         {/* Page Content */}
         <Box
           sx={{
             flex: 1,
             overflow: 'auto',
-            p: { xs: 2, md: 3 },
-            pt: { xs: 'calc(56px + 16px)', md: 3 }, // Header height (56px) + spacing (16px)
-            pb: { xs: 'calc(56px + 24px)', md: 3 }, // Bottom nav height (56px) + spacing (24px)
+            p: { xs: 1.5, md: 3 },
             minHeight: 0, // Allow proper flex shrinking
           }}
         >

@@ -412,22 +412,26 @@ const DailyOrbitSummaryModal = ({
       maxWidth="sm"
       fullWidth
       scroll="paper"
+      disableScrollLock={false}
       sx={{
+        position: 'fixed',
+        zIndex: 1300,
         '& .MuiDialog-container': {
           alignItems: 'center',
           justifyContent: 'center',
+          height: '100%',
         },
       }}
       PaperProps={{
         sx: {
-          borderRadius: { xs: 2, sm: 4 },
+          borderRadius: { xs: 2, sm: 3 },
           overflow: 'hidden',
           background: 'transparent',
           boxShadow: isDark 
             ? '0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 100px rgba(96, 165, 250, 0.1)'
             : '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-          maxHeight: { xs: '85vh', sm: '80vh' },
-          m: { xs: 2, sm: 3 },
+          maxHeight: { xs: '80vh', sm: '75vh' },
+          m: { xs: 1.5, sm: 2 },
         }
       }}
     >

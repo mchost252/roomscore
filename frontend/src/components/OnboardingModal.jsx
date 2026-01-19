@@ -110,7 +110,16 @@ const OnboardingModal = ({ open, onClose }) => {
       fullWidth
       fullScreen={isMobile}
       disableEscapeKeyDown
-      sx={{ zIndex: 1400 }} // Higher than other modals
+      disableScrollLock={false}
+      sx={{ 
+        position: 'fixed',
+        zIndex: 1400,
+        '& .MuiDialog-container': {
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100%',
+        },
+      }}
       slotProps={{
         backdrop: {
           sx: { backgroundColor: 'rgba(0, 0, 0, 0.8)' } // Darker backdrop
@@ -118,9 +127,10 @@ const OnboardingModal = ({ open, onClose }) => {
       }}
       PaperProps={{
         sx: {
-          borderRadius: isMobile ? 0 : 3,
+          borderRadius: isMobile ? 0 : 2,
           minHeight: isMobile ? '100vh' : '500px',
-          maxHeight: isMobile ? '100vh' : '90vh',
+          maxHeight: isMobile ? '100vh' : '85vh',
+          m: isMobile ? 0 : { xs: 1.5, sm: 2 },
           // iOS safe area support
           paddingBottom: isMobile ? 'env(safe-area-inset-bottom, 20px)' : 0,
           paddingTop: isMobile ? 'env(safe-area-inset-top, 0px)' : 0
