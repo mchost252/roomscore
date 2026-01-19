@@ -72,10 +72,35 @@ const PushNotificationPrompt = () => {
         }
       }
 
-      // Wait a bit before showing (let user settle in)
-      setTimeout(() => {
-        setOpen(true);
-      }, 3000);
+      // Detect if this is a manual refresh
+      const isManualRefresh = () => {
+        // Check if page was loaded via refresh (performance API)
+        const navigation = performance.getEntriesByType('navigation')[0];
+        if (navigation && navigation.type === 'reload') {
+          return true;
+        }
+        
+        // Fallback: Check if sessionStorage has a flag (persists during refresh)
+        const wasRunning = sessionStorage.getItem('appWasRunning');
+        if (wasRunning) {
+          return true;
+        }
+        
+        // Set flag for future refreshes
+        sessionStorage.setItem('appWasRunning', 'true');
+        return false;
+      };
+
+      // Only show on manual refresh to avoid being annoying
+      if (isManualRefresh()) {
+        console.log('Manual refresh detected, showing push notification prompt');
+        // Show immediately on refresh (user is engaged)
+        setTimeout(() => {
+          setOpen(true);
+        }, 1000); // Short delay for smooth UX
+      } else {
+        console.log('Initial load, not showing push prompt (will show on refresh)');
+      }
     };
 
     checkPrompt();
