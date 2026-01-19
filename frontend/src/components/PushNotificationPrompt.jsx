@@ -72,34 +72,36 @@ const PushNotificationPrompt = () => {
         }
       }
 
-      // Detect if this is a manual refresh
-      const isManualRefresh = () => {
+      // Detect if this is a manual refresh or if user has visited before
+      const shouldShowPrompt = () => {
         // Check if page was loaded via refresh (performance API)
         const navigation = performance.getEntriesByType('navigation')[0];
         if (navigation && navigation.type === 'reload') {
+          console.log('Detected manual refresh via Performance API');
           return true;
         }
         
-        // Fallback: Check if sessionStorage has a flag (persists during refresh)
-        const wasRunning = sessionStorage.getItem('appWasRunning');
-        if (wasRunning) {
-          return true;
-        }
+        // Check if user has visited before using localStorage (persists across sessions)
+        const hasVisitedBefore = localStorage.getItem('hasVisitedApp');
         
-        // Set flag for future refreshes
-        sessionStorage.setItem('appWasRunning', 'true');
-        return false;
+        if (hasVisitedBefore) {
+          // User has been here before - show prompt
+          console.log('Returning user detected, will show prompt');
+          return true;
+        } else {
+          // First time visitor - don't show yet, but mark that they visited
+          console.log('First time visitor, not showing prompt yet');
+          localStorage.setItem('hasVisitedApp', 'true');
+          return false;
+        }
       };
 
-      // Only show on manual refresh to avoid being annoying
-      if (isManualRefresh()) {
-        console.log('Manual refresh detected, showing push notification prompt');
-        // Show immediately on refresh (user is engaged)
+      // Show prompt for returning users or manual refreshes
+      if (shouldShowPrompt()) {
+        console.log('Showing push notification prompt');
         setTimeout(() => {
           setOpen(true);
         }, 1000); // Short delay for smooth UX
-      } else {
-        console.log('Initial load, not showing push prompt (will show on refresh)');
       }
     };
 
