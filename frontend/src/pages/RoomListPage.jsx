@@ -250,52 +250,26 @@ const RoomListPage = () => {
     );
 
     const handleCardClick = async (e) => {
-      // If already a member, just navigate to the room
+      // Only navigate if already a member
       if (isMember) {
         navigate(`/rooms/${room._id}`);
-        return;
       }
-
-      // If public room and not a member, join first then navigate
-      if (room.isPublic) {
-        try {
-          setLoading(true);
-          const response = await api.post('/rooms/join', { joinCode: room.joinCode });
-          
-          // Check if join request is pending approval
-          if (response.data.pending) {
-            setSuccess(response.data.message || 'Request sent! Waiting for owner approval.');
-            // Don't navigate - user is not a member yet
-            return;
-          }
-          
-          setSuccess(`Joined ${room.name}!`);
-          setTimeout(() => {
-            navigate(`/rooms/${room._id}`);
-          }, 500);
-        } catch (err) {
-          const { icon, message } = getErrorMessage(err, 'room');
-          setError(`${icon} ${message}`);
-          setTimeout(() => setError(null), 5000);
-        } finally {
-          setLoading(false);
-        }
-      }
+      // Don't auto-join on card click - user must use the join button
     };
 
     return (
       <Card 
         sx={{ 
           height: '100%',
-          cursor: 'pointer',
+          cursor: isMember ? 'pointer' : 'default',
           transition: 'transform 0.2s, box-shadow 0.2s',
           overflow: 'hidden',
-          '&:hover': {
+          '&:hover': isMember ? {
             transform: 'translateY(-4px)',
             boxShadow: 6
-          }
+          } : {}
         }}
-        onClick={handleCardClick}
+        onClick={isMember ? handleCardClick : undefined}
       >
         {/* Gradient Header */}
         <Box 

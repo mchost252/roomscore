@@ -662,7 +662,7 @@ const ProfilePage = () => {
               </Grid>
 
               {/* Achievement Section */}
-              <Paper sx={{ p: { xs: 2, md: 3 }, mt: { xs: 2, md: 3 } }}>
+              <Paper sx={{ p: { xs: 2, md: 3 }, mt: { xs: 2, md: 3 }, width: '100%' }}>
                 <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
                   Recent Achievements
                 </Typography>
@@ -678,7 +678,7 @@ const ProfilePage = () => {
 
           {/* Activity Tab */}
           {tabValue === 1 && (
-            <Paper sx={{ p: { xs: 2, md: 3 } }}>
+            <Paper sx={{ p: { xs: 2, md: 3 }, width: '100%' }}>
               <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
                 Activity History
               </Typography>
@@ -711,7 +711,7 @@ const ProfilePage = () => {
 
           {/* Notifications Tab */}
           {tabValue === 2 && (
-            <Paper sx={{ p: { xs: 1.5, md: 3 } }}>
+            <Paper sx={{ p: { xs: 1.5, md: 3 }, width: '100%' }}>
               <Box sx={{ 
                 display: 'flex', 
                 flexDirection: { xs: 'column', sm: 'row' },
@@ -877,7 +877,7 @@ const ProfilePage = () => {
 
           {/* Settings Tab */}
           {tabValue === 3 && (
-            <Paper sx={{ p: { xs: 2, md: 3 } }}>
+            <Paper sx={{ p: { xs: 2, md: 3 }, width: '100%' }}>
               <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
                 Settings
               </Typography>

@@ -433,7 +433,7 @@ const DailyOrbitSummaryModal = ({
       }}
     >
       <ConstellationBackground>
-        <DialogContent sx={{ p: 0, overflowY: 'auto' }}>
+        <DialogContent sx={{ p: 0, overflowY: 'auto', maxHeight: '80vh' }}>
           {/* Header */}
           <Box
             sx={{

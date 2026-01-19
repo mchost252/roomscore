@@ -1005,7 +1005,9 @@ const RoomDetailPage = () => {
     
     try {
       setLoadingPending(true);
-      const response = await api.get(`/rooms/${roomId}/pending-members`);
+      const response = await api.get(`/rooms/${roomId}/pending-members`, {
+        headers: { 'x-bypass-cache': true }
+      });
       setPendingMembers(response.data.pendingMembers || []);
     } catch (err) {
       console.error('Error loading pending members:', err);
@@ -1339,7 +1341,7 @@ const RoomDetailPage = () => {
 
           {/* Tasks Tab */}
           {tabValue === 0 && (
-            <Paper sx={{ p: { xs: 2, md: 3 } }}>
+            <Paper sx={{ p: { xs: 2, md: 3 }, width: '100%', maxWidth: '100%' }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: { xs: 2, md: 3 } }}>
                 <Typography variant="h6" fontWeight="bold" sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
                   Daily Tasks
@@ -1516,7 +1518,7 @@ const RoomDetailPage = () => {
 
           {/* Leaderboard Tab */}
           {tabValue === 1 && (
-            <Paper sx={{ p: { xs: 2, md: 3 } }}>
+            <Paper sx={{ p: { xs: 2, md: 3 }, width: '100%', maxWidth: '100%' }}>
               <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
                 Leaderboard
               </Typography>
@@ -1570,7 +1572,7 @@ const RoomDetailPage = () => {
 
           {/* Chat Tab */}
           {tabValue === 2 && (
-            <Paper sx={{ p: { xs: 2, md: 3 }, height: { xs: 400, md: 500 }, display: 'flex', flexDirection: 'column' }}>
+            <Paper sx={{ p: { xs: 2, md: 3 }, height: { xs: 400, md: 500 }, display: 'flex', flexDirection: 'column', width: '100%', maxWidth: '100%' }}>
               <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
                 Room Chat
               </Typography>
@@ -1797,7 +1799,7 @@ const RoomDetailPage = () => {
         <Grid item xs={12} md={4}>
           {/* Pending Members (Owner Only) */}
           {isOwner && room?.settings?.requireApproval && pendingMembers.length > 0 && (
-            <Paper sx={{ p: 2, mb: 2, borderLeft: 4, borderColor: 'warning.main' }}>
+            <Paper sx={{ p: 2, mb: 2, borderLeft: 4, borderColor: 'warning.main', width: '100%', maxWidth: '100%' }}>
               <Typography variant="subtitle1" fontWeight="bold" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <People color="warning" />
                 Pending Requests
@@ -1865,7 +1867,7 @@ const RoomDetailPage = () => {
           )}
 
           {/* Stats Card */}
-          <Card sx={{ mb: 3 }}>
+          <Card sx={{ mb: 3, width: '100%', maxWidth: '100%' }}>
             <CardContent>
               <Typography variant="h6" fontWeight="bold" gutterBottom>
                 Your Stats
@@ -1892,7 +1894,7 @@ const RoomDetailPage = () => {
           </Card>
 
           {/* Members List */}
-          <Paper sx={{ p: 2 }}>
+          <Paper sx={{ p: 2, width: '100%', maxWidth: '100%' }}>
             <Typography variant="h6" fontWeight="bold" gutterBottom>
               Members ({room.members?.length || 0})
             </Typography>
