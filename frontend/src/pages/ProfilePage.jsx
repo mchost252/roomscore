@@ -379,8 +379,8 @@ const ProfilePage = () => {
       maxWidth: '100%', 
       overflowX: 'hidden',
       boxSizing: 'border-box',
-      px: { xs: 0, sm: 1, md: 3, lg: 5 },
-      py: { md: 2 },
+      px: { xs: 1, sm: 2, md: 2, lg: 3 },
+      py: { xs: 1, md: 2 },
       '& *': { boxSizing: 'border-box' },
       // Prevent any child from causing horizontal scroll
       '& > *': { maxWidth: '100%' },
@@ -407,15 +407,11 @@ const ProfilePage = () => {
         </Alert>
       )}
 
-      <Grid container spacing={{ xs: 1.5, sm: 2, md: 4 }} sx={{ 
+      <Grid container spacing={{ xs: 2, sm: 2.5, md: 3 }} sx={{ 
         width: '100%', 
         maxWidth: '100%', 
         margin: 0,
         overflowX: 'hidden',
-        '& > .MuiGrid-item': {
-          paddingLeft: { xs: '12px', sm: '16px', md: '32px' },
-          paddingTop: { xs: '12px', sm: '16px', md: '32px' },
-        }
       }}>
         {/* Left Sidebar - Profile Info */}
         <Grid item xs={12} md={4} lg={3} sx={{ 

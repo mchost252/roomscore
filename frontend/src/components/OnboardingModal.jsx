@@ -110,14 +110,11 @@ const OnboardingModal = ({ open, onClose }) => {
       fullWidth
       fullScreen={isMobile}
       disableEscapeKeyDown
-      disableScrollLock={false}
+      disablePortal={false}
       sx={{ 
-        position: 'fixed',
         zIndex: 1400,
         '& .MuiDialog-container': {
           alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
         },
       }}
       slotProps={{
@@ -129,8 +126,9 @@ const OnboardingModal = ({ open, onClose }) => {
         sx: {
           borderRadius: isMobile ? 0 : 2,
           minHeight: isMobile ? '100vh' : '500px',
-          maxHeight: isMobile ? '100vh' : '85vh',
-          m: isMobile ? 0 : { xs: 1.5, sm: 2 },
+          maxHeight: isMobile ? '100vh' : '80vh',
+          mx: isMobile ? 0 : { xs: 2, sm: 3 },
+          my: isMobile ? 0 : 'auto',
           // iOS safe area support
           paddingBottom: isMobile ? 'env(safe-area-inset-bottom, 20px)' : 0,
           paddingTop: isMobile ? 'env(safe-area-inset-top, 0px)' : 0
