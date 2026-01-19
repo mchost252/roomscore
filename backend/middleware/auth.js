@@ -117,7 +117,7 @@ exports.isRoomMember = async (req, res, next) => {
           userId: req.user.id
         }
       },
-      select: { id: true }
+      select: { id: true, status: true }
     });
     
     // Also check if user is owner (separate quick query)
@@ -156,6 +156,14 @@ exports.isRoomMember = async (req, res, next) => {
       return res.status(403).json({
         success: false,
         message: 'You must be a member of this room'
+      });
+    }
+
+    // Check if membership is pending (not yet approved)
+    if (membership && membership.status === 'pending' && !isOwner) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your join request is pending approval from the room owner'
       });
     }
 

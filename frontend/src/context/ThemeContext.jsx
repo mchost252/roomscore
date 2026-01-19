@@ -222,21 +222,13 @@ export const ThemeProvider = ({ children }) => {
           MuiCssBaseline: {
             styleOverrides: {
               body: {
-                scrollbarWidth: 'thin',
+                scrollbarWidth: 'none',
                 '&::-webkit-scrollbar': {
-                  width: '8px',
-                  height: '8px',
+                  display: 'none',
+                  width: '0px',
+                  height: '0px',
                 },
-                '&::-webkit-scrollbar-track': {
-                  background: mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-                },
-                '&::-webkit-scrollbar-thumb': {
-                  background: mode === 'dark' ? 'rgba(96,165,250,0.3)' : 'rgba(59,130,246,0.3)',
-                  borderRadius: '4px',
-                },
-                '&::-webkit-scrollbar-thumb:hover': {
-                  background: mode === 'dark' ? 'rgba(96,165,250,0.5)' : 'rgba(59,130,246,0.5)',
-                },
+                msOverflowStyle: 'none',
               },
             },
           },

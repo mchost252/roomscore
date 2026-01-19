@@ -331,7 +331,7 @@ const FriendsPage = () => {
   };
 
   return (
-    <Container maxWidth="md" sx={{ mt: isMobile ? 2 : 4, mb: isMobile ? 10 : 4, px: isMobile ? 1 : 3 }}>
+    <Container maxWidth="lg" sx={{ mt: isMobile ? 2 : 4, mb: isMobile ? 10 : 4, px: { xs: 2, sm: 3, md: 4 } }}>
       <Paper sx={{ p: isMobile ? 2 : 3 }}>
         <Typography variant="h5" fontWeight="bold" gutterBottom>
           Friends

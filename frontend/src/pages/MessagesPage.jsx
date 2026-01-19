@@ -617,7 +617,7 @@ const MessagesPage = () => {
       // Show loading spinner while selectedFriend is being fetched
       if (!selectedFriend) {
         return (
-          <Container maxWidth="md" sx={{ height: 'calc(100vh - 120px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Container maxWidth="lg" sx={{ height: 'calc(100vh - 120px)', display: 'flex', alignItems: 'center', justifyContent: 'center', px: { xs: 2, sm: 3, md: 4 } }}>
             <CircularProgress />
           </Container>
         );
@@ -956,7 +956,7 @@ const MessagesPage = () => {
           onClose={() => setProfileDialogOpen(false)}
           userId={getUserId(selectedFriend)}
         />
-        <Container maxWidth="md" sx={{ mt: isMobile ? 2 : 4, mb: isMobile ? 10 : 4, px: isMobile ? 1 : 3 }}>
+        <Container maxWidth="lg" sx={{ mt: isMobile ? 2 : 4, mb: isMobile ? 10 : 4, px: { xs: 2, sm: 3, md: 4 } }}>
         <Paper>
           <Box sx={{ p: 2 }}>
             <Typography variant="h5" fontWeight="bold">

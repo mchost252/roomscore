@@ -288,20 +288,41 @@ router.delete('/:friendId', protect, async (req, res, next) => {
     });
 
     // Update each message to add current user to deletedFor
+    // If both users have deleted, permanently remove the message from DB
     let updatedCount = 0;
+    let permanentlyDeletedCount = 0;
+    
     for (const msg of messages) {
       if (!msg.deletedFor.includes(userId)) {
-        await prisma.directMessage.update({
-          where: { id: msg.id },
-          data: {
-            deletedFor: { push: userId }
-          }
-        });
-        updatedCount++;
+        // Check if the other user has already deleted this message
+        const otherUserId = msg.deletedFor.length > 0 ? msg.deletedFor[0] : null;
+        const bothDeleted = otherUserId && (otherUserId === friendId || msg.deletedFor.includes(friendId));
+        
+        if (bothDeleted || msg.deletedFor.includes(friendId)) {
+          // Both users have now deleted - permanently remove from database
+          await prisma.directMessage.delete({
+            where: { id: msg.id }
+          });
+          permanentlyDeletedCount++;
+        } else {
+          // Only this user is deleting - add to deletedFor array
+          await prisma.directMessage.update({
+            where: { id: msg.id },
+            data: {
+              deletedFor: { push: userId }
+            }
+          });
+          updatedCount++;
+        }
       }
     }
 
-    res.json({ success: true, deleted: updatedCount, message: 'Chat history cleared for you' });
+    logger.info(`User ${userId} cleared chat with ${friendId}: ${updatedCount} soft-deleted, ${permanentlyDeletedCount} permanently deleted`);
+    res.json({ 
+      success: true, 
+      deleted: updatedCount + permanentlyDeletedCount, 
+      message: 'Chat history cleared for you' 
+    });
   } catch (error) {
     next(error);
   }

@@ -358,9 +358,47 @@ router.delete('/:id', protect, isRoomOwner, async (req, res, next) => {
       .filter(m => m.userId !== req.user.id)
       .map(m => m.userId);
 
-    await prisma.room.update({
-      where: { id: req.params.id },
-      data: { isActive: false }
+    // Delete all related data in a transaction for data integrity
+    await prisma.$transaction(async (tx) => {
+      // Delete task completions for this room
+      await tx.taskCompletion.deleteMany({
+        where: { roomId: req.params.id }
+      });
+
+      // Delete user room progress
+      await tx.userRoomProgress.deleteMany({
+        where: { roomId: req.params.id }
+      });
+
+      // Delete room tasks
+      await tx.roomTask.deleteMany({
+        where: { roomId: req.params.id }
+      });
+
+      // Delete chat messages
+      await tx.chatMessage.deleteMany({
+        where: { roomId: req.params.id }
+      });
+
+      // Delete room members
+      await tx.roomMember.deleteMany({
+        where: { roomId: req.params.id }
+      });
+
+      // Delete appreciations related to this room
+      await tx.appreciation.deleteMany({
+        where: { roomId: req.params.id }
+      });
+
+      // Delete nudges related to this room
+      await tx.nudge.deleteMany({
+        where: { roomId: req.params.id }
+      });
+
+      // Finally, delete the room itself
+      await tx.room.delete({
+        where: { id: req.params.id }
+      });
     });
 
     // Notify members about room disbanding

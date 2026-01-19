@@ -98,6 +98,7 @@ const RoomDetailPage = () => {
   const [nudging, setNudging] = useState(false);
   const [nudgeStatus, setNudgeStatus] = useState({ hasCompletedTask: false, alreadySentToday: false });
   const [appreciationRemaining, setAppreciationRemaining] = useState(3);
+  const [savingSettings, setSavingSettings] = useState(false);
   // Track which appreciations have been sent in the last 24h so UI can disable duplicates
   // Map key: `${toUserId}:${type}` => true
   const [sentAppreciations, setSentAppreciations] = useState(() => new Set());
@@ -1081,11 +1082,12 @@ const RoomDetailPage = () => {
   return (
     <Box sx={{ 
       width: '100%', 
-      maxWidth: '100%', 
+      maxWidth: { xs: '100%', sm: '100%', md: 1400, lg: 1600 },
+      mx: 'auto',
       overflowX: 'hidden',
       // Prevent any accidental horizontal scroll caused by inner flex rows
       '& *': { maxWidth: '100%' },
-      px: { xs: 1.5, sm: 2, md: 3 },
+      px: { xs: 2, sm: 3, md: 4 },
       py: { xs: 2, md: 4 },
       boxSizing: 'border-box',
     }}>
@@ -1742,7 +1744,7 @@ const RoomDetailPage = () => {
                                   fontSize: '11px',
                                   color: isOwnMessage 
                                     ? theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.45)'
-                                    : 'rgba(0,0,0,0.45)',
+                                    : theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.45)',
                                   lineHeight: 1,
                                 }}
                               >
@@ -2102,11 +2104,12 @@ const RoomDetailPage = () => {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setSettingsOpen(false)}>Cancel</Button>
+          <Button onClick={() => setSettingsOpen(false)} disabled={savingSettings}>Cancel</Button>
           <Button 
             variant="contained" 
             onClick={async () => {
               try {
+                setSavingSettings(true);
                 // Update basic room info
                 await api.put(`/rooms/${roomId}`, {
                   name: roomSettings.name,
@@ -2115,10 +2118,11 @@ const RoomDetailPage = () => {
                   maxMembers: roomSettings.maxMembers
                 });
 
-                // Update room settings (includes chat retention)
+                // Update room settings (includes chat retention and requireApproval)
                 await api.put(`/rooms/${roomId}/settings`, {
                   isPublic: roomSettings.isPublic,
-                  chatRetentionDays: roomSettings.chatRetentionDays
+                  chatRetentionDays: roomSettings.chatRetentionDays,
+                  requireApproval: roomSettings.requireApproval
                 });
 
                 setSuccess('Room settings updated!');
@@ -2128,10 +2132,13 @@ const RoomDetailPage = () => {
               } catch (err) {
                 setError(err.response?.data?.message || 'Failed to update settings');
                 setTimeout(() => setError(null), 5000);
+              } finally {
+                setSavingSettings(false);
               }
             }}
+            disabled={savingSettings}
           >
-            Save Changes
+            {savingSettings ? 'Saving...' : 'Save Changes'}
           </Button>
         </DialogActions>
       </Dialog>

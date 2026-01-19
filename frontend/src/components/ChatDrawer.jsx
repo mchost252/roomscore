@@ -88,7 +88,7 @@ const ChatDrawer = ({
 
   const handleSend = () => {
     if (message.trim()) {
-      onSendMessage(message.trim(), replyTo?.messageId || replyTo?._id || null);
+      onSendMessage(message.trim(), replyTo);
       setMessage('');
       setReplyTo(null);
     }

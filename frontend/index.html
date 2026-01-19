@@ -80,28 +80,21 @@
         }
       }
       
-      /* Hide scrollbar on mobile for cleaner look */
-      @media (max-width: 768px) {
-        ::-webkit-scrollbar {
-          width: 4px;
-          height: 4px;
-        }
+      /* Hide scrollbar completely for cleaner look */
+      ::-webkit-scrollbar {
+        width: 0px;
+        height: 0px;
+        display: none;
       }
       
-      /* Custom scrollbar for webkit browsers */
-      ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
+      /* Firefox */
+      * {
+        scrollbar-width: none;
       }
-      ::-webkit-scrollbar-track {
-        background: rgba(255, 255, 255, 0.05);
-      }
-      ::-webkit-scrollbar-thumb {
-        background: rgba(96, 165, 250, 0.3);
-        border-radius: 4px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: rgba(96, 165, 250, 0.5);
+      
+      /* IE and Edge */
+      * {
+        -ms-overflow-style: none;
       }
       
       /* Critical loading spinner (shown before React hydrates) */

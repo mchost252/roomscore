@@ -587,7 +587,7 @@ const DashboardPage = () => {
   };
 
   return (
-    <Box sx={{ maxWidth: 1400, mx: 'auto' }}>
+    <Box sx={{ maxWidth: 1600, mx: 'auto', px: { xs: 2, sm: 3, md: 4 } }}>
       {/* Onboarding Modal */}
       <OnboardingModal open={showOnboarding} onClose={handleOnboardingClose} />
 

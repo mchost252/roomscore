@@ -19,7 +19,7 @@ const CHANGES = [
 
 const ChangelogPage = () => {
   return (
-    <Container maxWidth="md" sx={{ mt: 4, mb: 4 }}>
+    <Container maxWidth="lg" sx={{ mt: 4, mb: 4, px: { xs: 2, sm: 3, md: 4 } }}>
       <Paper sx={{ p: 3 }}>
         <Typography variant="h5" fontWeight="bold" gutterBottom>
           What’s New
