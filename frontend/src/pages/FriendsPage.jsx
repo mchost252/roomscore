@@ -86,6 +86,56 @@ const FriendsPage = () => {
     }
   }, []);
 
+  // Socket listeners for real-time updates
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleFriendRequest = (data) => {
+      // New friend request received - add to requests list
+      if (data.from && data.from._id !== data.userId) {
+        setRequests(prev => {
+          // Check if request already exists
+          const exists = prev.some(req => req._id === data._id || req.from?._id === data.from._id);
+          if (exists) return prev;
+          return [data, ...prev];
+        });
+      }
+    };
+
+    const handleFriendAccepted = (data) => {
+      // Friend request was accepted - move to friends list
+      setRequests(prev => prev.filter(req => req._id !== data.requestId));
+      setSentRequests(prev => prev.filter(req => req._id !== data.requestId));
+      
+      // Add to friends list if not already there
+      if (data.friend) {
+        setFriends(prev => {
+          const exists = prev.some(f => f._id === data.friend._id);
+          if (exists) return prev;
+          return [data.friend, ...prev];
+        });
+      } else {
+        // Refresh friends list to get the new friend
+        loadFriends(true);
+      }
+    };
+
+    const handleFriendRemoved = (data) => {
+      // Friend was removed - remove from friends list
+      setFriends(prev => prev.filter(f => f._id !== data.friendId));
+    };
+
+    socket.on('friend:request', handleFriendRequest);
+    socket.on('friend:accepted', handleFriendAccepted);
+    socket.on('friend:removed', handleFriendRemoved);
+
+    return () => {
+      socket.off('friend:request', handleFriendRequest);
+      socket.off('friend:accepted', handleFriendAccepted);
+      socket.off('friend:removed', handleFriendRemoved);
+    };
+  }, [socket]);
+
   // Load sent friend requests (pending)
   const loadSentRequests = async () => {
     try {

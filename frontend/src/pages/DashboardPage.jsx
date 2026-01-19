@@ -514,12 +514,47 @@ const DashboardPage = () => {
       );
     };
 
+    const handleTaskCreated = (data) => {
+      // Add newly created task to the room's task list
+      setRooms(prevRooms => 
+        prevRooms.map(room => {
+          if (room._id === data.roomId) {
+            const newTask = {
+              _id: data.task._id || data.task.id,
+              title: data.task.title,
+              description: data.task.description,
+              daysOfWeek: data.task.daysOfWeek || [],
+              pointValue: data.task.pointValue || 10,
+              isCompleted: false,
+              createdAt: data.task.createdAt || new Date().toISOString()
+            };
+            return {
+              ...room,
+              tasks: [...(room.tasks || []), newTask]
+            };
+          }
+          return room;
+        })
+      );
+    };
+
+    const handleMemberJoined = (data) => {
+      // Refresh dashboard to show updated member count
+      if (data.roomId) {
+        loadDashboardData(true);
+      }
+    };
+
     socket.on('task:completed', handleTaskCompleted);
     socket.on('task:uncompleted', handleTaskUncompleted);
+    socket.on('task:created', handleTaskCreated);
+    socket.on('member:joined', handleMemberJoined);
 
     return () => {
       socket.off('task:completed', handleTaskCompleted);
       socket.off('task:uncompleted', handleTaskUncompleted);
+      socket.off('task:created', handleTaskCreated);
+      socket.off('member:joined', handleMemberJoined);
     };
   }, [socket, user?._id, user?.id]);
 
