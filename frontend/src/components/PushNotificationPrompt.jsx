@@ -42,9 +42,11 @@ const PushNotificationPrompt = () => {
         return;
       }
 
-      // Check if user skipped recently (within 7 days)
+      // Check if user skipped recently (within 7 days) - only after they've visited at least once
+      const hasVisitedBefore = localStorage.getItem('hasVisitedApp');
       const lastSkipped = localStorage.getItem('pushPromptSkippedAt');
-      if (lastSkipped) {
+      
+      if (hasVisitedBefore && lastSkipped) {
         const daysSinceSkip = (Date.now() - parseInt(lastSkipped)) / (1000 * 60 * 60 * 24);
         if (daysSinceSkip < 7) {
           console.log('Push prompt skipped recently, will ask again in', Math.ceil(7 - daysSinceSkip), 'days');
@@ -82,9 +84,10 @@ const PushNotificationPrompt = () => {
         }
         
         // Check if user has visited before using localStorage (persists across sessions)
-        const hasVisitedBefore = localStorage.getItem('hasVisitedApp');
+        // Note: hasVisitedBefore was already checked above for skip cooldown
+        const hasVisited = localStorage.getItem('hasVisitedApp');
         
-        if (hasVisitedBefore) {
+        if (hasVisited) {
           // User has been here before - show prompt
           console.log('Returning user detected, will show prompt');
           return true;
@@ -101,7 +104,7 @@ const PushNotificationPrompt = () => {
         console.log('Showing push notification prompt');
         setTimeout(() => {
           setOpen(true);
-        }, 1000); // Short delay for smooth UX
+        }, 2000); // 2 second delay to let onboarding complete first
       }
     };
 
