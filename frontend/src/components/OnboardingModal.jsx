@@ -108,7 +108,6 @@ const OnboardingModal = ({ open, onClose }) => {
       }}
       maxWidth="sm"
       fullWidth
-      fullScreen={isMobile}
       disableEscapeKeyDown
       disablePortal={false}
       sx={{ 
@@ -124,10 +123,10 @@ const OnboardingModal = ({ open, onClose }) => {
       }}
       PaperProps={{
         sx: {
-          borderRadius: isMobile ? 0 : 2,
-          minHeight: isMobile ? '100vh' : '500px',
-          maxHeight: isMobile ? '100vh' : '80vh',
-          mx: isMobile ? 0 : { xs: 2, sm: 3 },
+          borderRadius: 2,
+          minHeight: { xs: '85vh', sm: '500px' },
+          maxHeight: { xs: '90vh', sm: '80vh' },
+          mx: { xs: 2, sm: 3 },
           my: isMobile ? 0 : 'auto',
           // iOS safe area support
           paddingBottom: isMobile ? 'env(safe-area-inset-bottom, 20px)' : 0,

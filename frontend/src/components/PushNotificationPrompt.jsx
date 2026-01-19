@@ -74,38 +74,14 @@ const PushNotificationPrompt = () => {
         }
       }
 
-      // Detect if this is a manual refresh or if user has visited before
-      const shouldShowPrompt = () => {
-        // Check if page was loaded via refresh (performance API)
-        const navigation = performance.getEntriesByType('navigation')[0];
-        if (navigation && navigation.type === 'reload') {
-          console.log('Detected manual refresh via Performance API');
-          return true;
-        }
-        
-        // Check if user has visited before using localStorage (persists across sessions)
-        // Note: hasVisitedBefore was already checked above for skip cooldown
-        const hasVisited = localStorage.getItem('hasVisitedApp');
-        
-        if (hasVisited) {
-          // User has been here before - show prompt
-          console.log('Returning user detected, will show prompt');
-          return true;
-        } else {
-          // First time visitor - don't show yet, but mark that they visited
-          console.log('First time visitor, not showing prompt yet');
-          localStorage.setItem('hasVisitedApp', 'true');
-          return false;
-        }
-      };
-
-      // Show prompt for returning users or manual refreshes
-      if (shouldShowPrompt()) {
-        console.log('Showing push notification prompt');
-        setTimeout(() => {
-          setOpen(true);
-        }, 2000); // 2 second delay to let onboarding complete first
-      }
+      // Always show prompt if notification not enabled (unless user clicked "Maybe Later" recently)
+      // This ensures all users are prompted to enable notifications for better experience
+      console.log('Push notifications not enabled, showing prompt after delay');
+      
+      // Show prompt after a delay to allow onboarding to complete first
+      setTimeout(() => {
+        setOpen(true);
+      }, 3000); // 3 second delay to let onboarding/page load complete
     };
 
     checkPrompt();
