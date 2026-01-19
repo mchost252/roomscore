@@ -51,9 +51,14 @@ const PushNotificationPrompt = () => {
       const userSkipKey = `pushPromptSkippedAt_${user.id}`;
       const userEnabledKey = `pushEnabled_${user.id}`;
       
+      // Check if THIS user already has push enabled
+      if (localStorage.getItem(userEnabledKey) === 'true') {
+        console.log('Push already enabled for this user');
+        return;
+      }
+      
       // Check if THIS user clicked "Maybe Later" recently (within 7 days)
       const lastSkipped = localStorage.getItem(userSkipKey);
-      
       if (lastSkipped) {
         const daysSinceSkip = (Date.now() - parseInt(lastSkipped)) / (1000 * 60 * 60 * 24);
         if (daysSinceSkip < 7) {
@@ -69,7 +74,7 @@ const PushNotificationPrompt = () => {
           if (reg) {
             const subscription = await reg.pushManager.getSubscription();
             if (subscription) {
-              // Already subscribed, no need to prompt
+              // Already subscribed, mark as enabled and don't prompt
               console.log('Push already subscribed');
               localStorage.setItem(userEnabledKey, 'true');
               return;
@@ -82,13 +87,11 @@ const PushNotificationPrompt = () => {
         }
       }
 
-      // Always show prompt if notification not enabled for THIS user
-      console.log('Push notifications not enabled for this user, showing prompt after delay');
-      
-      // Show prompt after a delay to allow onboarding to complete first
+      // Show prompt - user doesn't have push notifications enabled
+      console.log('Push notifications not enabled for this user, showing prompt');
       setTimeout(() => {
         setOpen(true);
-      }, 3000); // 3 second delay to let onboarding/page load complete
+      }, 2000); // 2 second delay
     };
 
     checkPrompt();

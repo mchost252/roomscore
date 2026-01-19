@@ -55,57 +55,132 @@ cron.schedule('0 3 * * *', async () => {
 // Send daily task reminders at 8 AM
 cron.schedule('0 8 * * *', async () => {
   try {
-    logger.info('Running daily task reminder job...');
-    const rooms = await Room.find({ isActive: true }).populate('members.userId');
-    
-    let reminderCount = 0;
-    for (const room of rooms) {
-      const today = new Date();
-      const dayOfWeek = today.getDay();
-      
-      // Get today's tasks
-      const todayTasks = room.tasks.filter(task => {
-        if (!task.isActive) return false;
-        if (task.frequency === 'daily') return true;
-        if (task.frequency === 'weekly' && task.daysOfWeek.includes(dayOfWeek)) return true;
-        if (task.frequency === 'monthly') return true;
-        return false;
-      });
+    logger.info('Running morning task reminder job...');
+    await sendTaskReminders('morning');
+  } catch (error) {
+    logger.error('Error in morning task reminder job:', error);
+  }
+});
 
-      // Send reminders to all members
-      for (const member of room.members) {
-        if (member.userId && member.userId.notificationSettings?.taskReminders) {
-          for (const task of todayTasks) {
-            // Create in-app notification
-            await NotificationService.notifyTaskReminder(
-              member.userId._id,
-              task,
-              room
-            );
-            
-            // Send push notification
-            try {
-              await PushNotificationService.notifyTaskReminder(
-                member.userId._id,
-                task.title,
-                room.name,
-                room._id.toString()
-              );
-            } catch (pushErr) {
-              logger.error('Push notification error for task reminder:', pushErr);
-            }
-            
-            reminderCount++;
+// Send evening task reminders at 6 PM for incomplete tasks
+cron.schedule('0 18 * * *', async () => {
+  try {
+    logger.info('Running evening task reminder job...');
+    await sendTaskReminders('evening');
+  } catch (error) {
+    logger.error('Error in evening task reminder job:', error);
+  }
+});
+
+// Helper function to send task reminders
+async function sendTaskReminders(timeOfDay = 'morning') {
+  const today = new Date();
+  const dayOfWeek = today.getDay();
+  const startOfDay = new Date(today);
+  startOfDay.setHours(0, 0, 0, 0);
+  
+  // Get all active rooms with members and tasks using Prisma
+  const rooms = await prisma.room.findMany({
+    where: {
+      expiresAt: { gt: today }
+    },
+    include: {
+      members: {
+        include: {
+          user: true
+        }
+      },
+      tasks: {
+        where: { isActive: true }
+      }
+    }
+  });
+  
+  let reminderCount = 0;
+  
+  for (const room of rooms) {
+    // Get today's tasks based on frequency
+    const todayTasks = room.tasks.filter(task => {
+      if (task.frequency === 'daily') return true;
+      if (task.frequency === 'weekly' && task.daysOfWeek?.includes(dayOfWeek)) return true;
+      if (task.frequency === 'monthly') return true;
+      return false;
+    });
+    
+    if (todayTasks.length === 0) continue;
+
+    // Send reminders to all members
+    for (const member of room.members) {
+      if (!member.user) continue;
+      
+      // For evening reminders, only send if user has incomplete tasks
+      if (timeOfDay === 'evening') {
+        // Check which tasks are not completed today
+        const completions = await prisma.taskCompletion.findMany({
+          where: {
+            roomId: room.id,
+            oderId: member.userId,
+            completedAt: { gte: startOfDay }
           }
+        });
+        
+        const completedTaskIds = new Set(completions.map(c => c.taskId));
+        const incompleteTasks = todayTasks.filter(t => !completedTaskIds.has(t.id));
+        
+        if (incompleteTasks.length === 0) continue; // All tasks done, skip
+        
+        // Send reminder for incomplete tasks
+        const taskNames = incompleteTasks.map(t => t.title).slice(0, 3).join(', ');
+        const moreCount = incompleteTasks.length > 3 ? ` +${incompleteTasks.length - 3} more` : '';
+        
+        try {
+          await NotificationService.createNotification({
+            recipientId: member.userId,
+            type: 'task_reminder',
+            title: '⏰ Don\'t forget your tasks!',
+            message: `You still have ${incompleteTasks.length} task(s) to complete in ${room.name}: ${taskNames}${moreCount}`,
+            roomId: room.id
+          });
+          
+          await PushNotificationService.notifyTaskReminder(
+            member.userId,
+            `${incompleteTasks.length} task(s) remaining`,
+            room.name,
+            room.id
+          );
+          
+          reminderCount++;
+        } catch (err) {
+          logger.error('Error sending evening reminder:', err);
+        }
+      } else {
+        // Morning reminder - send for all tasks
+        try {
+          await NotificationService.createNotification({
+            recipientId: member.userId,
+            type: 'task_reminder',
+            title: '🌅 Good morning!',
+            message: `You have ${todayTasks.length} task(s) to complete today in ${room.name}`,
+            roomId: room.id
+          });
+          
+          await PushNotificationService.notifyTaskReminder(
+            member.userId,
+            `${todayTasks.length} task(s) for today`,
+            room.name,
+            room.id
+          );
+          
+          reminderCount++;
+        } catch (err) {
+          logger.error('Error sending morning reminder:', err);
         }
       }
     }
-    
-    logger.info(`Sent ${reminderCount} task reminders`);
-  } catch (error) {
-    logger.error('Error in task reminder job:', error);
   }
-});
+  
+  logger.info(`Sent ${reminderCount} ${timeOfDay} task reminders`);
+}
 
 // Delete expired rooms daily at 1 AM (cleanup database space)
 cron.schedule('0 1 * * *', async () => {

@@ -1091,9 +1091,14 @@ const RoomDetailPage = () => {
       overflowX: 'hidden',
       // Prevent any accidental horizontal scroll caused by inner flex rows
       '& *': { maxWidth: '100%' },
-      px: { xs: 2, sm: 3, md: 4 },
-      py: { xs: 2, md: 4 },
+      px: { xs: 1.5, sm: 2, md: 4 },
+      py: { xs: 1.5, md: 4 },
       boxSizing: 'border-box',
+      // Ensure all Paper children have consistent width
+      '& > .MuiPaper-root': {
+        width: '100%',
+        boxSizing: 'border-box',
+      },
     }}>
       {/* Room Intro Card (first-time) */}
       {showRoomIntro && (
