@@ -654,13 +654,20 @@ router.delete('/:id/leave', protect, isRoomMember, async (req, res, next) => {
       }
     }
 
-    // Emit socket event
+    // Emit socket event to room and to the user who left
     const io = req.app.get('io');
-    io.to(req.room.id).emit('member:left', {
+    const eventData = {
       roomId: req.room.id,
       userId: req.user.id,
       username: req.user.username
-    });
+    };
+    
+    // Emit to room (for other members)
+    io.to(req.room.id).emit('member:left', eventData);
+    
+    // IMPORTANT: Also emit to the user's personal channel
+    // because they've already left the room channel
+    io.to(`user:${req.user.id}`).emit('member:left', eventData);
 
     logger.info(`User ${req.user.email} left room: ${req.room.name}`);
     res.json({

@@ -539,10 +539,18 @@ const DashboardPage = () => {
     };
 
     const handleMemberJoined = (data) => {
-      // Refresh dashboard to show updated member count
-      if (data.roomId) {
-        loadDashboardData(true);
-      }
+      // Update member count locally without full refresh
+      setRooms(prevRooms => 
+        prevRooms.map(room => {
+          if (room._id === data.roomId) {
+            return {
+              ...room,
+              members: [...(room.members || []), { userId: data.user }]
+            };
+          }
+          return room;
+        })
+      );
     };
 
     const handleMemberLeft = (data) => {
