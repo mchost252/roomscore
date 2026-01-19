@@ -555,11 +555,21 @@ const DashboardPage = () => {
       }
     };
 
+    const handleJoinApproved = (data) => {
+      // User was approved to join a room - refresh dashboard to show it
+      console.log('Join approved for room:', data.roomId);
+      loadDashboardData(true);
+      // Show success message
+      setSuccess(`Welcome! You've been approved to join ${data.roomName || 'the room'}!`);
+      setTimeout(() => setSuccess(null), 5000);
+    };
+
     socket.on('task:completed', handleTaskCompleted);
     socket.on('task:uncompleted', handleTaskUncompleted);
     socket.on('task:created', handleTaskCreated);
     socket.on('member:joined', handleMemberJoined);
     socket.on('member:left', handleMemberLeft);
+    socket.on('room:joinApproved', handleJoinApproved);
 
     return () => {
       socket.off('task:completed', handleTaskCompleted);
@@ -567,6 +577,7 @@ const DashboardPage = () => {
       socket.off('task:created', handleTaskCreated);
       socket.off('member:joined', handleMemberJoined);
       socket.off('member:left', handleMemberLeft);
+      socket.off('room:joinApproved', handleJoinApproved);
     };
   }, [socket, user?._id, user?.id]);
 

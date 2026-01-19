@@ -29,7 +29,8 @@ const formatRoomResponse = (room) => ({
   isPublic: !room.isPrivate, // Frontend compatibility - convert isPrivate to isPublic
   requireApproval: room.requireApproval || false,
   owner: room.owner ? { ...room.owner, _id: room.owner.id } : { _id: room.ownerId },
-  members: room.members?.map(m => ({
+  // IMPORTANT: Only return active members (exclude pending)
+  members: room.members?.filter(m => m.status === 'active').map(m => ({
     ...m,
     _id: m.id,
     userId: m.user ? { ...m.user, _id: m.user.id } : { _id: m.userId }
