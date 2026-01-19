@@ -236,7 +236,7 @@ const RoomDetailPage = () => {
   // Check if user can send nudge on load
   useEffect(() => {
     if (room) refreshNudgeStatus();
-  }, [roomId, room, refreshNudgeStatus]);
+  }, [roomId]); // Removed room and refreshNudgeStatus to prevent excessive calls
 
   // Handle nudge
   const handleNudge = async () => {
@@ -362,7 +362,8 @@ const RoomDetailPage = () => {
     if (room && isOwner && room.settings?.requireApproval) {
       loadPendingMembers();
     }
-  }, [room?._id, isOwner, room?.settings?.requireApproval]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room?._id, isOwner, room?.settings?.requireApproval]); // loadPendingMembers intentionally excluded to prevent loops
 
   // Auto-scroll to bottom when new messages arrive or tab changes
   useEffect(() => {

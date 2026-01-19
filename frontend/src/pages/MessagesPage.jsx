@@ -85,7 +85,7 @@ const MessagesPage = () => {
     
     const interval = setInterval(() => {
       refreshOnlineUsers();
-    }, 30000); // Every 30 seconds
+    }, 60000); // Every 60 seconds (reduced from 30s to prevent excessive requests)
 
     return () => clearInterval(interval);
   }, [refreshOnlineUsers]);

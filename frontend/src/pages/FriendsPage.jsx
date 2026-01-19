@@ -139,8 +139,8 @@ const FriendsPage = () => {
 
       // IMPORTANT: never wipe existing friends list during silent refresh.
       if (silentRefresh && friendsData.length === 0 && friends.length > 0) {
-        console.warn('⚠️ Silent refresh returned 0 friends; keeping existing list and retrying soon');
-        setTimeout(() => loadFriends(true), 2000);
+        console.warn('⚠️ Silent refresh returned 0 friends; keeping existing list');
+        // Don't retry automatically - just keep current data
         return;
       }
 
@@ -184,8 +184,8 @@ const FriendsPage = () => {
 
       // IMPORTANT: never wipe existing requests list during silent refresh.
       if (silentRefresh && requestsData.length === 0 && requests.length > 0) {
-        console.warn('⚠️ Silent refresh returned 0 friend requests; keeping existing list and retrying soon');
-        setTimeout(() => loadRequests(true), 2000);
+        console.warn('⚠️ Silent refresh returned 0 friend requests; keeping existing list');
+        // Don't retry automatically - just keep current data
         return;
       }
 
