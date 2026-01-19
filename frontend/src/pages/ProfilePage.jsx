@@ -405,17 +405,16 @@ const ProfilePage = () => {
         </Alert>
       )}
 
-      <Grid container spacing={{ xs: 0, sm: 2, md: 3, lg: 4 }} sx={{ 
-        width: '100%', 
-        maxWidth: '100%', 
-        ml: 0,
-        overflowX: 'hidden',
+      <Box sx={{ 
+        display: 'flex', 
+        flexDirection: { xs: 'column', md: 'row' }, 
+        gap: { xs: 2, md: 3 },
+        width: '100%',
       }}>
         {/* Left Sidebar - Profile Info */}
-        <Grid item xs={12} md={4} lg={3} sx={{ 
-          width: '100%',
-          pl: '0 !important',
-          pr: { xs: '0 !important', sm: 'inherit' },
+        <Box sx={{ 
+          width: { xs: '100%', md: '280px', lg: '320px' },
+          flexShrink: 0,
         }}>
           <Paper sx={{ p: { xs: 2, md: 3 }, textAlign: 'center', mb: { xs: 2, md: 3 }, boxShadow: { md: 2 }, width: '100%', maxWidth: { xs: '100%', md: '100%' } }}>
             <Avatar
@@ -517,14 +516,13 @@ const ProfilePage = () => {
               </Box>
             </Box>
           </Paper>
-        </Grid>
+        </Box>
 
         {/* Right Content Area */}
-        <Grid item xs={12} md={8} lg={9} sx={{ 
+        <Box sx={{ 
+          flex: 1,
           width: '100%',
-          pl: { xs: '0 !important', md: 2 }, 
-          pr: { xs: '0 !important', md: 0 },
-          mt: { xs: 2, md: 0 },
+          minWidth: 0,
         }}>
           <Paper sx={{ mb: { xs: 2, md: 3 }, width: '100%', maxWidth: { xs: '100%', md: '100%' } }}>
             <Tabs 
@@ -1010,8 +1008,8 @@ const ProfilePage = () => {
 
             </Paper>
           )}
-        </Grid>
-      </Grid>
+        </Box>
+      </Box>
 
       {/* Confirm Clear All Read */}
       <Dialog open={confirmClearOpen} onClose={() => setConfirmClearOpen(false)}>

@@ -1,18 +1,14 @@
 import React, { useState } from 'react';
 import {
   Dialog,
-  DialogTitle,
   DialogContent,
-  DialogActions,
   Button,
   Typography,
   Box,
-  Stepper,
-  Step,
-  StepLabel,
   useTheme,
-  Avatar,
-  Chip,
+  IconButton,
+  alpha,
+  Fade,
 } from '@mui/material';
 import {
   EmojiEvents,
@@ -24,6 +20,10 @@ import {
   Groups,
   TaskAlt,
   AdminPanelSettings,
+  Close,
+  ArrowForward,
+  ArrowBack,
+  CheckCircle,
 } from '@mui/icons-material';
 
 const steps = [
@@ -111,7 +111,7 @@ const steps = [
  * Shows once when user enters a room for the first time ever
  * Can be re-opened via help icon in room header
  */
-const RoomOnboardingModal = ({ open, onClose, isAdmin = false }) => {
+const RoomOnboardingModal = ({ open, onClose, isAdmin = false, roomId, userId }) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const [activeStep, setActiveStep] = useState(0);
@@ -129,139 +129,291 @@ const RoomOnboardingModal = ({ open, onClose, isAdmin = false }) => {
   };
 
   const handleFinish = () => {
-    // Mark room onboarding as seen
-    localStorage.setItem('roomOnboardingSeen', 'true');
+    // Mark room onboarding as seen for THIS user and THIS room
+    if (userId && roomId) {
+      localStorage.setItem(`roomOnboardingSeen_${userId}_${roomId}`, 'true');
+    }
     onClose();
   };
 
   const currentStep = steps[activeStep];
   const isLastStep = activeStep === steps.length - 1;
 
+  // Colors for each step
+  const stepColors = ['#5865F2', '#57F287', '#FEE75C', '#ED4245'];
+  const currentColor = stepColors[activeStep] || stepColors[0];
+  
   return (
     <Dialog
       open={open}
       onClose={onClose}
-      maxWidth="sm"
+      maxWidth="xs"
       fullWidth
-      scroll="paper"
       disablePortal={false}
       sx={{
+        zIndex: 1400,
         '& .MuiDialog-container': {
           alignItems: 'center',
         },
       }}
+      slotProps={{
+        backdrop: {
+          sx: { 
+            backgroundColor: isDark ? 'rgba(0, 0, 0, 0.85)' : 'rgba(0, 0, 0, 0.6)',
+            backdropFilter: 'blur(8px)'
+          }
+        }
+      }}
       PaperProps={{
         sx: {
-          borderRadius: 2,
+          borderRadius: 3,
           overflow: 'hidden',
-          maxHeight: { xs: '85vh', sm: '80vh' },
+          maxHeight: { xs: '85vh', sm: '600px' },
           mx: { xs: 2, sm: 3 },
-          my: 'auto',
+          background: isDark 
+            ? 'linear-gradient(180deg, #1e1f22 0%, #2b2d31 100%)'
+            : 'linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%)',
+          border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.08)',
+          boxShadow: isDark 
+            ? '0 8px 32px rgba(0,0,0,0.5)' 
+            : '0 8px 32px rgba(0,0,0,0.15)',
         }
       }}
     >
-      <DialogTitle sx={{ 
-        textAlign: 'center', 
-        pt: 3,
-        pb: 1,
-        background: isDark 
-          ? 'linear-gradient(135deg, rgba(96, 165, 250, 0.1), rgba(59, 130, 246, 0.05))'
-          : 'linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(96, 165, 250, 0.05))',
-      }}>
-        <Typography variant="h5" fontWeight={700}>
-          {currentStep.title}
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          {currentStep.subtitle}
-        </Typography>
-        {currentStep.isAdminOnly && (
-          <Chip 
-            label="Admin Features" 
-            size="small" 
-            color="primary" 
-            sx={{ mt: 1 }}
-          />
-        )}
-      </DialogTitle>
+      {/* Skip/Close button */}
+      <IconButton
+        onClick={onClose}
+        sx={{
+          position: 'absolute',
+          right: 12,
+          top: 12,
+          color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)',
+          zIndex: 1,
+          '&:hover': {
+            color: isDark ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.7)',
+            bgcolor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'
+          }
+        }}
+      >
+        <Close fontSize="small" />
+      </IconButton>
 
-      <DialogContent sx={{ pt: 3 }}>
-        {/* Step indicator */}
-        <Stepper activeStep={activeStep} alternativeLabel sx={{ mb: 3 }}>
-          {steps.map((step, index) => (
-            <Step key={index}>
-              <StepLabel />
-            </Step>
-          ))}
-        </Stepper>
+      {/* Colored header bar */}
+      <Box sx={{ height: 6, background: `linear-gradient(90deg, ${stepColors.join(', ')})` }} />
 
-        {/* Content */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {currentStep.content.map((item, index) => (
-            <Box
-              key={index}
-              sx={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: 2,
-                p: 2,
-                borderRadius: 2,
-                bgcolor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-                border: '1px solid',
-                borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
-              }}
-            >
-              <Avatar
+      <DialogContent sx={{ p: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <Box sx={{ flex: 1, overflow: 'auto', px: { xs: 3, sm: 4 }, py: 3 }}>
+          <Fade in={true} timeout={400} key={activeStep}>
+            <Box sx={{ textAlign: 'center' }}>
+              {/* Icon */}
+              <Box
                 sx={{
-                  width: 40,
-                  height: 40,
-                  bgcolor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                  width: { xs: 64, sm: 80 },
+                  height: { xs: 64, sm: 80 },
+                  borderRadius: '18px',
+                  background: currentColor,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  mx: 'auto',
+                  mb: 2,
+                  boxShadow: `0 8px 32px ${alpha(currentColor, 0.4)}`,
+                  transform: 'rotate(-5deg)',
+                  transition: 'transform 0.3s ease',
+                  '&:hover': { transform: 'rotate(0deg) scale(1.05)' }
                 }}
               >
-                {item.icon}
-              </Avatar>
-              <Box sx={{ flex: 1 }}>
-                <Typography variant="subtitle2" fontWeight={600}>
-                  {item.title}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {item.description}
-                </Typography>
+                {activeStep === 0 && <Groups sx={{ fontSize: { xs: 32, sm: 40 }, color: 'white' }} />}
+                {activeStep === 1 && <Star sx={{ fontSize: { xs: 32, sm: 40 }, color: 'white' }} />}
+                {activeStep === 2 && <NotificationsActive sx={{ fontSize: { xs: 32, sm: 40 }, color: 'white' }} />}
+                {activeStep === 3 && <AdminPanelSettings sx={{ fontSize: { xs: 32, sm: 40 }, color: 'white' }} />}
               </Box>
+
+              {/* Title */}
+              <Typography 
+                variant="h5" 
+                fontWeight={700}
+                sx={{ 
+                  mb: 1,
+                  fontSize: { xs: '1.3rem', sm: '1.5rem' },
+                  color: isDark ? '#fff' : '#1a1a1a'
+                }}
+              >
+                {currentStep.title}
+              </Typography>
+
+              {/* Subtitle */}
+              <Typography
+                variant="body2"
+                sx={{ 
+                  mb: 3, 
+                  color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.5)',
+                  fontSize: '0.9rem'
+                }}
+              >
+                {currentStep.subtitle}
+                {currentStep.isAdminOnly && (
+                  <Box component="span" sx={{ 
+                    display: 'inline-block', 
+                    ml: 1, 
+                    px: 1, 
+                    py: 0.25, 
+                    borderRadius: 1, 
+                    bgcolor: currentColor,
+                    color: '#fff',
+                    fontSize: '0.75rem',
+                    fontWeight: 600
+                  }}>
+                    Admin
+                  </Box>
+                )}
+              </Typography>
+
+              {/* Features list */}
+              <Box sx={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: 1.5,
+                maxWidth: 340,
+                mx: 'auto',
+                textAlign: 'left'
+              }}>
+                {currentStep.content.map((item, index) => (
+                  <Box
+                    key={index}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 1.5,
+                      p: 1.5,
+                      borderRadius: 2,
+                      bgcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                      transition: 'all 0.2s ease',
+                      '&:hover': {
+                        bgcolor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+                        transform: 'translateX(4px)'
+                      }
+                    }}
+                  >
+                    <Box sx={{ 
+                      p: 0.75, 
+                      borderRadius: 1.5, 
+                      bgcolor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)',
+                      display: 'flex'
+                    }}>
+                      {item.icon}
+                    </Box>
+                    <Box>
+                      <Typography
+                        variant="subtitle2"
+                        sx={{
+                          fontWeight: 600,
+                          color: isDark ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0.85)',
+                          fontSize: '0.875rem'
+                        }}
+                      >
+                        {item.title}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.55)',
+                          lineHeight: 1.4
+                        }}
+                      >
+                        {item.description}
+                      </Typography>
+                    </Box>
+                  </Box>
+                ))}
+              </Box>
+
+              {/* Footer note */}
+              {currentStep.footer && (
+                <Typography
+                  variant="caption"
+                  sx={{ 
+                    display: 'block',
+                    mt: 2,
+                    color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)',
+                    fontStyle: 'italic'
+                  }}
+                >
+                  {currentStep.footer}
+                </Typography>
+              )}
             </Box>
-          ))}
+          </Fade>
         </Box>
 
-        {currentStep.footer && (
-          <Typography 
-            variant="caption" 
-            color="text.secondary" 
+        {/* Navigation - Discord style */}
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            px: { xs: 3, sm: 4 },
+            py: 2.5,
+            borderTop: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)',
+            bgcolor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.02)',
+          }}
+        >
+          <Button
+            onClick={activeStep === 0 ? onClose : handleBack}
+            startIcon={activeStep > 0 && <ArrowBack />}
             sx={{ 
-              display: 'block', 
-              textAlign: 'center', 
-              mt: 2,
-              fontStyle: 'italic',
+              minWidth: 80,
+              color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)',
+              '&:hover': {
+                bgcolor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'
+              }
             }}
           >
-            {currentStep.footer}
-          </Typography>
-        )}
-      </DialogContent>
+            {activeStep === 0 ? 'Skip' : 'Back'}
+          </Button>
 
-      <DialogActions sx={{ px: 3, pb: 3, pt: 1 }}>
-        <Button
-          onClick={handleBack}
-          disabled={activeStep === 0}
-          sx={{ mr: 'auto' }}
-        >
-          Back
-        </Button>
-        <Button
-          variant="contained"
-          onClick={handleNext}
-        >
-          {isLastStep ? 'Got it!' : 'Next'}
-        </Button>
-      </DialogActions>
+          {/* Step dots */}
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            {steps.map((_, index) => (
+              <Box
+                key={index}
+                sx={{
+                  width: index === activeStep ? 24 : 8,
+                  height: 8,
+                  borderRadius: 4,
+                  bgcolor: index === activeStep 
+                    ? currentColor 
+                    : isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+                  transition: 'all 0.3s ease',
+                  cursor: 'pointer',
+                }}
+                onClick={() => setActiveStep(index)}
+              />
+            ))}
+          </Box>
+
+          <Button
+            variant="contained"
+            onClick={handleNext}
+            endIcon={!isLastStep && <ArrowForward />}
+            sx={{ 
+              minWidth: 100,
+              fontWeight: 600,
+              bgcolor: currentColor,
+              color: currentColor === '#FEE75C' ? '#1a1a1a' : '#fff',
+              borderRadius: 2,
+              textTransform: 'none',
+              boxShadow: `0 4px 14px ${alpha(currentColor, 0.4)}`,
+              '&:hover': {
+                bgcolor: currentColor,
+                filter: 'brightness(1.1)',
+              }
+            }}
+          >
+            {isLastStep ? "Got it!" : 'Next'}
+          </Button>
+        </Box>
+      </DialogContent>
     </Dialog>
   );
 };

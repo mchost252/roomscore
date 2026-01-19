@@ -199,10 +199,12 @@ const RoomDetailPage = () => {
     }
   }, [room, user?.id, checkAndShowOrbitSummary]);
 
-  // Show room onboarding on first ever room visit
+  // Show room onboarding on first visit to THIS specific room for THIS user
   useEffect(() => {
-    if (room && user?.id) {
-      const onboardingSeen = localStorage.getItem('roomOnboardingSeen');
+    if (room && user) {
+      const userId = user.id || user._id;
+      const roomOnboardingKey = `roomOnboardingSeen_${userId}_${room._id}`;
+      const onboardingSeen = localStorage.getItem(roomOnboardingKey);
       if (!onboardingSeen) {
         // Small delay to let the room load first
         const timer = setTimeout(() => {
@@ -211,7 +213,7 @@ const RoomDetailPage = () => {
         return () => clearTimeout(timer);
       }
     }
-  }, [room, user?.id]);
+  }, [room?._id, user]);
 
   // Fetch today's MVP when room loads
   const fetchRoomMVP = useCallback(async () => {
@@ -1301,9 +1303,9 @@ const RoomDetailPage = () => {
         </Alert>
       )}
 
-      <Grid container spacing={{ xs: 2, md: 3 }} sx={{ width: '100%', m: 0 }}>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: { xs: 2, md: 3 }, width: '100%' }}>
         {/* Main Content */}
-        <Grid item xs={12} md={8} sx={{ pl: '0 !important', pt: '0 !important' }}>
+        <Box sx={{ flex: { md: 2 }, width: '100%', minWidth: 0 }}>
           <Paper sx={{ mb: { xs: 2, md: 3 } }}>
             <Tabs 
               value={tabValue} 
@@ -1793,10 +1795,10 @@ const RoomDetailPage = () => {
               </Typography>
             </Paper>
           )}
-        </Grid>
+        </Box>
 
         {/* Sidebar */}
-        <Grid item xs={12} md={4} sx={{ pl: { xs: '0 !important', md: 'inherit' }, pt: { xs: 2, md: 0 } }}>
+        <Box sx={{ flex: { md: 1 }, width: '100%', minWidth: 0 }}>
           {/* Pending Members (Owner Only) */}
           {isOwner && room?.requireApproval && pendingMembers.length > 0 && (
             <Paper sx={{ p: 2, mb: 2, borderLeft: 4, borderColor: 'warning.main', width: '100%', maxWidth: '100%' }}>
@@ -1982,8 +1984,8 @@ const RoomDetailPage = () => {
               })}
             </List>
           </Paper>
-        </Grid>
-      </Grid>
+        </Box>
+      </Box>
       </>
       )}
 
@@ -2474,6 +2476,8 @@ const RoomDetailPage = () => {
         open={roomOnboardingOpen}
         onClose={() => setRoomOnboardingOpen(false)}
         isAdmin={isOwner}
+        roomId={room?._id}
+        userId={user?.id || user?._id}
       />
     </Box>
   );
