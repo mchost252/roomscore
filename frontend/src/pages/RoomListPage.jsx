@@ -257,6 +257,34 @@ const RoomListPage = () => {
       // Don't auto-join on card click - user must use the join button
     };
 
+    const handleJoinPublicRoom = async (e) => {
+      e.stopPropagation();
+      try {
+        setError(null);
+        const response = await api.post('/rooms/join', {
+          joinCode: room.joinCode
+        });
+
+        // Check if join request is pending approval
+        if (response.data.pending) {
+          setSuccess(response.data.message || 'Request sent! Waiting for owner approval.');
+          // Refresh room lists to update UI
+          loadRooms(true);
+          return;
+        }
+
+        setSuccess('Successfully joined room!');
+        // Navigate to the newly joined room after short delay
+        setTimeout(() => {
+          navigate(`/rooms/${response.data.room._id}`);
+        }, 1000);
+      } catch (err) {
+        console.error('Error joining room:', err);
+        const { icon, message } = getErrorMessage(err, 'room');
+        setError(`${icon} ${message}`);
+      }
+    };
+
     return (
       <Card 
         sx={{ 
@@ -371,10 +399,7 @@ const RoomListPage = () => {
                   size="small" 
                   fullWidth
                   startIcon={<PersonAdd />}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleCardClick(e);
-                  }}
+                  onClick={handleJoinPublicRoom}
                 >
                   {room.requireApproval ? 'Request to Join' : 'Join Room'}
                 </Button>

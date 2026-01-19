@@ -365,6 +365,8 @@ const DailyOrbitSummaryModal = ({
     return (
       <Dialog
         open={true}
+        maxWidth="xs"
+        fullWidth
         PaperProps={{
           sx: {
             borderRadius: 4,
@@ -372,19 +374,22 @@ const DailyOrbitSummaryModal = ({
             background: isDark 
               ? 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)'
               : 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
-            minHeight: 200,
+            minHeight: { xs: 150, sm: 200 },
+            maxWidth: { xs: '85vw', sm: '400px' },
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            m: { xs: 2, sm: 3 },
           }
         }}
       >
         <Zoom in={true}>
-          <Box sx={{ textAlign: 'center', p: 4 }}>
+          <Box sx={{ textAlign: 'center', p: { xs: 2, sm: 4 } }}>
             <Typography 
-              variant="h5" 
+              variant="h5"
               fontWeight={700}
               sx={{
+                fontSize: { xs: '1.25rem', sm: '1.5rem' },
                 background: isDark
                   ? 'linear-gradient(135deg, #60A5FA, #F59E0B)'
                   : 'linear-gradient(135deg, #3B82F6, #D97706)',
