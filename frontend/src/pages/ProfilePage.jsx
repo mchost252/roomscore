@@ -380,16 +380,8 @@ const ProfilePage = () => {
       mx: 'auto',
       overflowX: 'hidden',
       boxSizing: 'border-box',
-      px: { xs: 1.5, sm: 2, md: 4 },
-      py: { xs: 1.5, md: 3 },
-      '& *': { boxSizing: 'border-box' },
-      // Prevent any child from causing horizontal scroll
-      '& > *': { maxWidth: '100%' },
-      // Ensure all Paper children have consistent width
-      '& .MuiPaper-root': {
-        width: '100%',
-        boxSizing: 'border-box',
-      },
+      px: { xs: 2, sm: 2, md: 4 },
+      py: { xs: 2, md: 3 },
     }}>
       {/* Header */}
       <Box sx={{ mb: { xs: 2, md: 4 } }}>
@@ -413,17 +405,17 @@ const ProfilePage = () => {
         </Alert>
       )}
 
-      <Grid container spacing={{ xs: 1.5, sm: 2, md: 3, lg: 4 }} sx={{ 
+      <Grid container spacing={{ xs: 0, sm: 2, md: 3, lg: 4 }} sx={{ 
         width: '100%', 
         maxWidth: '100%', 
-        margin: 0,
+        ml: 0,
         overflowX: 'hidden',
       }}>
         {/* Left Sidebar - Profile Info */}
         <Grid item xs={12} md={4} lg={3} sx={{ 
-          maxWidth: '100%', 
           width: '100%',
-          boxSizing: 'border-box',
+          pl: '0 !important',
+          pr: { xs: '0 !important', sm: 'inherit' },
         }}>
           <Paper sx={{ p: { xs: 2, md: 3 }, textAlign: 'center', mb: { xs: 2, md: 3 }, boxShadow: { md: 2 }, width: '100%', maxWidth: { xs: '100%', md: '100%' } }}>
             <Avatar
@@ -529,13 +521,10 @@ const ProfilePage = () => {
 
         {/* Right Content Area */}
         <Grid item xs={12} md={8} lg={9} sx={{ 
-          maxWidth: '100%', 
           width: '100%',
           pl: { xs: '0 !important', md: 2 }, 
           pr: { xs: '0 !important', md: 0 },
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: { xs: 'center', md: 'stretch' },
+          mt: { xs: 2, md: 0 },
         }}>
           <Paper sx={{ mb: { xs: 2, md: 3 }, width: '100%', maxWidth: { xs: '100%', md: '100%' } }}>
             <Tabs 
@@ -1134,3 +1123,4 @@ const ProfilePage = () => {
 };
 
 export default ProfilePage;
+                                                                                                                                                                                                                                                                                                           

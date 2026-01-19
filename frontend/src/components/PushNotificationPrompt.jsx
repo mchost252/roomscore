@@ -29,72 +29,53 @@ const PushNotificationPrompt = () => {
 
   useEffect(() => {
     // Wait for user to be loaded
-    if (!user?.id) return;
+    if (!user?.id) {
+      console.log('[PushPrompt] No user yet');
+      return;
+    }
     
-    // Check if we should show the prompt
-    const checkPrompt = async () => {
-      // Don't show if push not supported
-      if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
-        console.log('Push notifications not supported');
+    console.log('[PushPrompt] Checking for user:', user.id);
+    
+    // Account-specific keys
+    const userSkipKey = `pushPromptSkippedAt_${user.id}`;
+    const userEnabledKey = `pushEnabled_${user.id}`;
+    
+    // Check if THIS user already has push enabled
+    if (localStorage.getItem(userEnabledKey) === 'true') {
+      console.log('[PushPrompt] Already enabled for this user');
+      return;
+    }
+    
+    // Check if THIS user clicked "Maybe Later" recently (within 7 days)
+    const lastSkipped = localStorage.getItem(userSkipKey);
+    if (lastSkipped) {
+      const daysSinceSkip = (Date.now() - parseInt(lastSkipped)) / (1000 * 60 * 60 * 24);
+      if (daysSinceSkip < 7) {
+        console.log('[PushPrompt] Skipped recently, will ask again in', Math.ceil(7 - daysSinceSkip), 'days');
         return;
       }
+    }
 
-      const permission = Notification.permission;
-      
-      // If permission was denied by browser, we can't do anything
-      if (permission === 'denied') {
-        console.log('Push permission denied by browser');
-        return;
-      }
+    // Check if browser supports notifications
+    if (!('Notification' in window)) {
+      console.log('[PushPrompt] Notifications not supported');
+      return;
+    }
+    
+    // If permission was denied, we can't do anything
+    if (Notification.permission === 'denied') {
+      console.log('[PushPrompt] Permission denied by browser');
+      return;
+    }
 
-      // Account-specific keys to track prompt state per user
-      const userSkipKey = `pushPromptSkippedAt_${user.id}`;
-      const userEnabledKey = `pushEnabled_${user.id}`;
-      
-      // Check if THIS user already has push enabled
-      if (localStorage.getItem(userEnabledKey) === 'true') {
-        console.log('Push already enabled for this user');
-        return;
-      }
-      
-      // Check if THIS user clicked "Maybe Later" recently (within 7 days)
-      const lastSkipped = localStorage.getItem(userSkipKey);
-      if (lastSkipped) {
-        const daysSinceSkip = (Date.now() - parseInt(lastSkipped)) / (1000 * 60 * 60 * 24);
-        if (daysSinceSkip < 7) {
-          console.log('Push prompt skipped recently for this user, will ask again in', Math.ceil(7 - daysSinceSkip), 'days');
-          return;
-        }
-      }
-
-      // If permission is granted, check if we have an active subscription
-      if (permission === 'granted') {
-        try {
-          const reg = await ensureServiceWorkerRegistered();
-          if (reg) {
-            const subscription = await reg.pushManager.getSubscription();
-            if (subscription) {
-              // Already subscribed, mark as enabled and don't prompt
-              console.log('Push already subscribed');
-              localStorage.setItem(userEnabledKey, 'true');
-              return;
-            }
-          }
-          // Permission granted but no subscription - need to subscribe
-          console.log('Permission granted but no subscription, will prompt');
-        } catch (err) {
-          console.error('Error checking push subscription:', err);
-        }
-      }
-
-      // Show prompt - user doesn't have push notifications enabled
-      console.log('Push notifications not enabled for this user, showing prompt');
-      setTimeout(() => {
-        setOpen(true);
-      }, 2000); // 2 second delay
-    };
-
-    checkPrompt();
+    // Show prompt after delay - user doesn't have push enabled
+    console.log('[PushPrompt] Will show prompt in 2 seconds');
+    const timer = setTimeout(() => {
+      console.log('[PushPrompt] Showing prompt NOW');
+      setOpen(true);
+    }, 2000);
+    
+    return () => clearTimeout(timer);
   }, [user?.id]);
 
   const handleEnable = async () => {

@@ -1089,16 +1089,9 @@ const RoomDetailPage = () => {
       maxWidth: { xs: '100%', sm: '100%', md: 1400, lg: 1600 },
       mx: 'auto',
       overflowX: 'hidden',
-      // Prevent any accidental horizontal scroll caused by inner flex rows
-      '& *': { maxWidth: '100%' },
-      px: { xs: 1.5, sm: 2, md: 4 },
-      py: { xs: 1.5, md: 4 },
+      px: { xs: 2, sm: 2, md: 4 },
+      py: { xs: 2, md: 4 },
       boxSizing: 'border-box',
-      // Ensure all Paper children have consistent width
-      '& > .MuiPaper-root': {
-        width: '100%',
-        boxSizing: 'border-box',
-      },
     }}>
       {/* Room Intro Card (first-time) */}
       {showRoomIntro && (
@@ -1308,9 +1301,9 @@ const RoomDetailPage = () => {
         </Alert>
       )}
 
-      <Grid container spacing={{ xs: 2, md: 3 }}>
+      <Grid container spacing={{ xs: 0, md: 3 }} sx={{ width: '100%', ml: 0 }}>
         {/* Main Content */}
-        <Grid item xs={12} md={8}>
+        <Grid item xs={12} md={8} sx={{ pl: '0 !important', pr: { xs: '0 !important', md: 'inherit' } }}>
           <Paper sx={{ mb: { xs: 2, md: 3 } }}>
             <Tabs 
               value={tabValue} 
