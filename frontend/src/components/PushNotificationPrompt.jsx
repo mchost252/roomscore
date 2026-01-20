@@ -17,9 +17,9 @@ import { useAuth } from '../context/AuthContext';
 /**
  * Push Notification Prompt
  * Shows a friendly prompt asking users to enable push notifications
- * - Shows if permission is 'default' (not yet asked)
- * - Shows if permission is 'granted' but no subscription exists on server
- * - Re-prompts after 7 days if user clicked "Maybe Later"
+ * - Shows EVERY TIME user visits dashboard if they haven't enabled push
+ * - Only stops showing once user successfully enables push notifications
+ * - If browser permission is denied, doesn't show (can't do anything)
  */
 const PushNotificationPrompt = () => {
   const { user } = useAuth();
@@ -42,24 +42,13 @@ const PushNotificationPrompt = () => {
     
     console.log('[PushPrompt] Checking for user:', userId);
     
-    // Account-specific keys
-    const userSkipKey = `pushPromptSkippedAt_${userId}`;
+    // Account-specific key for enabled status
     const userEnabledKey = `pushEnabled_${userId}`;
     
-    // Check if THIS user already has push enabled
+    // Check if THIS user already has push enabled - only then skip
     if (localStorage.getItem(userEnabledKey) === 'true') {
       console.log('[PushPrompt] Already enabled for this user');
       return;
-    }
-    
-    // Check if THIS user clicked "Maybe Later" recently (within 7 days)
-    const lastSkipped = localStorage.getItem(userSkipKey);
-    if (lastSkipped) {
-      const daysSinceSkip = (Date.now() - parseInt(lastSkipped)) / (1000 * 60 * 60 * 24);
-      if (daysSinceSkip < 7) {
-        console.log('[PushPrompt] Skipped recently, will ask again in', Math.ceil(7 - daysSinceSkip), 'days');
-        return;
-      }
     }
 
     // Check if browser supports notifications
@@ -68,13 +57,14 @@ const PushNotificationPrompt = () => {
       return;
     }
     
-    // If permission was denied, we can't do anything
+    // If permission was denied by browser, we can't do anything
     if (Notification.permission === 'denied') {
       console.log('[PushPrompt] Permission denied by browser');
       return;
     }
 
     // Show prompt after delay - user doesn't have push enabled
+    // This will show EVERY time they visit the dashboard until they enable it
     console.log('[PushPrompt] Will show prompt in 2 seconds');
     const timer = setTimeout(() => {
       console.log('[PushPrompt] Showing prompt NOW');
@@ -93,11 +83,9 @@ const PushNotificationPrompt = () => {
       const result = await subscribeToPush();
       
       if (result.success) {
-        // Account-specific keys
+        // Mark push as enabled for this user - prompt won't show again
         const userEnabledKey = `pushEnabled_${userId}`;
-        const userSkipKey = `pushPromptSkippedAt_${userId}`;
         localStorage.setItem(userEnabledKey, 'true');
-        localStorage.removeItem(userSkipKey); // Clear skip timestamp for this user
         setOpen(false);
       } else {
         setError(result.message || 'Failed to enable notifications');
@@ -110,10 +98,8 @@ const PushNotificationPrompt = () => {
   };
 
   const handleSkip = () => {
-    // Remember when THIS user skipped, so we can ask again after 7 days
-    const userId = user?.id || user?._id;
-    const userSkipKey = `pushPromptSkippedAt_${userId}`;
-    localStorage.setItem(userSkipKey, Date.now().toString());
+    // Just close the dialog - it will show again next time user visits dashboard
+    // This ensures users who haven't enabled push get reminded each visit
     setOpen(false);
   };
 
