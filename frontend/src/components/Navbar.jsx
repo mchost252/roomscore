@@ -175,7 +175,8 @@ const Navbar = () => {
   // Mobile bottom navigation
   if (isMobile) {
     // Hide top AppBar when viewing individual chat (has its own header with back button)
-    const isViewingIndividualChat = location.pathname.startsWith('/messages/') && location.pathname !== '/messages' && location.pathname.split('/').length > 2;
+    const pathParts = location.pathname.split('/').filter(Boolean);
+    const isViewingIndividualChat = pathParts[0] === 'messages' && pathParts.length >= 2 && pathParts[1] !== '';
     
     return (
       <>

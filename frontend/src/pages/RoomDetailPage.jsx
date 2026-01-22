@@ -1520,10 +1520,10 @@ const RoomDetailPage = () => {
             <Box
               sx={{
                 position: 'absolute',
-                top: { xs: -28, md: -32 }, // Slightly closer on mobile to prevent clipping
+                top: { xs: -22, md: -28 }, // Lower position to prevent clipping
                 left: '50%',
                 transform: 'translateX(-50%)',
-                fontSize: { xs: '1.35rem', md: '1.5rem' }, // Slightly smaller on mobile
+                fontSize: { xs: '1.3rem', md: '1.5rem' }, // Slightly smaller on mobile
                 filter: 'drop-shadow(0 3px 6px rgba(255, 215, 0, 0.7)) drop-shadow(0 0 15px rgba(255, 215, 0, 0.4))',
                 animation: 'crownFloat 3s ease-in-out infinite',
                 zIndex: 10,
@@ -3423,6 +3423,7 @@ const RoomDetailPage = () => {
         sentAppreciations={sentAppreciations}
         appreciationStatsByUser={appreciationStatsByUser}
         onSendNudge={handleNudge}
+        isPremium={roomHasPremium}
         canNudge={canNudge}
         nudgeStatus={nudgeStatus}
         nudging={nudging}

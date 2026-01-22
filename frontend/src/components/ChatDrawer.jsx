@@ -57,11 +57,13 @@ const ChatDrawer = ({
   onSendNudge,
   canNudge = false,
   nudgeStatus = null, // { hasCompletedTask: bool, alreadySentToday: bool }
-  nudging = false
+  nudging = false,
+  isPremium = false // Room premium status from parent
 }) => {
   const theme = useTheme();
   const { isGlobalPremium, isRoomPremium } = usePremium();
-  const isPremiumActive = isGlobalPremium || (roomId && isRoomPremium(roomId));
+  // Use prop if provided (more reliable for room premium), fallback to context
+  const isPremiumActive = isPremium || isGlobalPremium || (roomId && isRoomPremium(roomId));
   const isDark = theme.palette.mode === 'dark';
   
   // Shooting stars for premium chat
