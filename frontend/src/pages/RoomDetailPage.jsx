@@ -172,35 +172,29 @@ const RoomDetailPage = () => {
   // This ensures ALL members see premium UI, not just the owner who activated it
   const roomHasPremium = room?.isPremium === true;
   
-  // Force dark mode when in premium room - ONLY ONCE
+  // Force dark mode when in premium room - ONLY ONCE per session
+  // Wait until room is loaded before checking premium status to avoid reload loops
   useEffect(() => {
-    const hasAppliedTheme = sessionStorage.getItem(`theme_applied_${roomId}`);
+    // Don't do anything until room data is loaded
+    if (!room) return;
     
-    if (roomHasPremium && !hasAppliedTheme) {
-      const currentTheme = localStorage.getItem('themeMode');
-      if (currentTheme === 'light' || (currentTheme === 'system' && window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-        // Save original preference
-        localStorage.setItem('theme_before_premium_room', currentTheme || 'system');
-        // Force dark mode
-        localStorage.setItem('themeMode', 'dark');
-        // Mark as applied for this session
-        sessionStorage.setItem(`theme_applied_${roomId}`, 'true');
-        window.location.reload(); // Reload to apply theme
-      } else {
-        // Already in dark mode, just mark as applied
-        sessionStorage.setItem(`theme_applied_${roomId}`, 'true');
-      }
-    } else if (!roomHasPremium && hasAppliedTheme) {
-      // Leaving premium room - restore original theme
-      const originalTheme = localStorage.getItem('theme_before_premium_room');
-      if (originalTheme) {
-        localStorage.setItem('themeMode', originalTheme);
-        localStorage.removeItem('theme_before_premium_room');
-      }
-      // Clear the session flag
-      sessionStorage.removeItem(`theme_applied_${roomId}`);
+    const hasAppliedTheme = sessionStorage.getItem(`theme_applied_${roomId}`);
+    const currentTheme = localStorage.getItem('themeMode');
+    const isLightMode = currentTheme === 'light' || (currentTheme === 'system' && window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').matches);
+    
+    if (roomHasPremium && isLightMode && !hasAppliedTheme) {
+      // Save original preference and force dark mode
+      localStorage.setItem('theme_before_premium_room', currentTheme || 'system');
+      localStorage.setItem('themeMode', 'dark');
+      sessionStorage.setItem(`theme_applied_${roomId}`, 'true');
+      window.location.reload();
+    } else if (roomHasPremium && !hasAppliedTheme) {
+      // Already in dark mode, just mark as applied (no reload needed)
+      sessionStorage.setItem(`theme_applied_${roomId}`, 'true');
     }
-  }, [roomHasPremium, roomId]);
+    // Note: We don't restore theme when leaving premium room to avoid complexity
+    // User can manually change theme back if they want
+  }, [room, roomHasPremium, roomId]);
   
   // Show first-time premium welcome
   useEffect(() => {
@@ -3468,35 +3462,7 @@ const RoomDetailPage = () => {
             onComplete={() => setShowSuccessFeedback(false)} 
           />
           
-          {/* Cosmic Animations - Fixed z-index layer to show above everything including chat */}
-          <Box
-            sx={{
-              position: 'fixed',
-              inset: 0,
-              pointerEvents: 'none',
-              zIndex: 9999, // Above everything including chat drawer (which is 1200)
-            }}
-          >
-            {/* Cosmic Nudge Animation */}
-            <CosmicNudgeAnimation 
-              show={showCosmicNudge} 
-              onComplete={() => setShowCosmicNudge(false)} 
-            />
-            
-            {/* Cosmic Appreciation Animations */}
-            <CosmicStarAnimation 
-              show={showCosmicStar} 
-              onComplete={() => setShowCosmicStar(false)} 
-            />
-            <CosmicFireAnimation 
-              show={showCosmicFire} 
-              onComplete={() => setShowCosmicFire(false)} 
-            />
-            <CosmicShieldAnimation 
-              show={showCosmicShield} 
-              onComplete={() => setShowCosmicShield(false)} 
-            />
-          </Box>
+          {/* Cosmic Animations moved to end of component outside all containers */}
           
           {/* Premium Welcome Notification - Optimized for mobile */}
           <Dialog
@@ -3581,6 +3547,23 @@ const RoomDetailPage = () => {
         </>
       )}
       </Box>
+      {/* Cosmic Animations - Rendered at end, outside all containers for highest z-index */}
+      <CosmicNudgeAnimation 
+        show={showCosmicNudge} 
+        onComplete={() => setShowCosmicNudge(false)} 
+      />
+      <CosmicStarAnimation 
+        show={showCosmicStar} 
+        onComplete={() => setShowCosmicStar(false)} 
+      />
+      <CosmicFireAnimation 
+        show={showCosmicFire} 
+        onComplete={() => setShowCosmicFire(false)} 
+      />
+      <CosmicShieldAnimation 
+        show={showCosmicShield} 
+        onComplete={() => setShowCosmicShield(false)} 
+      />
     </>
   );
 };

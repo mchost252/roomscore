@@ -64,7 +64,7 @@ export const CosmicNudgeAnimation = ({ show, onComplete }) => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 9999,
+        zIndex: 99999,
         pointerEvents: 'none',
       }}
     >
@@ -163,7 +163,7 @@ export const CosmicStarAnimation = ({ show, onComplete }) => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 9999,
+        zIndex: 99999,
         pointerEvents: 'none',
       }}
     >
@@ -252,7 +252,7 @@ export const CosmicFireAnimation = ({ show, onComplete }) => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 9999,
+        zIndex: 99999,
         pointerEvents: 'none',
       }}
     >
@@ -352,7 +352,7 @@ export const CosmicShieldAnimation = ({ show, onComplete }) => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 9999,
+        zIndex: 99999,
         pointerEvents: 'none',
       }}
     >
