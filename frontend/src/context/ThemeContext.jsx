@@ -48,6 +48,23 @@ export const ThemeProvider = ({ children }) => {
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, [themePreference]);
 
+  // Listen for localStorage theme changes (for premium room dark mode switch without reload)
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'themeMode' && e.newValue) {
+        setThemePreference(e.newValue);
+        if (e.newValue === 'system') {
+          setActualMode(getSystemTheme());
+        } else {
+          setActualMode(e.newValue);
+        }
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   // Check if user has global premium or is in a premium room (dark mode only)
   const isPremiumActive = () => {
     if (typeof window === 'undefined') return false;

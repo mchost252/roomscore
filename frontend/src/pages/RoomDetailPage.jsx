@@ -33,7 +33,8 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   CircularProgress,
-  Fab
+  Fab,
+  Portal
 } from '@mui/material';
 import {
   ArrowBack,
@@ -172,28 +173,27 @@ const RoomDetailPage = () => {
   // This ensures ALL members see premium UI, not just the owner who activated it
   const roomHasPremium = room?.isPremium === true;
   
-  // Force dark mode when in premium room - ONLY ONCE per session
-  // Wait until room is loaded before checking premium status to avoid reload loops
+  // Force dark mode when in premium room - NO RELOAD needed
+  // Instead of reloading, we use the ThemeContext to switch theme dynamically
   useEffect(() => {
-    // Don't do anything until room data is loaded
     if (!room) return;
     
+    // Mark this room as premium-checked so we don't spam localStorage
     const hasAppliedTheme = sessionStorage.getItem(`theme_applied_${roomId}`);
-    const currentTheme = localStorage.getItem('themeMode');
-    const isLightMode = currentTheme === 'light' || (currentTheme === 'system' && window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').matches);
     
-    if (roomHasPremium && isLightMode && !hasAppliedTheme) {
-      // Save original preference and force dark mode
-      localStorage.setItem('theme_before_premium_room', currentTheme || 'system');
-      localStorage.setItem('themeMode', 'dark');
-      sessionStorage.setItem(`theme_applied_${roomId}`, 'true');
-      window.location.reload();
-    } else if (roomHasPremium && !hasAppliedTheme) {
-      // Already in dark mode, just mark as applied (no reload needed)
+    if (roomHasPremium && !hasAppliedTheme) {
+      const currentTheme = localStorage.getItem('themeMode');
+      const isLightMode = currentTheme === 'light' || (currentTheme === 'system' && window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').matches);
+      
+      if (isLightMode) {
+        // Save original preference and force dark mode WITHOUT reload
+        localStorage.setItem('theme_before_premium_room', currentTheme || 'system');
+        localStorage.setItem('themeMode', 'dark');
+        // Force theme update by dispatching storage event
+        window.dispatchEvent(new StorageEvent('storage', { key: 'themeMode', newValue: 'dark' }));
+      }
       sessionStorage.setItem(`theme_applied_${roomId}`, 'true');
     }
-    // Note: We don't restore theme when leaving premium room to avoid complexity
-    // User can manually change theme back if they want
   }, [room, roomHasPremium, roomId]);
   
   // Show first-time premium welcome
@@ -3547,23 +3547,27 @@ const RoomDetailPage = () => {
         </>
       )}
       </Box>
-      {/* Cosmic Animations - Rendered at end, outside all containers for highest z-index */}
-      <CosmicNudgeAnimation 
-        show={showCosmicNudge} 
-        onComplete={() => setShowCosmicNudge(false)} 
-      />
-      <CosmicStarAnimation 
-        show={showCosmicStar} 
-        onComplete={() => setShowCosmicStar(false)} 
-      />
-      <CosmicFireAnimation 
-        show={showCosmicFire} 
-        onComplete={() => setShowCosmicFire(false)} 
-      />
-      <CosmicShieldAnimation 
-        show={showCosmicShield} 
-        onComplete={() => setShowCosmicShield(false)} 
-      />
+      {/* Cosmic Animations - Using Portal to render at document body level, above ALL elements including Drawer */}
+      <Portal>
+        <Box sx={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 99999 }}>
+          <CosmicNudgeAnimation 
+            show={showCosmicNudge} 
+            onComplete={() => setShowCosmicNudge(false)} 
+          />
+          <CosmicStarAnimation 
+            show={showCosmicStar} 
+            onComplete={() => setShowCosmicStar(false)} 
+          />
+          <CosmicFireAnimation 
+            show={showCosmicFire} 
+            onComplete={() => setShowCosmicFire(false)} 
+          />
+          <CosmicShieldAnimation 
+            show={showCosmicShield} 
+            onComplete={() => setShowCosmicShield(false)} 
+          />
+        </Box>
+      </Portal>
     </>
   );
 };
