@@ -1847,25 +1847,6 @@ const RoomDetailPage = () => {
           </Paper>
         )}
 
-        {/* Copy button and points info that was missing */}
-        <Box sx={{ display: 'none' }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-              <Button
-                onClick={handleCopyJoinCode}
-                startIcon={<ContentCopy sx={{ fontSize: { xs: 16, md: 20 } }} />}
-                size="small"
-                sx={{ fontSize: { xs: '0.7rem', md: '0.875rem' }, py: { xs: 0.5, md: 1 } }}
-              >
-                Copy Join Code
-              </Button>
-              {myMember && (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <EmojiEvents color="warning" sx={{ fontSize: { xs: 18, md: 24 } }} />
-                  <Typography variant="body2" sx={{ fontSize: { xs: '0.75rem', md: '0.875rem' } }}>
-                    Your Points: <strong>{myMember.points}</strong>
-                  </Typography>
-                </Box>
-              )}
             </Box>
           </Paper>
         )}
