@@ -121,15 +121,15 @@ export const RoomPremiumBackground = ({ isPremium, roomId }) => {
     if (typeof window === 'undefined') return [];
     
     // Reduced star count for better mobile performance
-    const starCount = window.innerWidth < 600 ? 20 : 35;
+    const starCount = window.innerWidth < 600 ? 15 : 30;
     return Array.from({ length: starCount }, (_, i) => ({
       id: i,
       x: Math.random() * 100,
       y: Math.random() * 100,
-      size: Math.random() > 0.7 ? 'large' : 'normal',
-      type: Math.random() > 0.7 ? (Math.random() > 0.5 ? 'blue' : 'gold') : 'white',
+      size: Math.random() > 0.75 ? 'large' : 'normal',
+      type: Math.random() > 0.75 ? (Math.random() > 0.5 ? 'blue' : 'gold') : 'white',
       delay: Math.random() * 5,
-      duration: 3 + Math.random() * 2, // Slower animations = less CPU
+      duration: 3.5 + Math.random() * 2, // Even slower = less CPU
     }));
   }, [isPremium]);
 

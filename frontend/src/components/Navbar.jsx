@@ -174,18 +174,22 @@ const Navbar = () => {
 
   // Mobile bottom navigation
   if (isMobile) {
+    // Hide top AppBar when viewing individual chat (has its own header with back button)
+    const isViewingIndividualChat = location.pathname.startsWith('/messages/') && location.pathname !== '/messages' && location.pathname.split('/').length > 2;
+    
     return (
       <>
-        {/* Mobile Top App Bar - matches theme */}
-        <AppBar 
-          position="fixed"
-          elevation={1}
-          sx={{ 
-            bgcolor: 'background.paper',
-            color: 'text.primary',
-            zIndex: (theme) => theme.zIndex.drawer + 1
-          }}
-        >
+        {/* Mobile Top App Bar - matches theme - HIDDEN in individual chats */}
+        {!isViewingIndividualChat && (
+          <AppBar 
+            position="fixed"
+            elevation={1}
+            sx={{ 
+              bgcolor: 'background.paper',
+              color: 'text.primary',
+              zIndex: (theme) => theme.zIndex.drawer + 1
+            }}
+          >
           <Toolbar sx={{ minHeight: 56 }}>
             <Typography
               variant="h6"
@@ -272,6 +276,7 @@ const Navbar = () => {
             </Menu>
           </Toolbar>
         </AppBar>
+        )}
 
         {/* Mobile Bottom Navigation - 4 tabs only */}
         <Paper

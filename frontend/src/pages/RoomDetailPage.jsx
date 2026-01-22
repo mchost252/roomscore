@@ -1323,6 +1323,8 @@ const RoomDetailPage = () => {
             position: 'relative',
             mb: { xs: 2, md: 3 },
             p: { xs: '12px', md: '16px' },
+            pt: { xs: '40px', md: '48px' }, // Extra top padding for crown that sits above
+            overflow: 'visible', // Allow crown to show above container
           }}>
             {/* ===== ROYAL ORNATE FRAME ===== */}
             
@@ -1518,10 +1520,10 @@ const RoomDetailPage = () => {
             <Box
               sx={{
                 position: 'absolute',
-                top: -32,
+                top: { xs: -28, md: -32 }, // Slightly closer on mobile to prevent clipping
                 left: '50%',
                 transform: 'translateX(-50%)',
-                fontSize: '1.5rem',
+                fontSize: { xs: '1.35rem', md: '1.5rem' }, // Slightly smaller on mobile
                 filter: 'drop-shadow(0 3px 6px rgba(255, 215, 0, 0.7)) drop-shadow(0 0 15px rgba(255, 215, 0, 0.4))',
                 animation: 'crownFloat 3s ease-in-out infinite',
                 zIndex: 10,
