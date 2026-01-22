@@ -3552,6 +3552,7 @@ const RoomDetailPage = () => {
       )}
     </Box>
     </>
+    </>
   );
 };
 
