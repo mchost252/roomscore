@@ -168,8 +168,9 @@ const RoomDetailPage = () => {
   // Determine if current user is the room owner
   const isOwner = room?.owner?._id === user?.id || room?.owner === user?.id;
   
-  // Check if this room has premium active
-  const roomHasPremium = isRoomPremium(roomId);
+  // Check if this room has premium active - USE SERVER STATE (room.isPremium)
+  // This ensures ALL members see premium UI, not just the owner who activated it
+  const roomHasPremium = room?.isPremium === true;
   
   // Force dark mode when in premium room
   useEffect(() => {
@@ -208,7 +209,7 @@ const RoomDetailPage = () => {
     }
   }, [roomHasPremium, roomId]);
 
-  // Handle room premium activation
+  // Handle room premium activation - NOW USES SERVER API
   const handleActivateRoomPremium = async () => {
     if (!roomPremiumCode.trim()) {
       setError('Please enter a room premium code');
@@ -218,30 +219,35 @@ const RoomDetailPage = () => {
 
     try {
       setActivatingRoomPremium(true);
-      const result = await activateRoomPremium(roomId, roomPremiumCode);
-      if (result.success) {
+      const response = await api.put(`/rooms/${roomId}/premium`, { code: roomPremiumCode });
+      if (response.data.success) {
+        // Update local room state with premium status
+        setRoom(prev => ({ ...prev, isPremium: true, premiumActivatedAt: new Date().toISOString() }));
         setSuccess('🎉 Room Premium activated! This room now has premium features.');
         setRoomPremiumCode('');
         setTimeout(() => setSuccess(null), 4000);
       } else {
-        setError(result.message || 'Invalid room premium code');
+        setError(response.data.message || 'Invalid room premium code');
         setTimeout(() => setError(null), 3000);
       }
     } catch (err) {
       console.error('Premium activation error:', err);
-      setError('Failed to activate room premium');
+      const message = err.response?.data?.message || 'Failed to activate room premium';
+      setError(message);
       setTimeout(() => setError(null), 3000);
     } finally {
       setActivatingRoomPremium(false);
     }
   };
 
-  // Handle room premium deactivation
+  // Handle room premium deactivation - NOW USES SERVER API
   const handleDeactivateRoomPremium = async () => {
     try {
       setActivatingRoomPremium(true);
-      const result = await deactivateRoomPremium(roomId);
-      if (result.success) {
+      const response = await api.put(`/rooms/${roomId}/premium`, { deactivate: true });
+      if (response.data.success) {
+        // Update local room state
+        setRoom(prev => ({ ...prev, isPremium: false, premiumActivatedAt: null }));
         setSuccess('Room Premium deactivated');
         setTimeout(() => setSuccess(null), 3000);
       }
@@ -736,6 +742,17 @@ const RoomDetailPage = () => {
         }
       });
 
+      // Listen for premium status updates (all members see this)
+      socket.on('room:premiumUpdated', (data) => {
+        if (data.roomId === roomId) {
+          setRoom(prev => prev ? { 
+            ...prev, 
+            isPremium: data.isPremium,
+            premiumActivatedAt: data.premiumActivatedAt || null
+          } : prev);
+        }
+      });
+
       return () => {
         socket.emit('room:leave', roomId);
         socket.off('task:completed');
@@ -748,6 +765,7 @@ const RoomDetailPage = () => {
         socket.off('member:left');
         socket.off('member:kicked');
         socket.off('room:joinRequest');
+        socket.off('room:premiumUpdated');
       };
     }
   }, [socket, roomId]);
@@ -1295,69 +1313,235 @@ const RoomDetailPage = () => {
           <Box sx={{ 
             position: 'relative',
             mb: { xs: 2, md: 3 },
-            p: 1,
+            p: { xs: '12px', md: '16px' },
           }}>
-            {/* Realistic Golden Frame - Outer Border */}
+            {/* ===== ROYAL ORNATE FRAME ===== */}
+            
+            {/* Main Frame Border - Double layered gold */}
             <Box
               sx={{
                 position: 'absolute',
                 inset: 0,
-                borderRadius: 2,
-                border: '3px solid transparent',
-                background: `linear-gradient(${isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)'}, ${isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)'}) padding-box, 
-                            linear-gradient(135deg, #D4AF37, #FFD700, #B8860B, #DAA520, #FFD700, #D4AF37) border-box`,
+                borderRadius: '12px',
+                border: '4px solid',
+                borderColor: 'transparent',
+                background: `linear-gradient(${isDark ? '#0f172a' : '#ffffff'}, ${isDark ? '#0f172a' : '#ffffff'}) padding-box,
+                            linear-gradient(135deg, #B8860B 0%, #FFD700 15%, #DAA520 30%, #B8860B 50%, #FFD700 70%, #DAA520 85%, #B8860B 100%) border-box`,
                 boxShadow: isDark
-                  ? '0 0 20px rgba(212, 175, 55, 0.4), 0 0 40px rgba(212, 175, 55, 0.2), inset 0 0 10px rgba(212, 175, 55, 0.1)'
-                  : '0 0 15px rgba(212, 175, 55, 0.3), 0 0 30px rgba(212, 175, 55, 0.15)',
-                pointerEvents: 'none',
-                zIndex: 0,
-              }}
-            />
-            {/* Inner accent line */}
-            <Box
-              sx={{
-                position: 'absolute',
-                inset: 6,
-                borderRadius: 1.5,
-                border: '1px solid rgba(212, 175, 55, 0.3)',
+                  ? '0 0 25px rgba(255, 215, 0, 0.35), inset 0 0 20px rgba(255, 215, 0, 0.1)'
+                  : '0 0 20px rgba(218, 165, 32, 0.25)',
                 pointerEvents: 'none',
                 zIndex: 0,
               }}
             />
             
+            {/* Inner accent border */}
+            <Box
+              sx={{
+                position: 'absolute',
+                inset: '8px',
+                borderRadius: '8px',
+                border: '2px solid',
+                borderColor: isDark ? 'rgba(255, 215, 0, 0.25)' : 'rgba(184, 134, 11, 0.2)',
+                pointerEvents: 'none',
+                zIndex: 0,
+              }}
+            />
+
+            {/* ===== CORNER ORNAMENTS ===== */}
+            {/* Top Left Corner */}
+            <Box sx={{
+              position: 'absolute',
+              top: -6,
+              left: -6,
+              width: 28,
+              height: 28,
+              zIndex: 5,
+              pointerEvents: 'none',
+            }}>
+              <Box sx={{
+                width: '100%',
+                height: '100%',
+                background: `radial-gradient(circle at 30% 30%, #FFD700 0%, #DAA520 40%, #B8860B 70%, #8B6914 100%)`,
+                borderRadius: '50%',
+                border: '2px solid #FFD700',
+                boxShadow: '0 0 15px rgba(255, 215, 0, 0.6), inset 0 -2px 4px rgba(0,0,0,0.3), inset 0 2px 4px rgba(255,255,255,0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                '&::after': {
+                  content: '"◆"',
+                  color: '#FFF8DC',
+                  fontSize: '10px',
+                  textShadow: '0 0 4px #FFD700',
+                }
+              }} />
+            </Box>
+
+            {/* Top Right Corner */}
+            <Box sx={{
+              position: 'absolute',
+              top: -6,
+              right: -6,
+              width: 28,
+              height: 28,
+              zIndex: 5,
+              pointerEvents: 'none',
+            }}>
+              <Box sx={{
+                width: '100%',
+                height: '100%',
+                background: `radial-gradient(circle at 70% 30%, #FFD700 0%, #DAA520 40%, #B8860B 70%, #8B6914 100%)`,
+                borderRadius: '50%',
+                border: '2px solid #FFD700',
+                boxShadow: '0 0 15px rgba(255, 215, 0, 0.6), inset 0 -2px 4px rgba(0,0,0,0.3), inset 0 2px 4px rgba(255,255,255,0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                '&::after': {
+                  content: '"◆"',
+                  color: '#FFF8DC',
+                  fontSize: '10px',
+                  textShadow: '0 0 4px #FFD700',
+                }
+              }} />
+            </Box>
+
+            {/* Bottom Left Corner */}
+            <Box sx={{
+              position: 'absolute',
+              bottom: -6,
+              left: -6,
+              width: 28,
+              height: 28,
+              zIndex: 5,
+              pointerEvents: 'none',
+            }}>
+              <Box sx={{
+                width: '100%',
+                height: '100%',
+                background: `radial-gradient(circle at 30% 70%, #FFD700 0%, #DAA520 40%, #B8860B 70%, #8B6914 100%)`,
+                borderRadius: '50%',
+                border: '2px solid #FFD700',
+                boxShadow: '0 0 15px rgba(255, 215, 0, 0.6), inset 0 -2px 4px rgba(0,0,0,0.3), inset 0 2px 4px rgba(255,255,255,0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                '&::after': {
+                  content: '"◆"',
+                  color: '#FFF8DC',
+                  fontSize: '10px',
+                  textShadow: '0 0 4px #FFD700',
+                }
+              }} />
+            </Box>
+
+            {/* Bottom Right Corner */}
+            <Box sx={{
+              position: 'absolute',
+              bottom: -6,
+              right: -6,
+              width: 28,
+              height: 28,
+              zIndex: 5,
+              pointerEvents: 'none',
+            }}>
+              <Box sx={{
+                width: '100%',
+                height: '100%',
+                background: `radial-gradient(circle at 70% 70%, #FFD700 0%, #DAA520 40%, #B8860B 70%, #8B6914 100%)`,
+                borderRadius: '50%',
+                border: '2px solid #FFD700',
+                boxShadow: '0 0 15px rgba(255, 215, 0, 0.6), inset 0 -2px 4px rgba(0,0,0,0.3), inset 0 2px 4px rgba(255,255,255,0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                '&::after': {
+                  content: '"◆"',
+                  color: '#FFF8DC',
+                  fontSize: '10px',
+                  textShadow: '0 0 4px #FFD700',
+                }
+              }} />
+            </Box>
+
+            {/* ===== TOP EDGE ORNAMENT ===== */}
+            <Box sx={{
+              position: 'absolute',
+              top: -10,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 5,
+              pointerEvents: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+            }}>
+              {/* Left flourish */}
+              <Box sx={{
+                width: 30,
+                height: 4,
+                background: 'linear-gradient(90deg, transparent, #FFD700, #DAA520)',
+                borderRadius: '2px 0 0 2px',
+                boxShadow: '0 0 8px rgba(255, 215, 0, 0.5)',
+              }} />
+              {/* Center gem */}
+              <Box sx={{
+                width: 20,
+                height: 20,
+                background: `radial-gradient(circle at 40% 40%, #87CEEB 0%, #4169E1 50%, #1E3A8A 100%)`,
+                borderRadius: '3px',
+                transform: 'rotate(45deg)',
+                border: '2px solid #FFD700',
+                boxShadow: '0 0 20px rgba(65, 105, 225, 0.7), 0 0 10px rgba(255, 215, 0, 0.5), inset 0 1px 3px rgba(255,255,255,0.6)',
+              }} />
+              {/* Right flourish */}
+              <Box sx={{
+                width: 30,
+                height: 4,
+                background: 'linear-gradient(90deg, #DAA520, #FFD700, transparent)',
+                borderRadius: '0 2px 2px 0',
+                boxShadow: '0 0 8px rgba(255, 215, 0, 0.5)',
+              }} />
+            </Box>
+
+            {/* ===== CROWN (above the gem) ===== */}
+            <Box
+              sx={{
+                position: 'absolute',
+                top: -32,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                fontSize: '1.5rem',
+                filter: 'drop-shadow(0 3px 6px rgba(255, 215, 0, 0.7)) drop-shadow(0 0 15px rgba(255, 215, 0, 0.4))',
+                animation: 'crownFloat 3s ease-in-out infinite',
+                zIndex: 10,
+                '@keyframes crownFloat': {
+                  '0%, 100%': { transform: 'translateX(-50%) translateY(0px)' },
+                  '50%': { transform: 'translateX(-50%) translateY(-3px)' },
+                }
+              }}
+            >
+              👑
+            </Box>
+
+            {/* ===== GLASSY INNER CARD ===== */}
             <Paper 
               sx={{ 
                 p: { xs: 2, md: 3 },
                 background: isDark
-                  ? 'rgba(15, 23, 42, 0.85)'
-                  : 'rgba(255, 255, 255, 0.9)',
-                backdropFilter: 'blur(8px)',
-                WebkitBackdropFilter: 'blur(8px)',
+                  ? 'linear-gradient(180deg, rgba(15, 23, 42, 0.92) 0%, rgba(30, 41, 59, 0.88) 100%)'
+                  : 'linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(254, 252, 232, 0.9) 100%)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
                 position: 'relative',
-                borderRadius: 1.5,
+                borderRadius: '6px',
                 border: '1px solid',
-                borderColor: isDark ? 'rgba(212, 175, 55, 0.2)' : 'rgba(212, 175, 55, 0.15)',
+                borderColor: isDark ? 'rgba(255, 215, 0, 0.15)' : 'rgba(184, 134, 11, 0.12)',
                 zIndex: 1,
+                boxShadow: 'inset 0 1px 2px rgba(255, 255, 255, 0.1)',
               }}
             >
-              {/* Decorative Crown */}
-              <Box
-                sx={{
-                  position: 'absolute',
-                  top: -20,
-                  left: 16,
-                  fontSize: '1.8rem',
-                  filter: 'drop-shadow(0 4px 8px rgba(212, 175, 55, 0.6)) drop-shadow(0 0 12px rgba(212, 175, 55, 0.4))',
-                  animation: 'crownFloat 3s ease-in-out infinite',
-                  zIndex: 10,
-                  '@keyframes crownFloat': {
-                    '0%, 100%': { transform: 'translateY(0px) rotate(-5deg)' },
-                    '50%': { transform: 'translateY(-2px) rotate(-3deg)' },
-                  }
-                }}
-              >
-                👑
-              </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, md: 2 }, flex: 1, minWidth: 0 }}>
             <IconButton onClick={() => navigate('/rooms')} size="small">

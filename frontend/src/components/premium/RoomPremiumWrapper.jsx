@@ -115,24 +115,25 @@ export const RoomPremiumBackground = ({ isPremium, roomId }) => {
     }
   }, [isPremium]);
 
-  // Generate stars - same as main app
+  // Generate stars - OPTIMIZED: reduced count for better performance
   const stars = useMemo(() => {
     if (!isPremium) return [];
     if (typeof window === 'undefined') return [];
     
-    const starCount = window.innerWidth < 600 ? 40 : 70;
+    // Reduced star count for better mobile performance
+    const starCount = window.innerWidth < 600 ? 20 : 35;
     return Array.from({ length: starCount }, (_, i) => ({
       id: i,
       x: Math.random() * 100,
       y: Math.random() * 100,
-      size: Math.random() > 0.6 ? 'large' : 'normal',
-      type: Math.random() > 0.6 ? (Math.random() > 0.5 ? 'blue' : 'gold') : 'white',
+      size: Math.random() > 0.7 ? 'large' : 'normal',
+      type: Math.random() > 0.7 ? (Math.random() > 0.5 ? 'blue' : 'gold') : 'white',
       delay: Math.random() * 5,
-      duration: 2 + Math.random() * 3,
+      duration: 3 + Math.random() * 2, // Slower animations = less CPU
     }));
   }, [isPremium]);
 
-  // Multiple shooting stars with variety
+  // Multiple shooting stars with variety - OPTIMIZED: less frequent
   useEffect(() => {
     if (!isPremium) return;
 
@@ -141,9 +142,9 @@ export const RoomPremiumBackground = ({ isPremium, roomId }) => {
         id: Date.now() + Math.random(),
         x: 10 + Math.random() * 70,
         y: Math.random() * 40,
-        size: Math.random() > 0.7 ? 'large' : Math.random() > 0.4 ? 'medium' : 'small',
-        speed: 0.8 + Math.random() * 0.6,
-        brightness: 0.6 + Math.random() * 0.4,
+        size: Math.random() > 0.8 ? 'large' : 'small', // Simplified sizes
+        speed: 1 + Math.random() * 0.5,
+        brightness: 0.7 + Math.random() * 0.3,
       };
       setShootingStars(prev => [...prev, newStar]);
       setTimeout(() => {
@@ -151,9 +152,10 @@ export const RoomPremiumBackground = ({ isPremium, roomId }) => {
       }, newStar.speed * 1000);
     };
 
+    // Less frequent shooting stars for better performance
     const interval = setInterval(() => {
-      if (Math.random() > 0.5) createShootingStar();
-    }, 6000 + Math.random() * 6000);
+      if (Math.random() > 0.6) createShootingStar();
+    }, 8000 + Math.random() * 8000);
 
     return () => clearInterval(interval);
   }, [isPremium]);
@@ -231,7 +233,7 @@ export const RoomPremiumBackground = ({ isPremium, roomId }) => {
         ))}
       </Box>
 
-      {/* Second nebula layer for depth - same as main app */}
+      {/* Second nebula layer for depth - OPTIMIZED: slower animation, GPU accelerated */}
       <Box
         sx={{
           position: 'fixed',
@@ -240,18 +242,20 @@ export const RoomPremiumBackground = ({ isPremium, roomId }) => {
           height: '140%',
           pointerEvents: 'none',
           zIndex: 0,
-          opacity: isVisible ? 0.5 : 0,
+          opacity: isVisible ? 0.4 : 0,
           transition: 'opacity 0.8s ease-in-out',
           background: isDark
-            ? `radial-gradient(ellipse at 60% 40%, rgba(139, 92, 246, 0.2) 0%, transparent 40%),
-               radial-gradient(ellipse at 25% 75%, rgba(236, 72, 153, 0.18) 0%, transparent 45%)`
-            : `radial-gradient(ellipse at 60% 40%, rgba(139, 92, 246, 0.1) 0%, transparent 40%),
-               radial-gradient(ellipse at 25% 75%, rgba(236, 72, 153, 0.08) 0%, transparent 45%)`,
-          animation: 'nebulaDrift 45s ease-in-out infinite reverse',
+            ? `radial-gradient(ellipse at 60% 40%, rgba(139, 92, 246, 0.15) 0%, transparent 40%),
+               radial-gradient(ellipse at 25% 75%, rgba(236, 72, 153, 0.12) 0%, transparent 45%)`
+            : `radial-gradient(ellipse at 60% 40%, rgba(139, 92, 246, 0.08) 0%, transparent 40%),
+               radial-gradient(ellipse at 25% 75%, rgba(236, 72, 153, 0.06) 0%, transparent 45%)`,
+          animation: 'nebulaDrift 60s ease-in-out infinite reverse',
+          willChange: 'transform',
+          transform: 'translateZ(0)', // Force GPU layer
         }}
       />
 
-      {/* Third layer - same as main app */}
+      {/* Third layer - OPTIMIZED: removed for mobile, slower on desktop */}
       <Box
         sx={{
           position: 'fixed',
@@ -260,14 +264,15 @@ export const RoomPremiumBackground = ({ isPremium, roomId }) => {
           height: '160%',
           pointerEvents: 'none',
           zIndex: 0,
-          opacity: isVisible ? 0.3 : 0,
+          opacity: isVisible ? 0.2 : 0,
           transition: 'opacity 0.8s ease-in-out',
           background: isDark
-            ? `radial-gradient(ellipse at 80% 20%, rgba(56, 189, 248, 0.15) 0%, transparent 35%),
-               radial-gradient(ellipse at 10% 60%, rgba(251, 146, 60, 0.12) 0%, transparent 40%)`
-            : `radial-gradient(ellipse at 80% 20%, rgba(56, 189, 248, 0.08) 0%, transparent 35%),
-               radial-gradient(ellipse at 10% 60%, rgba(251, 146, 60, 0.06) 0%, transparent 40%)`,
-          animation: 'nebulaDrift 80s ease-in-out infinite',
+            ? `radial-gradient(ellipse at 80% 20%, rgba(56, 189, 248, 0.1) 0%, transparent 35%)`
+            : `radial-gradient(ellipse at 80% 20%, rgba(56, 189, 248, 0.05) 0%, transparent 35%)`,
+          animation: 'nebulaDrift 90s ease-in-out infinite',
+          willChange: 'transform',
+          transform: 'translateZ(0)', // Force GPU layer
+          display: { xs: 'none', md: 'block' }, // Hide on mobile for performance
         }}
       />
 

@@ -28,6 +28,8 @@ const formatRoomResponse = (room) => ({
   _id: room.id, // For frontend compatibility
   isPublic: !room.isPrivate, // Frontend compatibility - convert isPrivate to isPublic
   requireApproval: room.requireApproval || false,
+  isPremium: room.isPremium || false, // Room premium status
+  premiumActivatedAt: room.premiumActivatedAt || null,
   owner: room.owner ? { ...room.owner, _id: room.owner.id } : { _id: room.ownerId },
   // IMPORTANT: Only return active members (exclude pending)
   members: room.members?.filter(m => m.status === 'active').map(m => ({
@@ -1074,6 +1076,95 @@ router.get('/:id/pending', protect, isRoomOwner, async (req, res, next) => {
       success: true,
       count: formatted.length,
       pendingMembers: formatted
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   PUT /api/rooms/:id/premium
+// @desc    Activate or deactivate room premium
+// @access  Private (owner only)
+router.put('/:id/premium', protect, isRoomOwner, async (req, res, next) => {
+  try {
+    const { code, deactivate } = req.body;
+
+    // Valid room premium codes
+    const VALID_ROOM_CODES = ['ROOM-PREMIUM', 'ORBIT-ROOM-VIP', 'KRIOS-ROOM-ELITE'];
+
+    if (deactivate) {
+      // Deactivate premium
+      const room = await prisma.room.update({
+        where: { id: req.params.id },
+        data: {
+          isPremium: false,
+          premiumActivatedAt: null
+        },
+        include: {
+          owner: { select: { id: true, username: true } },
+          members: {
+            include: {
+              user: { select: { id: true, username: true, avatar: true } }
+            }
+          },
+          tasks: true
+        }
+      });
+
+      // Emit socket event to all members
+      const io = req.app.get('io');
+      io.to(room.id).emit('room:premiumUpdated', { 
+        roomId: room.id, 
+        isPremium: false 
+      });
+
+      logger.info(`Room premium deactivated: ${room.name}`);
+      return res.json({
+        success: true,
+        message: 'Room premium deactivated',
+        room: formatRoomResponse(room)
+      });
+    }
+
+    // Activate premium - validate code
+    const upperCode = code?.toUpperCase()?.trim();
+    if (!VALID_ROOM_CODES.includes(upperCode)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid room premium code'
+      });
+    }
+
+    const room = await prisma.room.update({
+      where: { id: req.params.id },
+      data: {
+        isPremium: true,
+        premiumActivatedAt: new Date()
+      },
+      include: {
+        owner: { select: { id: true, username: true } },
+        members: {
+          include: {
+            user: { select: { id: true, username: true, avatar: true } }
+          }
+        },
+        tasks: true
+      }
+    });
+
+    // Emit socket event to all members
+    const io = req.app.get('io');
+    io.to(room.id).emit('room:premiumUpdated', { 
+      roomId: room.id, 
+      isPremium: true,
+      premiumActivatedAt: room.premiumActivatedAt
+    });
+
+    logger.info(`Room premium activated: ${room.name}`);
+    res.json({
+      success: true,
+      message: 'Room premium activated!',
+      room: formatRoomResponse(room)
     });
   } catch (error) {
     next(error);

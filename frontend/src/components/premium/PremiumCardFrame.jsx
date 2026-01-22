@@ -63,13 +63,14 @@ const PremiumCardFrame = ({
       />
       <circle cx="100" cy="10" r="4" fill={frameColor} opacity="0.6" />
       
-      {/* Right border */}
+      {/* Right border with middle inward-outward curve */}
       <path
-        d="M 190 10 L 190 190"
+        d="M 190 10 L 190 90 Q 190 95 185 100 Q 190 105 190 110 L 190 190"
         stroke="url(#frameGradient)"
         strokeWidth="1.5"
         fill="none"
       />
+      <circle cx="185" cy="100" r="2" fill={frameColor} opacity="0.5" />
       
       {/* Bottom border */}
       <path
@@ -79,13 +80,14 @@ const PremiumCardFrame = ({
         fill="none"
       />
       
-      {/* Left border */}
+      {/* Left border with middle inward-outward curve */}
       <path
-        d="M 10 190 L 10 10"
+        d="M 10 190 L 10 110 Q 10 105 15 100 Q 10 95 10 90 L 10 10"
         stroke="url(#frameGradient)"
         strokeWidth="1.5"
         fill="none"
       />
+      <circle cx="15" cy="100" r="2" fill={frameColor} opacity="0.5" />
       
       {/* Corner ornaments */}
       <circle cx="10" cy="10" r="2" fill={frameColor} opacity="0.8" />
@@ -132,13 +134,14 @@ const PremiumCardFrame = ({
         fill="none"
       />
       
-      {/* Right border with curves */}
+      {/* Right border with middle inward-outward curve */}
       <path
-        d="M 200 20 L 200 190 Q 200 195 195 195"
+        d="M 200 20 L 200 95 Q 200 100 194 105 Q 200 110 200 115 L 200 190 Q 200 195 195 195"
         stroke="url(#ornateGradient)"
         strokeWidth="2"
         fill="none"
       />
+      <circle cx="194" cy="105" r="2.5" fill={frameColor} opacity="0.6" />
       
       {/* Bottom border */}
       <path
@@ -148,19 +151,18 @@ const PremiumCardFrame = ({
         fill="none"
       />
       
-      {/* Left border */}
+      {/* Left border with middle inward-outward curve */}
       <path
-        d="M 10 190 L 10 20"
+        d="M 10 190 L 10 115 Q 10 110 16 105 Q 10 100 10 95 L 10 20"
         stroke="url(#ornateGradient)"
         strokeWidth="2"
         fill="none"
       />
+      <circle cx="16" cy="105" r="2.5" fill={frameColor} opacity="0.6" />
       
       {/* Corner decorations */}
       <circle cx="15" cy="15" r="3" fill={frameColor} opacity="0.7" />
-      <circle cx="105" cy="12" r="4" fill={frameColor} opacity="0.8">
-        <animate attributeName="opacity" values="0.8;1;0.8" dur="3s" repeatCount="indefinite" />
-      </circle>
+      <circle cx="105" cy="12" r="4" fill={frameColor} opacity="0.8" />
       <circle cx="195" cy="15" r="3" fill={frameColor} opacity="0.7" />
       <circle cx="195" cy="195" r="3" fill={frameColor} opacity="0.7" />
       <circle cx="15" cy="195" r="3" fill={frameColor} opacity="0.7" />
