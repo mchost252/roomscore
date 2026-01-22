@@ -1846,10 +1846,6 @@ const RoomDetailPage = () => {
             </Box>
           </Paper>
         )}
-
-            </Box>
-          </Paper>
-        )}
       </Box>
 
 
