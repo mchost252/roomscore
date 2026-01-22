@@ -172,26 +172,35 @@ const RoomDetailPage = () => {
   // This ensures ALL members see premium UI, not just the owner who activated it
   const roomHasPremium = room?.isPremium === true;
   
-  // Force dark mode when in premium room
+  // Force dark mode when in premium room - ONLY ONCE
   useEffect(() => {
-    if (roomHasPremium) {
+    const hasAppliedTheme = sessionStorage.getItem(`theme_applied_${roomId}`);
+    
+    if (roomHasPremium && !hasAppliedTheme) {
       const currentTheme = localStorage.getItem('themeMode');
       if (currentTheme === 'light' || (currentTheme === 'system' && window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').matches)) {
         // Save original preference
-        localStorage.setItem('theme_before_premium', currentTheme || 'system');
+        localStorage.setItem('theme_before_premium_room', currentTheme || 'system');
         // Force dark mode
         localStorage.setItem('themeMode', 'dark');
+        // Mark as applied for this session
+        sessionStorage.setItem(`theme_applied_${roomId}`, 'true');
         window.location.reload(); // Reload to apply theme
+      } else {
+        // Already in dark mode, just mark as applied
+        sessionStorage.setItem(`theme_applied_${roomId}`, 'true');
       }
-    } else {
-      // Restore original theme when leaving premium room
-      const originalTheme = localStorage.getItem('theme_before_premium');
+    } else if (!roomHasPremium && hasAppliedTheme) {
+      // Leaving premium room - restore original theme
+      const originalTheme = localStorage.getItem('theme_before_premium_room');
       if (originalTheme) {
         localStorage.setItem('themeMode', originalTheme);
-        localStorage.removeItem('theme_before_premium');
+        localStorage.removeItem('theme_before_premium_room');
       }
+      // Clear the session flag
+      sessionStorage.removeItem(`theme_applied_${roomId}`);
     }
-  }, [roomHasPremium]);
+  }, [roomHasPremium, roomId]);
   
   // Show first-time premium welcome
   useEffect(() => {
@@ -2570,38 +2579,33 @@ const RoomDetailPage = () => {
               p: 2, 
               width: '100%', 
               maxWidth: '100%',
-              // Edge light sweep - rotating glow
+              // Edge light sweep - OPTIMIZED: slower, on edge only
               ...(roomHasPremium && {
                 position: 'relative',
                 overflow: 'hidden',
                 '&::before': {
                   content: '""',
                   position: 'absolute',
-                  top: '50%',
-                  left: '50%',
-                  width: '200%',
-                  height: '200%',
-                  background: 'conic-gradient(from 0deg, transparent 0deg, transparent 340deg, rgba(139, 92, 246, 0.8) 350deg, rgba(167, 139, 250, 1) 355deg, rgba(139, 92, 246, 0.8) 360deg)',
-                  animation: 'spinGlow 6s linear infinite',
-                  transformOrigin: 'center',
-                  pointerEvents: 'none',
-                  zIndex: 0,
-                },
-                '&::after': {
-                  content: '""',
-                  position: 'absolute',
-                  inset: 2,
+                  inset: -2,
                   borderRadius: 'inherit',
-                  background: isDark ? 'rgba(15, 23, 42, 0.98)' : 'rgba(255, 255, 255, 0.98)',
-                  zIndex: 0,
+                  padding: '2px',
+                  background: 'conic-gradient(from 0deg, transparent 0deg, transparent 340deg, rgba(139, 92, 246, 0.7) 350deg, rgba(167, 139, 250, 0.9) 355deg, rgba(139, 92, 246, 0.7) 360deg)',
+                  WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                  WebkitMaskComposite: 'xor',
+                  mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                  maskComposite: 'exclude',
+                  animation: 'spinGlow 8s linear infinite',
+                  pointerEvents: 'none',
+                  zIndex: 1,
+                  willChange: 'transform',
                 },
                 '& > *': {
                   position: 'relative',
-                  zIndex: 1,
+                  zIndex: 2,
                 },
                 '@keyframes spinGlow': {
-                  '0%': { transform: 'translate(-50%, -50%) rotate(0deg)' },
-                  '100%': { transform: 'translate(-50%, -50%) rotate(360deg)' },
+                  '0%': { transform: 'rotate(0deg)' },
+                  '100%': { transform: 'rotate(360deg)' },
                 },
               })
             }}
