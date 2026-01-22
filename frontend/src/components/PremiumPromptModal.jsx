@@ -257,12 +257,13 @@ const PremiumPromptModal = ({ open, onClose }) => {
         type="global"
       />
       
-      {/* Preview not available message */}
+      {/* Preview not available message - higher z-index to show above the Dialog */}
       <Snackbar
         open={showPreviewMessage}
         autoHideDuration={4000}
         onClose={() => setShowPreviewMessage(false)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        sx={{ zIndex: 9999 }}
       >
         <Alert 
           onClose={() => setShowPreviewMessage(false)} 
@@ -272,7 +273,8 @@ const PremiumPromptModal = ({ open, onClose }) => {
             background: 'linear-gradient(135deg, #3B82F6, #6366F1)',
             '& .MuiAlert-icon': {
               color: '#fff'
-            }
+            },
+            mt: 2
           }}
         >
           <Typography variant="body2" fontWeight={600}>
