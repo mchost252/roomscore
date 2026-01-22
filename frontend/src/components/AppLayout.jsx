@@ -626,7 +626,8 @@ const AppLayout = ({ children }) => {
         }}
       />
 
-      {/* Mobile Header */}
+      {/* Mobile Header - HIDE when viewing individual DM chat */}
+      {!((location.pathname.split('/').filter(Boolean)[0] === 'messages' && location.pathname.split('/').filter(Boolean).length >= 2)) && (
       <Box
         sx={{
           position: 'fixed',
@@ -696,6 +697,7 @@ const AppLayout = ({ children }) => {
         {/* Notifications */}
         <NotificationPopup />
       </Box>
+      )}
 
       {/* Mobile Drawer - Temporary (collapsed icons only) */}
       <Drawer

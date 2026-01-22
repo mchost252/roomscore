@@ -176,7 +176,7 @@ const Navbar = () => {
   if (isMobile) {
     // Hide top AppBar when viewing individual chat (has its own header with back button)
     const pathParts = location.pathname.split('/').filter(Boolean);
-    const isViewingIndividualChat = pathParts[0] === 'messages' && pathParts.length >= 2 && pathParts[1] !== '';
+    const isViewingIndividualChat = pathParts[0] === 'messages' && pathParts.length >= 2;
     
     return (
       <>
@@ -431,4 +431,5 @@ const Navbar = () => {
   );
 };
 
-export default memo(Navbar);
+// Remove memo to ensure Navbar re-renders on route changes (needed for hiding navbar in DM chat)
+export default Navbar;

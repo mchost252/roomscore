@@ -3204,6 +3204,14 @@ const RoomDetailPage = () => {
         }}
         maxWidth="md"
         fullWidth
+        PaperProps={{
+          sx: roomHasPremium ? {
+            background: isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+            backdropFilter: 'blur(20px)',
+            position: 'relative',
+            overflow: 'visible'
+          } : {}
+        }}
       >
         <DialogTitle>Manage Tasks</DialogTitle>
         <DialogContent>
@@ -3460,27 +3468,37 @@ const RoomDetailPage = () => {
             onComplete={() => setShowSuccessFeedback(false)} 
           />
           
-          {/* Cosmic Nudge Animation */}
-          <CosmicNudgeAnimation 
-            show={showCosmicNudge} 
-            onComplete={() => setShowCosmicNudge(false)} 
-          />
+          {/* Cosmic Animations - Fixed z-index layer to show above everything including chat */}
+          <Box
+            sx={{
+              position: 'fixed',
+              inset: 0,
+              pointerEvents: 'none',
+              zIndex: 9999, // Above everything including chat drawer (which is 1200)
+            }}
+          >
+            {/* Cosmic Nudge Animation */}
+            <CosmicNudgeAnimation 
+              show={showCosmicNudge} 
+              onComplete={() => setShowCosmicNudge(false)} 
+            />
+            
+            {/* Cosmic Appreciation Animations */}
+            <CosmicStarAnimation 
+              show={showCosmicStar} 
+              onComplete={() => setShowCosmicStar(false)} 
+            />
+            <CosmicFireAnimation 
+              show={showCosmicFire} 
+              onComplete={() => setShowCosmicFire(false)} 
+            />
+            <CosmicShieldAnimation 
+              show={showCosmicShield} 
+              onComplete={() => setShowCosmicShield(false)} 
+            />
+          </Box>
           
-          {/* Cosmic Appreciation Animations */}
-          <CosmicStarAnimation 
-            show={showCosmicStar} 
-            onComplete={() => setShowCosmicStar(false)} 
-          />
-          <CosmicFireAnimation 
-            show={showCosmicFire} 
-            onComplete={() => setShowCosmicFire(false)} 
-          />
-          <CosmicShieldAnimation 
-            show={showCosmicShield} 
-            onComplete={() => setShowCosmicShield(false)} 
-          />
-          
-          {/* Premium Welcome Notification */}
+          {/* Premium Welcome Notification - Optimized for mobile */}
           <Dialog
             open={showPremiumWelcome}
             onClose={() => setShowPremiumWelcome(false)}
@@ -3491,14 +3509,18 @@ const RoomDetailPage = () => {
                 background: isDark
                   ? 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)'
                   : 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 50%, #fffbeb 100%)',
-                border: `1px solid ${isDark ? 'rgba(251, 191, 36, 0.3)' : 'rgba(251, 191, 36, 0.2)'}`,
-                borderRadius: 3,
+                border: { 
+                  xs: `1px solid ${isDark ? 'rgba(251, 191, 36, 0.2)' : 'rgba(251, 191, 36, 0.15)'}`,
+                  md: `1px solid ${isDark ? 'rgba(251, 191, 36, 0.3)' : 'rgba(251, 191, 36, 0.2)'}`
+                },
+                borderRadius: { xs: 2, md: 3 },
                 overflow: 'hidden',
                 textAlign: 'center',
+                m: { xs: 2, md: 3 }, // Margin on mobile so it's smaller
               }
             }}
           >
-            <Box sx={{ p: 4 }}>
+            <Box sx={{ p: { xs: 2, md: 4 } }}>
               {/* Animated star icon */}
               <Box
                 sx={{
