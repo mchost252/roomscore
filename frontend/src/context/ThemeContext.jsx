@@ -48,13 +48,18 @@ export const ThemeProvider = ({ children }) => {
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, [themePreference]);
 
-  // Check if user is in a premium room (dark mode only)
-  const isInPremiumRoom = () => {
+  // Check if user has global premium or is in a premium room (dark mode only)
+  const isPremiumActive = () => {
     if (typeof window === 'undefined') return false;
+    
+    // Check global premium
+    const globalPremium = JSON.parse(localStorage.getItem('krios_global_premium') || '{}');
+    if (globalPremium.active) return true;
+    
+    // Check room premium
     const path = window.location.pathname;
     if (!path.includes('/rooms/')) return false;
     
-    // Check if current room has premium
     const roomId = path.split('/rooms/')[1];
     if (!roomId) return false;
     
@@ -64,9 +69,9 @@ export const ThemeProvider = ({ children }) => {
 
   // Set theme mode (light, dark, or system)
   const setThemeMode = (newMode) => {
-    // Block light mode if in premium room
-    if (isInPremiumRoom() && (newMode === 'light' || (newMode === 'system' && getSystemTheme() === 'light'))) {
-      console.log('Cannot switch to light mode in premium room');
+    // Block light mode if global premium is active OR in premium room
+    if (isPremiumActive() && (newMode === 'light' || (newMode === 'system' && getSystemTheme() === 'light'))) {
+      console.log('Cannot switch to light mode - Premium UI requires dark mode');
       return;
     }
     
@@ -82,9 +87,9 @@ export const ThemeProvider = ({ children }) => {
 
   // Legacy toggle function (cycles through light -> dark -> system)
   const toggleTheme = () => {
-    // Block toggle if in premium room
-    if (isInPremiumRoom()) {
-      console.log('Theme switching disabled in premium room');
+    // Block toggle if global premium active OR in premium room
+    if (isPremiumActive()) {
+      console.log('Theme switching disabled - Premium UI requires dark mode');
       return;
     }
     

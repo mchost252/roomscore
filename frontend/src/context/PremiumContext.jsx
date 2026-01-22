@@ -94,14 +94,24 @@ export const PremiumProvider = ({ children }) => {
     // Step 1: Soft lock (dim screen) - 300ms
     await new Promise(resolve => setTimeout(resolve, 300));
 
-    // Step 2: Update state
+    // Step 2: Force dark mode for premium UI
+    const currentTheme = localStorage.getItem('themeMode');
+    if (currentTheme === 'light' || (currentTheme === 'system' && window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      // Save original preference
+      localStorage.setItem('theme_before_global_premium', currentTheme || 'system');
+      // Force dark mode
+      localStorage.setItem('themeMode', 'dark');
+      window.location.reload(); // Reload to apply theme
+    }
+
+    // Step 3: Update state
     setGlobalPremium({
       active: true,
       activatedAt: new Date().toISOString(),
       code: upperCode,
     });
 
-    // Step 3: Premium reveal animation - 600ms
+    // Step 4: Premium reveal animation - 600ms
     await new Promise(resolve => setTimeout(resolve, 600));
 
     setIsTransitioning(false);
@@ -118,6 +128,14 @@ export const PremiumProvider = ({ children }) => {
     await new Promise(resolve => setTimeout(resolve, 300));
 
     setGlobalPremium({ active: false, activatedAt: null });
+
+    // Restore original theme when deactivating global premium
+    const originalTheme = localStorage.getItem('theme_before_global_premium');
+    if (originalTheme) {
+      localStorage.setItem('themeMode', originalTheme);
+      localStorage.removeItem('theme_before_global_premium');
+      window.location.reload(); // Reload to apply theme
+    }
 
     await new Promise(resolve => setTimeout(resolve, 400));
 

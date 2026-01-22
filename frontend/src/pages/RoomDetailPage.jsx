@@ -1810,7 +1810,46 @@ const RoomDetailPage = () => {
                 {room.description}
               </Typography>
             )}
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+
+            {/* Room Expiry Info */}
+            {(room.endDate || room.expiresAt) && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, p: 1, bgcolor: 'warning.main', borderRadius: 1, opacity: 0.9 }}>
+                <CalendarToday sx={{ fontSize: { xs: 16, md: 20 }, color: 'warning.contrastText' }} />
+                <Typography variant="body2" sx={{ fontSize: { xs: '0.7rem', md: '0.875rem' }, color: 'warning.contrastText' }}>
+                  Room expires: {format(parseISO(room.endDate || room.expiresAt), 'MMM d, yyyy')} ({Math.max(0, Math.ceil((new Date(room.endDate || room.expiresAt) - new Date()) / (1000 * 60 * 60 * 24)))} days left)
+                </Typography>
+              </Box>
+            )}
+
+            <Box sx={{ display: 'flex', gap: { xs: 1, md: 2 }, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.7rem', md: '0.875rem' } }}>
+                  Join Code:
+                </Typography>
+                <Chip 
+                  label={room.joinCode} 
+                  size="small"
+                  onClick={handleCopyJoinCode}
+                  onDelete={handleCopyJoinCode}
+                  deleteIcon={<ContentCopy sx={{ fontSize: { xs: 14, md: 18 } }} />}
+                  sx={{ height: { xs: 22, md: 28 }, fontSize: { xs: '0.7rem', md: '0.875rem' } }}
+                />
+              </Box>
+              {myMember && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <EmojiEvents color="warning" sx={{ fontSize: { xs: 18, md: 24 } }} />
+                  <Typography variant="body2" sx={{ fontSize: { xs: '0.75rem', md: '0.875rem' } }}>
+                    Your Points: <strong>{myMember.points}</strong>
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          </Paper>
+        )}
+
+        {/* Copy button and points info that was missing */}
+        <Box sx={{ display: 'none' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
               <Button
                 onClick={handleCopyJoinCode}
                 startIcon={<ContentCopy sx={{ fontSize: { xs: 16, md: 20 } }} />}

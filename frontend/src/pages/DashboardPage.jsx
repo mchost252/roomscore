@@ -73,40 +73,23 @@ const StatCard = memo(({ icon: Icon, label, value, color, subtext, isPremium = f
         background: `linear-gradient(90deg, transparent, ${alpha(color, 0.7)}, transparent)`,
         zIndex: 1,
       },
-      // Color-coded border sweep - travels along the border edges
+      // Smooth rotating border glow - GPU accelerated
       '&::after': {
         content: '""',
         position: 'absolute',
-        inset: 0,
+        inset: -1,
         borderRadius: 'inherit',
         pointerEvents: 'none',
         zIndex: 2,
-        // Animated border using box-shadow that moves
-        animation: `borderTravel 4s ease-in-out infinite`,
+        background: `conic-gradient(from 0deg, transparent 0deg, transparent 330deg, ${color} 340deg, ${alpha(color, 0.8)} 350deg, ${color} 360deg)`,
+        animation: `borderSpin 6s linear infinite`,
         animationDelay: `${sweepDelay}s`,
-        opacity: 0,
+        opacity: 0.6,
+        willChange: 'transform',
       },
-      '@keyframes borderTravel': {
-        '0%': { 
-          boxShadow: `inset 0 2px 0 0 ${color}, inset 0 0 0 0 transparent`,
-          opacity: 1,
-        },
-        '25%': { 
-          boxShadow: `inset -2px 0 0 0 ${color}, inset 0 0 0 0 transparent`,
-          opacity: 1,
-        },
-        '50%': { 
-          boxShadow: `inset 0 -2px 0 0 ${color}, inset 0 0 0 0 transparent`,
-          opacity: 1,
-        },
-        '75%': { 
-          boxShadow: `inset 2px 0 0 0 ${color}, inset 0 0 0 0 transparent`,
-          opacity: 1,
-        },
-        '100%': { 
-          boxShadow: `inset 0 2px 0 0 ${color}, inset 0 0 0 0 transparent`,
-          opacity: 1,
-        },
+      '@keyframes borderSpin': {
+        '0%': { transform: 'rotate(0deg)' },
+        '100%': { transform: 'rotate(360deg)' },
       },
     }),
     position: 'relative',

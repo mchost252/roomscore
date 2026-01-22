@@ -147,7 +147,17 @@ const NotificationPopup = () => {
         color="inherit"
         onClick={handleClick}
         size="large"
-        sx={{ ml: 1 }}
+        sx={{ 
+          ml: 1,
+          borderRadius: '50%',
+          width: 44,
+          height: 44,
+          '&:hover': {
+            backgroundColor: 'rgba(255, 255, 255, 0.08)',
+            transform: 'scale(1.05)',
+          },
+          transition: 'all 0.2s ease',
+        }}
       >
         <Badge badgeContent={unreadCount} color="error">
           <NotificationsIcon />
