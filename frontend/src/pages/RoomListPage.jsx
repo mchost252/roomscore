@@ -285,6 +285,9 @@ const RoomListPage = () => {
       }
     };
 
+    // Check if room has premium
+    const isPremiumRoom = room.isPremium === true;
+
     return (
       <Card 
         sx={{ 
@@ -292,22 +295,48 @@ const RoomListPage = () => {
           cursor: isMember ? 'pointer' : 'default',
           transition: 'transform 0.2s, box-shadow 0.2s',
           overflow: 'hidden',
+          // Golden premium styling
+          ...(isPremiumRoom && {
+            position: 'relative',
+            border: '2px solid',
+            borderColor: 'transparent',
+            background: (theme) => theme.palette.mode === 'dark'
+              ? `linear-gradient(${theme.palette.background.paper}, ${theme.palette.background.paper}) padding-box,
+                 linear-gradient(135deg, #B8860B 0%, #FFD700 50%, #DAA520 100%) border-box`
+              : `linear-gradient(${theme.palette.background.paper}, ${theme.palette.background.paper}) padding-box,
+                 linear-gradient(135deg, #B8860B 0%, #FFD700 50%, #DAA520 100%) border-box`,
+            boxShadow: (theme) => theme.palette.mode === 'dark'
+              ? '0 0 20px rgba(255, 215, 0, 0.3), 0 4px 12px rgba(0, 0, 0, 0.3)'
+              : '0 0 15px rgba(218, 165, 32, 0.25), 0 4px 12px rgba(0, 0, 0, 0.1)',
+          }),
           '&:hover': isMember ? {
             transform: 'translateY(-4px)',
-            boxShadow: 6
+            boxShadow: isPremiumRoom 
+              ? (theme) => theme.palette.mode === 'dark'
+                ? '0 0 30px rgba(255, 215, 0, 0.5), 0 8px 20px rgba(0, 0, 0, 0.4)'
+                : '0 0 25px rgba(218, 165, 32, 0.35), 0 8px 20px rgba(0, 0, 0, 0.15)'
+              : 6
           } : {}
         }}
         onClick={isMember ? handleCardClick : undefined}
       >
-        {/* Gradient Header */}
+        {/* Gradient Header - Golden for Premium */}
         <Box 
           sx={{ 
-            background: (theme) => theme.palette.mode === 'dark'
-              ? 'linear-gradient(135deg, rgba(59,130,246,0.15) 0%, rgba(99,102,241,0.15) 50%, rgba(139,92,246,0.15) 100%)'
-              : 'linear-gradient(135deg, rgba(59,130,246,0.08) 0%, rgba(99,102,241,0.08) 50%, rgba(139,92,246,0.08) 100%)',
-            borderBottom: (theme) => theme.palette.mode === 'dark'
-              ? '1px solid rgba(96,165,250,0.2)'
-              : '1px solid rgba(59,130,246,0.15)',
+            background: isPremiumRoom
+              ? (theme) => theme.palette.mode === 'dark'
+                ? 'linear-gradient(135deg, rgba(251, 191, 36, 0.2) 0%, rgba(245, 158, 11, 0.25) 50%, rgba(217, 119, 6, 0.2) 100%)'
+                : 'linear-gradient(135deg, rgba(254, 243, 199, 0.8) 0%, rgba(253, 230, 138, 0.9) 50%, rgba(252, 211, 77, 0.8) 100%)'
+              : (theme) => theme.palette.mode === 'dark'
+                ? 'linear-gradient(135deg, rgba(59,130,246,0.15) 0%, rgba(99,102,241,0.15) 50%, rgba(139,92,246,0.15) 100%)'
+                : 'linear-gradient(135deg, rgba(59,130,246,0.08) 0%, rgba(99,102,241,0.08) 50%, rgba(139,92,246,0.08) 100%)',
+            borderBottom: isPremiumRoom
+              ? (theme) => theme.palette.mode === 'dark'
+                ? '1px solid rgba(251, 191, 36, 0.4)'
+                : '1px solid rgba(217, 119, 6, 0.3)'
+              : (theme) => theme.palette.mode === 'dark'
+                ? '1px solid rgba(96,165,250,0.2)'
+                : '1px solid rgba(59,130,246,0.15)',
             p: 2,
             pb: 1.5
           }}
@@ -319,9 +348,13 @@ const RoomListPage = () => {
                 fontWeight="bold" 
                 gutterBottom
                 sx={{
-                  background: (theme) => theme.palette.mode === 'dark'
-                    ? 'linear-gradient(135deg, #60A5FA 0%, #818CF8 50%, #A78BFA 100%)'
-                    : 'linear-gradient(135deg, #3B82F6 0%, #6366F1 50%, #8B5CF6 100%)',
+                  background: isPremiumRoom
+                    ? (theme) => theme.palette.mode === 'dark'
+                      ? 'linear-gradient(135deg, #FBBF24 0%, #F59E0B 50%, #D97706 100%)'
+                      : 'linear-gradient(135deg, #B45309 0%, #92400E 50%, #78350F 100%)'
+                    : (theme) => theme.palette.mode === 'dark'
+                      ? 'linear-gradient(135deg, #60A5FA 0%, #818CF8 50%, #A78BFA 100%)'
+                      : 'linear-gradient(135deg, #3B82F6 0%, #6366F1 50%, #8B5CF6 100%)',
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
                   backgroundClip: 'text'
@@ -330,6 +363,19 @@ const RoomListPage = () => {
                 {room.name}
               </Typography>
               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                {isPremiumRoom && (
+                  <Chip 
+                    label="✨ Premium" 
+                    size="small" 
+                    sx={{ 
+                      background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.2) 0%, rgba(245, 158, 11, 0.15) 100%)',
+                      border: '1px solid rgba(251, 191, 36, 0.3)',
+                      color: '#FBBF24',
+                      fontWeight: 600,
+                      '& .MuiChip-label': { px: 1 }
+                    }}
+                  />
+                )}
                 {isOwner && <Chip label="Owner" size="small" color="primary" />}
                 {room.isPublic ? (
                   <Chip icon={<Public />} label="Public" size="small" color="success" />

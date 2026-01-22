@@ -2579,33 +2579,38 @@ const RoomDetailPage = () => {
               p: 2, 
               width: '100%', 
               maxWidth: '100%',
-              // Edge light sweep - OPTIMIZED: slower, on edge only
+              // Edge light sweep - rotating glow (ORIGINAL WORKING VERSION)
               ...(roomHasPremium && {
                 position: 'relative',
                 overflow: 'hidden',
                 '&::before': {
                   content: '""',
                   position: 'absolute',
-                  inset: -2,
-                  borderRadius: 'inherit',
-                  padding: '2px',
-                  background: 'conic-gradient(from 0deg, transparent 0deg, transparent 340deg, rgba(139, 92, 246, 0.7) 350deg, rgba(167, 139, 250, 0.9) 355deg, rgba(139, 92, 246, 0.7) 360deg)',
-                  WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-                  WebkitMaskComposite: 'xor',
-                  mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-                  maskComposite: 'exclude',
-                  animation: 'spinGlow 8s linear infinite',
+                  top: '50%',
+                  left: '50%',
+                  width: '200%',
+                  height: '200%',
+                  background: 'conic-gradient(from 0deg, transparent 0deg, transparent 340deg, rgba(139, 92, 246, 0.8) 350deg, rgba(167, 139, 250, 1) 355deg, rgba(139, 92, 246, 0.8) 360deg)',
+                  animation: 'spinGlow 6s linear infinite',
+                  transformOrigin: 'center',
                   pointerEvents: 'none',
-                  zIndex: 1,
-                  willChange: 'transform',
+                  zIndex: 0,
+                },
+                '&::after': {
+                  content: '""',
+                  position: 'absolute',
+                  inset: 2,
+                  borderRadius: 'inherit',
+                  background: isDark ? 'rgba(15, 23, 42, 0.98)' : 'rgba(255, 255, 255, 0.98)',
+                  zIndex: 0,
                 },
                 '& > *': {
                   position: 'relative',
-                  zIndex: 2,
+                  zIndex: 1,
                 },
                 '@keyframes spinGlow': {
-                  '0%': { transform: 'rotate(0deg)' },
-                  '100%': { transform: 'rotate(360deg)' },
+                  '0%': { transform: 'translate(-50%, -50%) rotate(0deg)' },
+                  '100%': { transform: 'translate(-50%, -50%) rotate(360deg)' },
                 },
               })
             }}

@@ -73,28 +73,36 @@ const StatCard = memo(({ icon: Icon, label, value, color, subtext, isPremium = f
         background: `linear-gradient(90deg, transparent, ${alpha(color, 0.7)}, transparent)`,
         zIndex: 1,
       },
-      // Smooth rotating border glow - GPU accelerated ON EDGE
+      // Smooth rotating border glow - wider gradient to prevent corner skipping
+      '&::before': {
+        content: '""',
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        width: '200%',
+        height: '200%',
+        background: `conic-gradient(from 0deg at 50% 50%, transparent 0deg, transparent 320deg, ${alpha(color, 0.3)} 330deg, ${color} 345deg, ${alpha(color, 1)} 352deg, ${color} 360deg)`,
+        animation: `borderSpin 6s linear infinite`,
+        animationDelay: `${sweepDelay}s`,
+        transformOrigin: '50% 50%',
+        pointerEvents: 'none',
+        zIndex: 0,
+      },
       '&::after': {
         content: '""',
         position: 'absolute',
-        inset: -2,
+        inset: 2,
         borderRadius: 'inherit',
-        padding: '2px',
-        background: `conic-gradient(from 0deg, transparent 0deg, transparent 330deg, ${color} 340deg, ${alpha(color, 0.9)} 350deg, ${color} 360deg)`,
-        WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-        WebkitMaskComposite: 'xor',
-        mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-        maskComposite: 'exclude',
-        animation: `borderSpin 6s linear infinite`,
-        animationDelay: `${sweepDelay}s`,
-        opacity: 0.7,
-        willChange: 'transform',
-        pointerEvents: 'none',
-        zIndex: -1,
+        background: isDark ? 'rgba(15, 23, 42, 0.98)' : 'rgba(255, 255, 255, 0.98)',
+        zIndex: 0,
+      },
+      '& > *': {
+        position: 'relative',
+        zIndex: 1,
       },
       '@keyframes borderSpin': {
-        '0%': { transform: 'rotate(0deg)' },
-        '100%': { transform: 'rotate(360deg)' },
+        '0%': { transform: 'translate(-50%, -50%) rotate(0deg)' },
+        '100%': { transform: 'translate(-50%, -50%) rotate(360deg)' },
       },
     }),
     position: 'relative',
@@ -306,15 +314,32 @@ const RoomCard = memo(({ room, user, onClick }) => {
     }
   }, [room._id]);
 
+  // Check if room is premium
+  const isPremiumRoom = room.isPremium === true;
+
   // Memoize card styles
   const cardSx = useMemo(() => ({
     cursor: 'pointer',
     height: '100%',
+    position: 'relative',
     // MOBILE: GPU-accelerated transitions
     transition: 'transform 0.2s ease, box-shadow 0.2s ease',
     // Touch feedback
     touchAction: 'manipulation',
     WebkitTapHighlightColor: 'transparent',
+    // Subtle golden top border for premium rooms
+    ...(isPremiumRoom && {
+      '&::before': {
+        content: '""',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: '3px',
+        background: 'linear-gradient(90deg, transparent, rgba(251, 191, 36, 0.6), rgba(245, 158, 11, 0.8), rgba(251, 191, 36, 0.6), transparent)',
+        zIndex: 2,
+      },
+    }),
     '&:active': {
       transform: 'scale(0.98)',
     },
@@ -322,16 +347,20 @@ const RoomCard = memo(({ room, user, onClick }) => {
     '@media (hover: hover)': {
       '&:hover': {
         transform: 'translateY(-4px)',
-        boxShadow: isDark
-          ? '0 12px 24px rgba(0,0,0,0.4)'
-          : '0 12px 24px rgba(0,0,0,0.1)',
+        boxShadow: isPremiumRoom
+          ? isDark
+            ? '0 12px 24px rgba(0,0,0,0.4), 0 0 20px rgba(251, 191, 36, 0.15)'
+            : '0 12px 24px rgba(0,0,0,0.1), 0 0 15px rgba(251, 191, 36, 0.1)'
+          : isDark
+            ? '0 12px 24px rgba(0,0,0,0.4)'
+            : '0 12px 24px rgba(0,0,0,0.1)',
         '& .arrow-icon': {
           transform: 'translateX(4px)',
           opacity: 1,
         },
       },
     },
-  }), [isDark]);
+  }), [isDark, isPremiumRoom]);
 
   return (
     <Card
@@ -343,9 +372,22 @@ const RoomCard = memo(({ room, user, onClick }) => {
       <CardContent sx={{ p: { xs: 2, md: 3 }, height: '100%', display: 'flex', flexDirection: 'column' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="h6" fontWeight={700} noWrap sx={{ fontSize: { xs: '0.95rem', md: '1.25rem' } }}>
-              {room.name}
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Typography variant="h6" fontWeight={700} noWrap sx={{ fontSize: { xs: '0.95rem', md: '1.25rem' } }}>
+                {room.name}
+              </Typography>
+              {isPremiumRoom && (
+                <Typography 
+                  component="span" 
+                  sx={{ 
+                    fontSize: { xs: '0.75rem', md: '0.9rem' },
+                    filter: 'drop-shadow(0 0 4px rgba(251, 191, 36, 0.5))'
+                  }}
+                >
+                  ✨
+                </Typography>
+              )}
+            </Box>
             {room.description && (
               <Typography 
                 variant="body2" 
