@@ -3550,8 +3550,7 @@ const RoomDetailPage = () => {
           </Dialog>
         </>
       )}
-    </Box>
-    </>
+      </Box>
     </>
   );
 };
