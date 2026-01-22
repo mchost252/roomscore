@@ -48,8 +48,28 @@ export const ThemeProvider = ({ children }) => {
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, [themePreference]);
 
+  // Check if user is in a premium room (dark mode only)
+  const isInPremiumRoom = () => {
+    if (typeof window === 'undefined') return false;
+    const path = window.location.pathname;
+    if (!path.includes('/rooms/')) return false;
+    
+    // Check if current room has premium
+    const roomId = path.split('/rooms/')[1];
+    if (!roomId) return false;
+    
+    const premiumRooms = JSON.parse(localStorage.getItem('krios_room_premium') || '{}');
+    return premiumRooms[roomId]?.active === true;
+  };
+
   // Set theme mode (light, dark, or system)
   const setThemeMode = (newMode) => {
+    // Block light mode if in premium room
+    if (isInPremiumRoom() && (newMode === 'light' || (newMode === 'system' && getSystemTheme() === 'light'))) {
+      console.log('Cannot switch to light mode in premium room');
+      return;
+    }
+    
     setThemePreference(newMode);
     localStorage.setItem('themeMode', newMode);
     
@@ -62,6 +82,12 @@ export const ThemeProvider = ({ children }) => {
 
   // Legacy toggle function (cycles through light -> dark -> system)
   const toggleTheme = () => {
+    // Block toggle if in premium room
+    if (isInPremiumRoom()) {
+      console.log('Theme switching disabled in premium room');
+      return;
+    }
+    
     const nextMode = themePreference === 'light' ? 'dark' : themePreference === 'dark' ? 'system' : 'light';
     setThemeMode(nextMode);
   };

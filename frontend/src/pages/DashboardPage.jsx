@@ -30,16 +30,20 @@ import {
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
+import { usePremium } from '../context/PremiumContext';
 import { useNavigate } from 'react-router-dom';
 import api, { invalidateCache, prefetch } from '../utils/api';
 import cacheManager from '../utils/cache';
 import OnboardingModal from '../components/OnboardingModal';
+import PremiumPromptModal from '../components/PremiumPromptModal';
 import { getErrorMessage } from '../utils/errorMessages';
 import WhatsNewCard from '../components/WhatsNewCard';
 import useVisibilityRefresh from '../hooks/useVisibilityRefresh';
+import { PremiumCard, PremiumAvatar, PremiumBadge, PremiumIcon } from '../components/premium';
+import { PremiumLinearProgress } from '../components/premium/PremiumProgress';
 
 // Stat Card Component - Memoized to prevent unnecessary re-renders
-const StatCard = memo(({ icon: Icon, label, value, color, subtext }) => {
+const StatCard = memo(({ icon: Icon, label, value, color, subtext, isPremium = false, sweepDelay = 0 }) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   
@@ -47,19 +51,79 @@ const StatCard = memo(({ icon: Icon, label, value, color, subtext }) => {
   const cardSx = useMemo(() => ({
     height: '100%',
     background: isDark
-      ? `linear-gradient(135deg, ${alpha(color, 0.15)} 0%, ${alpha(color, 0.05)} 100%)`
-      : `linear-gradient(135deg, ${alpha(color, 0.1)} 0%, ${alpha(color, 0.02)} 100%)`,
-    border: `1px solid ${alpha(color, isDark ? 0.2 : 0.15)}`,
+      ? `linear-gradient(135deg, ${alpha(color, 0.15)} 0%, ${alpha(color, 0.05)} 100%) !important`
+      : `linear-gradient(135deg, ${alpha(color, 0.1)} 0%, ${alpha(color, 0.02)} 100%) !important`,
+    border: `1px solid ${alpha(color, isDark ? 0.3 : 0.25)} !important`,
     // MOBILE: GPU-accelerated transform instead of all
-    transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+    transition: 'transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease !important',
+    // Premium glow effect - USE THE CARD'S OWN COLOR
+    ...(isPremium && {
+      backdropFilter: 'blur(12px) saturate(180%) !important',
+      WebkitBackdropFilter: 'blur(12px) saturate(180%) !important',
+      boxShadow: isDark
+        ? `0 0 25px ${alpha(color, 0.25)}, 0 0 50px ${alpha(color, 0.12)}, 0 4px 20px rgba(0, 0, 0, 0.3) !important`
+        : `0 0 20px ${alpha(color, 0.18)}, 0 0 40px ${alpha(color, 0.1)}, 0 4px 15px rgba(0, 0, 0, 0.08) !important`,
+      '&::before': {
+        content: '""',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: '2px',
+        background: `linear-gradient(90deg, transparent, ${alpha(color, 0.7)}, transparent)`,
+        zIndex: 1,
+      },
+      // Color-coded border sweep - travels along the border edges
+      '&::after': {
+        content: '""',
+        position: 'absolute',
+        inset: 0,
+        borderRadius: 'inherit',
+        pointerEvents: 'none',
+        zIndex: 2,
+        // Animated border using box-shadow that moves
+        animation: `borderTravel 4s ease-in-out infinite`,
+        animationDelay: `${sweepDelay}s`,
+        opacity: 0,
+      },
+      '@keyframes borderTravel': {
+        '0%': { 
+          boxShadow: `inset 0 2px 0 0 ${color}, inset 0 0 0 0 transparent`,
+          opacity: 1,
+        },
+        '25%': { 
+          boxShadow: `inset -2px 0 0 0 ${color}, inset 0 0 0 0 transparent`,
+          opacity: 1,
+        },
+        '50%': { 
+          boxShadow: `inset 0 -2px 0 0 ${color}, inset 0 0 0 0 transparent`,
+          opacity: 1,
+        },
+        '75%': { 
+          boxShadow: `inset 2px 0 0 0 ${color}, inset 0 0 0 0 transparent`,
+          opacity: 1,
+        },
+        '100%': { 
+          boxShadow: `inset 0 2px 0 0 ${color}, inset 0 0 0 0 transparent`,
+          opacity: 1,
+        },
+      },
+    }),
+    position: 'relative',
+    overflow: 'hidden',
     // Only apply hover on non-touch devices
     '@media (hover: hover)': {
       '&:hover': {
         transform: 'translateY(-4px)',
-        boxShadow: `0 12px 24px ${alpha(color, 0.2)}`,
+        borderColor: `${alpha(color, isDark ? 0.5 : 0.4)} !important`,
+        boxShadow: isPremium
+          ? isDark
+            ? `0 0 35px ${alpha(color, 0.35)}, 0 0 70px ${alpha(color, 0.18)}, 0 12px 30px rgba(0, 0, 0, 0.4) !important`
+            : `0 0 30px ${alpha(color, 0.25)}, 0 0 60px ${alpha(color, 0.15)}, 0 12px 25px rgba(0, 0, 0, 0.1) !important`
+          : `0 12px 24px ${alpha(color, 0.2)}`,
       },
     },
-  }), [isDark, color]);
+  }), [isDark, color, isPremium]);
   
   return (
     <Card sx={cardSx}>
@@ -78,7 +142,14 @@ const StatCard = memo(({ icon: Icon, label, value, color, subtext }) => {
             <Typography 
               variant="h3" 
               fontWeight={700} 
-              sx={{ color, fontSize: { xs: '1.5rem', md: '3rem' } }}
+              sx={{ 
+                color, 
+                fontSize: { xs: '1.5rem', md: '3rem' },
+                // Premium number glow
+                ...(isPremium && {
+                  textShadow: `0 0 20px ${alpha(color, 0.5)}`,
+                }),
+              }}
             >
               {value}
             </Typography>
@@ -97,6 +168,13 @@ const StatCard = memo(({ icon: Icon, label, value, color, subtext }) => {
               alignItems: 'center',
               justifyContent: 'center',
               bgcolor: alpha(color, isDark ? 0.2 : 0.15),
+              // Premium icon glow
+              ...(isPremium && {
+                boxShadow: `0 0 15px ${alpha(color, 0.3)}`,
+                '& .MuiSvgIcon-root': {
+                  filter: `drop-shadow(0 0 6px ${color})`,
+                },
+              }),
             }}
           >
             <Icon sx={{ fontSize: { xs: 18, md: 28 }, color }} />
@@ -380,16 +458,29 @@ const DashboardPage = () => {
   const isDark = theme.palette.mode === 'dark';
   const { user } = useAuth();
   const { socket } = useSocket();
+  const { shouldShowPremiumPrompt, isGlobalPremium } = usePremium();
   const navigate = useNavigate();
   const [rooms, setRooms] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true); // Start with loading true
   const [error, setError] = useState(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showPremiumPrompt, setShowPremiumPrompt] = useState(false);
   const [isStaleData, setIsStaleData] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false); // Track background refresh
   const hasMounted = useRef(false);
   const lastFetchTime = useRef(0);
+
+  // Check if we should show premium prompt after onboarding is done
+  useEffect(() => {
+    if (!showOnboarding && !isGlobalPremium && shouldShowPremiumPrompt()) {
+      // Delay showing prompt to not overwhelm user
+      const timer = setTimeout(() => {
+        setShowPremiumPrompt(true);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [showOnboarding, isGlobalPremium, shouldShowPremiumPrompt]);
 
   // Refresh data when user returns to the tab/app
   useVisibilityRefresh(() => {
@@ -707,6 +798,8 @@ const DashboardPage = () => {
             value={stats?.totalPoints || 0}
             color="#F59E0B"
             subtext="Keep earning!"
+            isPremium={isGlobalPremium}
+            sweepDelay={0}
           />
         </Grid>
         <Grid item xs={6} md={3}>
@@ -716,6 +809,8 @@ const DashboardPage = () => {
             value={stats?.currentStreak || 0}
             color="#EF4444"
             subtext="days"
+            isPremium={isGlobalPremium}
+            sweepDelay={2}
           />
         </Grid>
         <Grid item xs={6} md={3}>
@@ -725,6 +820,8 @@ const DashboardPage = () => {
             value={stats?.longestStreak || 0}
             color="#22C55E"
             subtext="days"
+            isPremium={isGlobalPremium}
+            sweepDelay={4}
           />
         </Grid>
         <Grid item xs={6} md={3}>
@@ -734,6 +831,8 @@ const DashboardPage = () => {
             value={stats?.roomsJoined || 0}
             color={isDark ? '#60A5FA' : '#3B82F6'}
             subtext="active"
+            isPremium={isGlobalPremium}
+            sweepDelay={6}
           />
         </Grid>
       </Grid>
@@ -825,10 +924,38 @@ const DashboardPage = () => {
                   cursor: 'pointer',
                   textAlign: 'center',
                   p: { xs: 2, md: 3 },
-                  transition: 'all 0.3s ease',
+                  transition: 'all 0.3s ease !important',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  // Premium glow effects - USE ACTION'S OWN COLOR
+                  ...(isGlobalPremium && {
+                    background: isDark
+                      ? `linear-gradient(135deg, ${alpha(action.color, 0.12)} 0%, ${alpha(action.color, 0.04)} 100%) !important`
+                      : `linear-gradient(135deg, ${alpha(action.color, 0.08)} 0%, ${alpha(action.color, 0.02)} 100%) !important`,
+                    border: `1px solid ${alpha(action.color, 0.25)} !important`,
+                    backdropFilter: 'blur(10px) saturate(150%) !important',
+                    boxShadow: isDark
+                      ? `0 0 20px ${alpha(action.color, 0.15)}, 0 4px 15px rgba(0, 0, 0, 0.2) !important`
+                      : `0 0 15px ${alpha(action.color, 0.12)}, 0 4px 12px rgba(0, 0, 0, 0.08) !important`,
+                    '&::before': {
+                      content: '""',
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: '2px',
+                      background: `linear-gradient(90deg, transparent, ${alpha(action.color, 0.6)}, transparent)`,
+                      zIndex: 1,
+                    },
+                  }),
                   '&:hover': {
-                    transform: 'translateY(-4px)',
-                    boxShadow: `0 8px 24px ${alpha(action.color, 0.25)}`,
+                    transform: 'translateY(-4px) !important',
+                    borderColor: isGlobalPremium ? `${alpha(action.color, 0.4)} !important` : undefined,
+                    boxShadow: isGlobalPremium
+                      ? isDark
+                        ? `0 0 30px ${alpha(action.color, 0.25)}, 0 0 50px ${alpha(action.color, 0.12)}, 0 8px 24px rgba(0, 0, 0, 0.3) !important`
+                        : `0 0 25px ${alpha(action.color, 0.2)}, 0 0 40px ${alpha(action.color, 0.1)}, 0 8px 20px rgba(0, 0, 0, 0.1) !important`
+                      : `0 8px 24px ${alpha(action.color, 0.25)}`,
                     '& .action-icon': {
                       transform: 'scale(1.1)',
                     },
@@ -848,6 +975,13 @@ const DashboardPage = () => {
                     mb: { xs: 1, md: 2 },
                     bgcolor: alpha(action.color, isDark ? 0.2 : 0.15),
                     transition: 'transform 0.3s ease',
+                    // Premium icon glow
+                    ...(isGlobalPremium && {
+                      boxShadow: `0 0 12px ${alpha(action.color, 0.25)}`,
+                      '& .MuiSvgIcon-root': {
+                        filter: `drop-shadow(0 0 4px ${action.color})`,
+                      },
+                    }),
                   }}
                 >
                   <action.icon sx={{ fontSize: { xs: 20, md: 28 }, color: action.color }} />
@@ -860,6 +994,12 @@ const DashboardPage = () => {
           ))}
         </Grid>
       </Box>
+
+      {/* Premium Prompt Modal */}
+      <PremiumPromptModal
+        open={showPremiumPrompt}
+        onClose={() => setShowPremiumPrompt(false)}
+      />
     </Box>
   );
 };

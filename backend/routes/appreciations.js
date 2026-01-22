@@ -5,7 +5,7 @@ const { prisma } = require('../config/database');
 const logger = require('../utils/logger');
 const NotificationService = require('../services/notificationService');
 
-const DAILY_LIMIT = 3; // Maximum appreciations per 24 hours per room
+const DAILY_LIMIT = 1; // Maximum appreciations per 24 hours per room (1 per day, choose wisely!)
 
 // UTC day window (server time) so resets are consistent across devices.
 const getUtcDayStart = (d = new Date()) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));

@@ -1,0 +1,806 @@
+/* ============================================
+   KRIOS ORBIT - PREMIUM SPACE UI THEME
+   Nebula • Stars • Cosmic Glow • Deep Space
+   ============================================ */
+
+/* ===========================================
+   A. CSS VARIABLES FOR PREMIUM THEME
+   =========================================== */
+
+:root {
+  /* Nebula Colors - Based on cosmic image (purple/pink/blue/orange) */
+  --premium-nebula-deep-purple: rgba(88, 28, 135, 0.3);
+  --premium-nebula-magenta: rgba(192, 38, 211, 0.28);
+  --premium-nebula-blue: rgba(59, 130, 246, 0.25);
+  --premium-nebula-pink: rgba(236, 72, 153, 0.25);
+  --premium-nebula-cyan: rgba(56, 189, 248, 0.22);
+  --premium-nebula-orange: rgba(251, 146, 60, 0.18);
+  
+  /* Glow Colors */
+  --premium-glow-primary: rgba(96, 165, 250, 0.6);
+  --premium-glow-secondary: rgba(139, 92, 246, 0.5);
+  --premium-glow-accent: rgba(245, 158, 11, 0.5);
+  --premium-glow-success: rgba(34, 197, 94, 0.5);
+  
+  /* Star Colors */
+  --premium-star-bright: rgba(255, 255, 255, 0.9);
+  --premium-star-dim: rgba(255, 255, 255, 0.4);
+  --premium-star-blue: rgba(147, 197, 253, 0.8);
+  --premium-star-gold: rgba(251, 191, 36, 0.8);
+}
+
+/* ===========================================
+   B. ANIMATED STAR FIELD BACKGROUND
+   =========================================== */
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+@keyframes twinkleSlow {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes floatStar {
+  0%, 100% { transform: translateY(0) translateX(0); }
+  25% { transform: translateY(-3px) translateX(2px); }
+  50% { transform: translateY(-5px) translateX(0); }
+  75% { transform: translateY(-3px) translateX(-2px); }
+}
+
+@keyframes shootingStar {
+  0% {
+    transform: translateX(0) translateY(0) rotate(-45deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(-200px) translateY(200px) rotate(-45deg);
+    opacity: 0;
+  }
+}
+
+/* Star particle styles - BIGGER & MORE VISIBLE */
+.premium-star {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  background: var(--premium-star-bright);
+  border-radius: 50%;
+  animation: twinkle 3s ease-in-out infinite;
+  pointer-events: none;
+  box-shadow: 0 0 4px var(--premium-star-bright);
+}
+
+.premium-star--blue {
+  background: var(--premium-star-blue);
+  box-shadow: 0 0 6px var(--premium-star-blue), 0 0 10px var(--premium-star-blue);
+}
+
+.premium-star--gold {
+  background: var(--premium-star-gold);
+  box-shadow: 0 0 6px var(--premium-star-gold), 0 0 10px var(--premium-star-gold);
+}
+
+.premium-star--large {
+  width: 5px;
+  height: 5px;
+  box-shadow: 0 0 10px currentColor, 0 0 15px currentColor;
+}
+
+/* ===========================================
+   C. NEBULA GRADIENT BACKGROUNDS
+   =========================================== */
+
+@keyframes nebulaShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes nebulaPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes nebulaRotate {
+  0% { transform: rotate(0deg) scale(1); }
+  50% { transform: rotate(180deg) scale(1.05); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+
+/* Subtle drift animation for depth */
+@keyframes nebulaDrift {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(10px, -5px); }
+  50% { transform: translate(-5px, 10px); }
+  75% { transform: translate(-10px, -10px); }
+}
+
+/* Main nebula background layer */
+.premium-nebula-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.premium-nebula-bg::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: 
+    radial-gradient(ellipse at 20% 30%, var(--premium-nebula-purple) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, var(--premium-nebula-blue) 0%, transparent 40%),
+    radial-gradient(ellipse at 40% 80%, var(--premium-nebula-pink) 0%, transparent 45%),
+    radial-gradient(ellipse at 90% 70%, var(--premium-nebula-cyan) 0%, transparent 35%);
+  animation: nebulaRotate 120s linear infinite;
+  opacity: 0.6;
+}
+
+/* Dark mode nebula - cosmic clouds */
+.premium-nebula-bg--dark::before {
+  opacity: 1;
+  background: 
+    radial-gradient(ellipse at 15% 25%, var(--premium-nebula-deep-purple) 0%, transparent 45%),
+    radial-gradient(ellipse at 75% 15%, var(--premium-nebula-blue) 0%, transparent 40%),
+    radial-gradient(ellipse at 35% 70%, var(--premium-nebula-magenta) 0%, transparent 50%),
+    radial-gradient(ellipse at 85% 65%, var(--premium-nebula-pink) 0%, transparent 40%),
+    radial-gradient(ellipse at 50% 50%, var(--premium-nebula-cyan) 0%, transparent 60%),
+    radial-gradient(ellipse at 90% 30%, var(--premium-nebula-orange) 0%, transparent 35%);
+}
+
+/* Light mode nebula - subtle cosmic clouds */
+.premium-nebula-bg--light::before {
+  opacity: 0.5;
+  background: 
+    radial-gradient(ellipse at 15% 25%, rgba(139, 92, 246, 0.12) 0%, transparent 45%),
+    radial-gradient(ellipse at 75% 15%, rgba(59, 130, 246, 0.1) 0%, transparent 40%),
+    radial-gradient(ellipse at 35% 70%, rgba(192, 38, 211, 0.1) 0%, transparent 50%),
+    radial-gradient(ellipse at 85% 65%, rgba(236, 72, 153, 0.08) 0%, transparent 40%),
+    radial-gradient(ellipse at 50% 50%, rgba(56, 189, 248, 0.08) 0%, transparent 60%);
+}
+
+/* ===========================================
+   D. GLOWING CARD EFFECTS - ENHANCED!
+   =========================================== */
+
+@keyframes cardGlow {
+  0%, 100% {
+    box-shadow: 
+      0 0 30px rgba(96, 165, 250, 0.25),
+      0 0 60px rgba(139, 92, 246, 0.15),
+      0 4px 30px rgba(0, 0, 0, 0.3),
+      inset 0 0 30px rgba(255, 255, 255, 0.03);
+  }
+  50% {
+    box-shadow: 
+      0 0 40px rgba(96, 165, 250, 0.35),
+      0 0 80px rgba(139, 92, 246, 0.2),
+      0 8px 40px rgba(0, 0, 0, 0.4),
+      inset 0 0 40px rgba(255, 255, 255, 0.05);
+  }
+}
+
+@keyframes cardShine {
+  0% {
+    left: -150%;
+  }
+  50%, 100% {
+    left: 150%;
+  }
+}
+
+@keyframes borderGlow {
+  0%, 100% { 
+    border-color: rgba(96, 165, 250, 0.2);
+    box-shadow: 0 0 10px rgba(96, 165, 250, 0.1);
+  }
+  50% { 
+    border-color: rgba(139, 92, 246, 0.3);
+    box-shadow: 0 0 15px rgba(139, 92, 246, 0.15);
+  }
+}
+
+/* Border sweep animation - light travels around the border edges */
+@keyframes borderSweep {
+  0% {
+    --sweep-angle: 0deg;
+    transform: rotate(0deg);
+  }
+  100% {
+    --sweep-angle: 360deg;
+    transform: rotate(360deg);
+  }
+}
+
+/* Alternative border sweep using rotation */
+@keyframes borderSweepRotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Premium card base style */
+.premium-card {
+  position: relative;
+  border: 1px solid rgba(96, 165, 250, 0.15);
+  background: linear-gradient(
+    135deg,
+    rgba(30, 41, 59, 0.8) 0%,
+    rgba(15, 23, 42, 0.9) 100%
+  );
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: cardGlow 4s ease-in-out infinite;
+  overflow: hidden;
+}
+
+.premium-card--light {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.9) 0%,
+    rgba(248, 250, 252, 0.95) 100%
+  );
+  border: 1px solid rgba(99, 102, 241, 0.1);
+  animation: none;
+  box-shadow: 
+    0 4px 20px rgba(99, 102, 241, 0.08),
+    0 0 40px rgba(139, 92, 246, 0.03);
+}
+
+/* Card inner glow overlay */
+.premium-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(96, 165, 250, 0.4),
+    rgba(139, 92, 246, 0.4),
+    transparent
+  );
+}
+
+/* Animated shine effect on cards */
+.premium-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -150%;
+  width: 150%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.1),
+    transparent
+  );
+  animation: cardShine 8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Card hover effect */
+.premium-card:hover {
+  border-color: rgba(139, 92, 246, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 
+    0 0 40px rgba(96, 165, 250, 0.3),
+    0 0 80px rgba(139, 92, 246, 0.15),
+    0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+/* ===========================================
+   E. ORBIT RING DECORATIONS
+   =========================================== */
+
+@keyframes orbitSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes orbitSpinReverse {
+  0% { transform: rotate(360deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes orbitPulse {
+  0%, 100% { 
+    opacity: 0.3;
+    transform: scale(1);
+  }
+  50% { 
+    opacity: 0.6;
+    transform: scale(1.02);
+  }
+}
+
+.premium-orbit-ring {
+  position: absolute;
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.premium-orbit-ring--1 {
+  width: 150%;
+  height: 150%;
+  top: -25%;
+  left: -25%;
+  animation: orbitSpin 60s linear infinite;
+  border-style: dashed;
+  border-color: rgba(96, 165, 250, 0.15);
+}
+
+.premium-orbit-ring--2 {
+  width: 200%;
+  height: 200%;
+  top: -50%;
+  left: -50%;
+  animation: orbitSpinReverse 90s linear infinite;
+  border-color: rgba(139, 92, 246, 0.1);
+}
+
+/* Orbit dot on ring */
+.premium-orbit-dot {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: var(--premium-glow-primary);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--premium-glow-primary);
+  animation: orbitPulse 2s ease-in-out infinite;
+}
+
+/* ===========================================
+   F. GLOWING ICON EFFECTS
+   =========================================== */
+
+@keyframes iconGlow {
+  0%, 100% {
+    filter: drop-shadow(0 0 4px currentColor);
+  }
+  50% {
+    filter: drop-shadow(0 0 8px currentColor) drop-shadow(0 0 12px currentColor);
+  }
+}
+
+@keyframes iconFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+.premium-icon {
+  animation: iconGlow 3s ease-in-out infinite;
+}
+
+.premium-icon--float {
+  animation: iconGlow 3s ease-in-out infinite, iconFloat 4s ease-in-out infinite;
+}
+
+/* ===========================================
+   G. PREMIUM BUTTON STYLES
+   =========================================== */
+
+@keyframes buttonShine {
+  0% {
+    left: -60%;
+  }
+  100% {
+    left: 140%;
+  }
+}
+
+@keyframes buttonPulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(96, 165, 250, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(96, 165, 250, 0.5), 0 0 40px rgba(139, 92, 246, 0.3);
+  }
+}
+
+.premium-button {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #60A5FA 0%, #8B5CF6 100%);
+  border: none;
+  animation: buttonPulse 3s ease-in-out infinite;
+}
+
+.premium-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  animation: buttonShine 3s ease-in-out infinite;
+}
+
+.premium-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 40px rgba(96, 165, 250, 0.5), 0 0 60px rgba(139, 92, 246, 0.3);
+}
+
+/* ===========================================
+   H. PREMIUM BADGE & INDICATORS
+   =========================================== */
+
+@keyframes badgeShimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes badgePulse {
+  0%, 100% { 
+    transform: scale(1);
+    box-shadow: 0 0 10px rgba(251, 191, 36, 0.4);
+  }
+  50% { 
+    transform: scale(1.05);
+    box-shadow: 0 0 20px rgba(251, 191, 36, 0.6);
+  }
+}
+
+.premium-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: linear-gradient(
+    90deg,
+    #F59E0B,
+    #FBBF24,
+    #F59E0B,
+    #FBBF24,
+    #F59E0B
+  );
+  background-size: 200% auto;
+  color: #0f172a;
+  animation: badgeShimmer 3s linear infinite, badgePulse 2s ease-in-out infinite;
+  box-shadow: 0 0 15px rgba(251, 191, 36, 0.4);
+}
+
+.premium-badge--small {
+  padding: 2px 6px;
+  font-size: 0.6rem;
+}
+
+/* Premium indicator dot */
+.premium-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #F59E0B, #FBBF24);
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.6);
+  animation: badgePulse 2s ease-in-out infinite;
+}
+
+/* ===========================================
+   I. AVATAR RING GLOW
+   =========================================== */
+
+@keyframes avatarRingRotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes avatarGlow {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(96, 165, 250, 0.4), 0 0 30px rgba(139, 92, 246, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(96, 165, 250, 0.6), 0 0 40px rgba(139, 92, 246, 0.3);
+  }
+}
+
+.premium-avatar-ring {
+  position: relative;
+  border-radius: 50%;
+  padding: 3px;
+  background: linear-gradient(135deg, #60A5FA, #8B5CF6, #EC4899, #60A5FA);
+  background-size: 300% 300%;
+  animation: nebulaShift 4s ease infinite, avatarGlow 3s ease-in-out infinite;
+}
+
+.premium-avatar-ring > * {
+  border-radius: 50%;
+}
+
+/* ===========================================
+   J. STAT NUMBER GLOW
+   =========================================== */
+
+@keyframes numberGlow {
+  0%, 100% {
+    text-shadow: 0 0 10px currentColor;
+  }
+  50% {
+    text-shadow: 0 0 20px currentColor, 0 0 30px currentColor;
+  }
+}
+
+.premium-number {
+  animation: numberGlow 3s ease-in-out infinite;
+}
+
+.premium-number--large {
+  font-weight: 800;
+  background: linear-gradient(135deg, #60A5FA, #8B5CF6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 0 10px rgba(96, 165, 250, 0.5));
+}
+
+/* ===========================================
+   K. PROGRESS BAR COSMIC STYLE
+   =========================================== */
+
+@keyframes progressGlow {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(96, 165, 250, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(96, 165, 250, 0.6), 0 0 30px rgba(139, 92, 246, 0.3);
+  }
+}
+
+@keyframes progressShine {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.premium-progress {
+  position: relative;
+  overflow: hidden;
+  background: rgba(96, 165, 250, 0.1);
+  border-radius: 10px;
+}
+
+.premium-progress-bar {
+  background: linear-gradient(90deg, #60A5FA, #8B5CF6, #EC4899);
+  background-size: 200% 100%;
+  animation: nebulaShift 3s ease infinite, progressGlow 2s ease-in-out infinite;
+  border-radius: 10px;
+}
+
+.premium-progress-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.4),
+    transparent
+  );
+  animation: progressShine 2s ease-in-out infinite;
+}
+
+/* ===========================================
+   L. NAVBAR PREMIUM ENHANCEMENTS
+   =========================================== */
+
+.premium-navbar {
+  background: linear-gradient(
+    180deg,
+    rgba(15, 23, 42, 0.95) 0%,
+    rgba(15, 23, 42, 0.85) 100%
+  );
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(96, 165, 250, 0.1);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3), 0 0 40px rgba(96, 165, 250, 0.05);
+}
+
+.premium-navbar--light {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(248, 250, 252, 0.9) 100%
+  );
+  border-bottom: 1px solid rgba(99, 102, 241, 0.1);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05), 0 0 40px rgba(99, 102, 241, 0.03);
+}
+
+/* ===========================================
+   M. BOTTOM NAV PREMIUM STYLE
+   =========================================== */
+
+.premium-bottom-nav {
+  background: linear-gradient(
+    0deg,
+    rgba(15, 23, 42, 0.98) 0%,
+    rgba(15, 23, 42, 0.9) 100%
+  );
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(96, 165, 250, 0.15);
+  box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.3);
+}
+
+.premium-bottom-nav--light {
+  background: linear-gradient(
+    0deg,
+    rgba(255, 255, 255, 0.98) 0%,
+    rgba(248, 250, 252, 0.95) 100%
+  );
+  border-top: 1px solid rgba(99, 102, 241, 0.1);
+  box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.05);
+}
+
+/* Active nav item glow */
+.premium-nav-item--active {
+  color: #60A5FA !important;
+  filter: drop-shadow(0 0 8px rgba(96, 165, 250, 0.6));
+}
+
+/* ===========================================
+   N. FLOATING PARTICLES CONTAINER
+   =========================================== */
+
+.premium-particles {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+/* ===========================================
+   O. TRANSITION OVERLAY COSMIC
+   =========================================== */
+
+@keyframes cosmicReveal {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.premium-reveal {
+  animation: cosmicReveal 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* ===========================================
+   P. STREAK & ACHIEVEMENT EFFECTS
+   =========================================== */
+
+@keyframes streakFire {
+  0%, 100% {
+    filter: drop-shadow(0 0 8px #F59E0B) drop-shadow(0 0 15px #EF4444);
+    transform: scale(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 15px #F59E0B) drop-shadow(0 0 25px #EF4444);
+    transform: scale(1.1);
+  }
+}
+
+@keyframes achievementBurst {
+  0% {
+    transform: scale(0);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.5);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+.premium-streak-icon {
+  animation: streakFire 2s ease-in-out infinite;
+}
+
+/* ===========================================
+   Q. CHIP/TAG PREMIUM STYLE
+   =========================================== */
+
+.premium-chip {
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.15), rgba(139, 92, 246, 0.15));
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  box-shadow: 0 0 10px rgba(96, 165, 250, 0.1);
+}
+
+.premium-chip:hover {
+  border-color: rgba(139, 92, 246, 0.4);
+  box-shadow: 0 0 15px rgba(139, 92, 246, 0.2);
+}
+
+/* ===========================================
+   R. SCROLLBAR COSMIC STYLE
+   =========================================== */
+
+.premium-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.premium-scrollbar::-webkit-scrollbar-track {
+  background: rgba(96, 165, 250, 0.05);
+  border-radius: 3px;
+}
+
+.premium-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #60A5FA, #8B5CF6);
+  border-radius: 3px;
+  box-shadow: 0 0 10px rgba(96, 165, 250, 0.3);
+}
+
+.premium-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #3B82F6, #7C3AED);
+}
+
+/* ===========================================
+   S. MOBILE RESPONSIVE ADJUSTMENTS
+   =========================================== */
+
+@media (max-width: 600px) {
+  .premium-nebula-bg::before {
+    animation-duration: 180s; /* Slower on mobile for performance */
+  }
+  
+  .premium-card {
+    animation-duration: 6s;
+  }
+  
+  .premium-star--large {
+    width: 2px;
+    height: 2px;
+  }
+}
+
+/* ===========================================
+   T. REDUCED MOTION SUPPORT
+   =========================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .premium-star,
+  .premium-nebula-bg::before,
+  .premium-card,
+  .premium-orbit-ring,
+  .premium-badge,
+  .premium-avatar-ring,
+  .premium-number,
+  .premium-progress-bar,
+  .premium-button::before {
+    animation: none;
+  }
+  
+  .premium-icon {
+    animation: none;
+    filter: drop-shadow(0 0 6px currentColor);
+  }
+}

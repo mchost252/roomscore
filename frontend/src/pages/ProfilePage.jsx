@@ -51,11 +51,16 @@ import { format, parseISO } from 'date-fns';
 import api from '../utils/api';
 import { subscribeToPush, unsubscribeFromPush, ensureServiceWorkerRegistered } from '../utils/pushClient';
 import { getErrorMessage } from '../utils/errorMessages';
+import PremiumSettingsCard from '../components/PremiumSettingsCard';
+import { AnimatedNumber } from '../components/animations';
+import { usePremium } from '../context/PremiumContext';
+import { NeumorphicIconButton, NeumorphicButton } from '../components/premium';
 
 const ProfilePage = () => {
   const { user, logout, updateProfile, loadUser } = useAuth();
   const { socket } = useSocket();
   const { mode, themePreference, setThemeMode } = useCustomTheme();
+  const { isGlobalPremium } = usePremium();
   const navigate = useNavigate();
   const [tabValue, setTabValue] = useState(0);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -416,20 +421,94 @@ const ProfilePage = () => {
           width: { xs: '100%', md: '280px', lg: '320px' },
           flexShrink: 0,
         }}>
-          <Paper sx={{ p: { xs: 2, md: 3 }, textAlign: 'center', mb: { xs: 2, md: 3 }, boxShadow: { md: 2 }, width: '100%', maxWidth: { xs: '100%', md: '100%' } }}>
-            <Avatar
-              src={user?.avatar || undefined}
-              sx={{
-                width: { xs: 80, md: 120 },
-                height: { xs: 80, md: 120 },
-                margin: '0 auto',
-                mb: { xs: 1.5, md: 2 },
-                fontSize: { xs: '2rem', md: '3rem' },
-                bgcolor: 'primary.main'
-              }}
-            >
-              {!user?.avatar && (user?.username?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?')}
-            </Avatar>
+          <Paper sx={{ 
+            textAlign: 'center', 
+            mb: { xs: 2, md: 3 }, 
+            boxShadow: { md: 2 }, 
+            width: '100%', 
+            maxWidth: { xs: '100%', md: '100%' },
+            overflow: 'hidden',
+            position: 'relative',
+          }}>
+            {/* Nebula Cover Image - Only for Premium */}
+            {isGlobalPremium && (
+              <Box
+                sx={{
+                  height: { xs: 100, md: 140 },
+                  width: '100%',
+                  background: `
+                    linear-gradient(135deg, 
+                      rgba(88, 28, 135, 0.9) 0%, 
+                      rgba(139, 92, 246, 0.8) 25%, 
+                      rgba(59, 130, 246, 0.7) 50%, 
+                      rgba(236, 72, 153, 0.8) 75%, 
+                      rgba(251, 146, 60, 0.7) 100%
+                    )`,
+                  backgroundSize: '400% 400%',
+                  animation: 'nebulaShift 15s ease infinite',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  '&::before': {
+                    content: '""',
+                    position: 'absolute',
+                    inset: 0,
+                    background: `
+                      radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.3) 0%, transparent 50%),
+                      radial-gradient(circle at 80% 60%, rgba(255, 255, 255, 0.2) 0%, transparent 40%),
+                      radial-gradient(circle at 50% 80%, rgba(255, 255, 255, 0.15) 0%, transparent 30%)
+                    `,
+                    animation: 'nebulaDrift 20s ease-in-out infinite',
+                  },
+                  '&::after': {
+                    content: '""',
+                    position: 'absolute',
+                    inset: 0,
+                    background: 'linear-gradient(to bottom, transparent 60%, rgba(0,0,0,0.3) 100%)',
+                  },
+                }}
+              >
+                {/* Stars overlay */}
+                {Array.from({ length: 15 }).map((_, i) => (
+                  <Box
+                    key={i}
+                    sx={{
+                      position: 'absolute',
+                      width: Math.random() > 0.7 ? 3 : 2,
+                      height: Math.random() > 0.7 ? 3 : 2,
+                      background: '#fff',
+                      borderRadius: '50%',
+                      left: `${Math.random() * 100}%`,
+                      top: `${Math.random() * 100}%`,
+                      boxShadow: '0 0 4px #fff',
+                      animation: 'twinkle 2s ease-in-out infinite',
+                      animationDelay: `${Math.random() * 2}s`,
+                    }}
+                  />
+                ))}
+              </Box>
+            )}
+            
+            <Box sx={{ p: { xs: 2, md: 3 }, pt: isGlobalPremium ? { xs: 0, md: 0 } : { xs: 2, md: 3 } }}>
+              <Avatar
+                src={user?.avatar || undefined}
+                sx={{
+                  width: { xs: 80, md: 120 },
+                  height: { xs: 80, md: 120 },
+                  margin: '0 auto',
+                  mb: { xs: 1.5, md: 2 },
+                  fontSize: { xs: '2rem', md: '3rem' },
+                  bgcolor: 'primary.main',
+                  // Premium: offset avatar to overlap cover
+                  ...(isGlobalPremium && {
+                    mt: { xs: -5, md: -7 },
+                    border: '4px solid',
+                    borderColor: 'background.paper',
+                    boxShadow: '0 0 20px rgba(139, 92, 246, 0.4), 0 4px 20px rgba(0,0,0,0.3)',
+                  }),
+                }}
+              >
+                {!user?.avatar && (user?.username?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?')}
+              </Avatar>
             
             <Typography variant="h5" fontWeight="bold" gutterBottom sx={{ fontSize: { xs: '1.2rem', md: '1.5rem' } }}>
               {user?.username || 'User'}
@@ -445,24 +524,52 @@ const ProfilePage = () => {
               </Typography>
             )}
 
-            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mt: { xs: 1.5, md: 2 } }}>
-              <Button
-                variant="outlined"
-                size="small"
-                startIcon={<Edit />}
-                onClick={() => setEditDialogOpen(true)}
-                sx={{ fontSize: { xs: '0.75rem', md: '0.875rem' } }}
-              >
-                Edit Profile
-              </Button>
-              <IconButton color="error" onClick={handleLogout} size="small">
-                <Logout fontSize="small" />
-              </IconButton>
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 1.5, mt: { xs: 1.5, md: 2 } }}>
+              {isGlobalPremium ? (
+                <>
+                  <NeumorphicButton
+                    size="small"
+                    glowColor="#60A5FA"
+                    onClick={() => setEditDialogOpen(true)}
+                    sx={{ 
+                      fontSize: { xs: '0.75rem', md: '0.875rem' },
+                      height: 36,
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Edit sx={{ mr: 0.5, fontSize: 16 }} /> Edit Profile
+                  </NeumorphicButton>
+                  <NeumorphicIconButton 
+                    glowColor="#EF4444" 
+                    size="small" 
+                    onClick={handleLogout}
+                    sx={{ width: 36, height: 36 }}
+                  >
+                    <Logout fontSize="small" />
+                  </NeumorphicIconButton>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<Edit />}
+                    onClick={() => setEditDialogOpen(true)}
+                    sx={{ fontSize: { xs: '0.75rem', md: '0.875rem' } }}
+                  >
+                    Edit Profile
+                  </Button>
+                  <IconButton color="error" onClick={handleLogout} size="small">
+                    <Logout fontSize="small" />
+                  </IconButton>
+                </>
+              )}
             </Box>
 
             <Divider sx={{ my: { xs: 2, md: 3 } }} />
 
-            <Box sx={{ textAlign: 'left', overflow: 'hidden' }}>
+            <Box sx={{ textAlign: 'left', overflow: 'hidden', px: { xs: 2, md: 3 }, pb: { xs: 2, md: 3 } }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: { xs: 1, md: 2 } }}>
                 <Email fontSize="small" color="action" sx={{ flexShrink: 0 }} />
                 <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.7rem', md: '0.875rem' }, wordBreak: 'break-all' }}>
@@ -476,6 +583,7 @@ const ProfilePage = () => {
                 </Typography>
               </Box>
             </Box>
+            </Box> {/* Close inner padding Box from nebula cover section */}
           </Paper>
 
           {/* Quick Stats */}
@@ -879,6 +987,14 @@ const ProfilePage = () => {
               <Typography variant="body2" color="text.secondary" sx={{ mb: { xs: 2, md: 3 }, fontSize: { xs: '0.75rem', md: '0.875rem' } }}>
                 Manage your preferences
               </Typography>
+
+              {/* Premium Style Section */}
+              <Box sx={{ mb: { xs: 2, md: 3 } }}>
+                <Typography variant="subtitle1" fontWeight="bold" gutterBottom sx={{ fontSize: { xs: '0.9rem', md: '1rem' } }}>
+                  Premium Style
+                </Typography>
+                <PremiumSettingsCard />
+              </Box>
 
               {/* Appearance Section */}
               <Box sx={{ mb: { xs: 2, md: 3 } }}>

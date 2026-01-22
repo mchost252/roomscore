@@ -5,16 +5,22 @@ import App from './App';
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { PremiumProvider } from './context/PremiumContext';
+
+// Import premium animations CSS
+import './styles/premiumAnimations.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
       <ThemeProvider>
-        <AuthProvider>
-          <SocketProvider>
-            <App />
-          </SocketProvider>
-        </AuthProvider>
+        <PremiumProvider>
+          <AuthProvider>
+            <SocketProvider>
+              <App />
+            </SocketProvider>
+          </AuthProvider>
+        </PremiumProvider>
       </ThemeProvider>
     </BrowserRouter>
   </React.StrictMode>

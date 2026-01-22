@@ -39,6 +39,7 @@ import {
   NotificationsActive
 } from '@mui/icons-material';
 import { formatDistanceToNow } from 'date-fns';
+import { usePremium } from '../context/PremiumContext';
 
 const ChatDrawer = ({ 
   open, 
@@ -47,6 +48,7 @@ const ChatDrawer = ({
   onSendMessage, 
   currentUser,
   roomName = 'Room Chat',
+  roomId = null,
   roomMembers = [],
   onSendAppreciation,
   appreciationRemaining = 3,
@@ -58,6 +60,36 @@ const ChatDrawer = ({
   nudging = false
 }) => {
   const theme = useTheme();
+  const { isGlobalPremium, isRoomPremium } = usePremium();
+  const isPremiumActive = isGlobalPremium || (roomId && isRoomPremium(roomId));
+  const isDark = theme.palette.mode === 'dark';
+  
+  // Shooting stars for premium chat
+  const [shootingStars, setShootingStars] = useState([]);
+  
+  useEffect(() => {
+    if (!isPremiumActive || !open) return;
+
+    const createShootingStar = () => {
+      const newStar = {
+        id: Date.now() + Math.random(),
+        x: 10 + Math.random() * 60,
+        y: Math.random() * 30,
+        size: Math.random() > 0.6 ? 'large' : 'small',
+        speed: 0.8 + Math.random() * 0.4,
+      };
+      setShootingStars(prev => [...prev, newStar]);
+      setTimeout(() => {
+        setShootingStars(prev => prev.filter(s => s.id !== newStar.id));
+      }, newStar.speed * 1000);
+    };
+
+    const interval = setInterval(() => {
+      if (Math.random() > 0.5) createShootingStar();
+    }, 8000 + Math.random() * 6000);
+
+    return () => clearInterval(interval);
+  }, [isPremiumActive, open]);
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [message, setMessage] = useState('');
   const [emojiAnchor, setEmojiAnchor] = useState(null);
@@ -184,6 +216,13 @@ const ChatDrawer = ({
           maxWidth: '100vw',
           height: '100dvh',
           maxHeight: '100dvh',
+          // Premium styling
+          ...(isPremiumActive && {
+            background: isDark
+              ? 'linear-gradient(180deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)'
+              : 'linear-gradient(180deg, #ffffff 0%, #fef9e7 50%, #ffffff 100%)',
+            borderLeft: `1px solid ${isDark ? 'rgba(251, 191, 36, 0.2)' : 'rgba(251, 191, 36, 0.15)'}`,
+          }),
         }
       }}
       transitionDuration={300}
@@ -193,12 +232,12 @@ const ChatDrawer = ({
           height: '100%', // Fill the drawer paper
           display: 'flex',
           flexDirection: 'column',
-          bgcolor: 'background.default'
+          bgcolor: isPremiumActive ? 'transparent' : 'background.default'
         }}
       >
         {/* Header */}
         <Paper
-          elevation={2}
+          elevation={isPremiumActive ? 0 : 2}
           sx={{
             p: 2,
             pt: { xs: 'calc(env(safe-area-inset-top, 0px) + 16px)', md: 2 },
@@ -207,13 +246,53 @@ const ChatDrawer = ({
             justifyContent: 'space-between',
             borderRadius: 0,
             flexShrink: 0,
+            // Premium styling
+            ...(isPremiumActive && {
+              background: isDark
+                ? 'linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(139, 92, 246, 0.08) 100%)'
+                : 'linear-gradient(135deg, rgba(251, 191, 36, 0.08) 0%, rgba(139, 92, 246, 0.05) 100%)',
+              borderBottom: `1px solid ${isDark ? 'rgba(251, 191, 36, 0.2)' : 'rgba(251, 191, 36, 0.15)'}`,
+            }),
           }}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <ChatIcon color="primary" />
-            <Typography variant="h6" fontWeight="bold">
+            {isPremiumActive ? (
+              <Box 
+                sx={{ 
+                  display: 'flex', 
+                  alignItems: 'center',
+                  filter: 'drop-shadow(0 0 6px rgba(251, 191, 36, 0.5))',
+                }}
+              >
+                <ChatIcon sx={{ color: '#FBBF24' }} />
+              </Box>
+            ) : (
+              <ChatIcon color="primary" />
+            )}
+            <Typography 
+              variant="h6" 
+              fontWeight="bold"
+              sx={isPremiumActive ? {
+                background: 'linear-gradient(135deg, #FBBF24 0%, #F59E0B 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              } : {}}
+            >
               {roomName}
             </Typography>
+            {isPremiumActive && (
+              <Chip 
+                label="✨" 
+                size="small" 
+                sx={{ 
+                  height: 20, 
+                  fontSize: '0.7rem',
+                  bgcolor: 'rgba(251, 191, 36, 0.15)',
+                  border: '1px solid rgba(251, 191, 36, 0.3)',
+                }} 
+              />
+            )}
           </Box>
           <IconButton onClick={onClose} size="small">
             <CloseIcon />
@@ -232,10 +311,15 @@ const ChatDrawer = ({
             display: 'flex',
             flexDirection: 'column',
             gap: 2,
-            bgcolor: 'background.paper',
-            backgroundImage: theme.palette.mode === 'dark' 
-              ? 'linear-gradient(rgba(255, 255, 255, .02), rgba(255, 255, 255, .02))'
-              : 'linear-gradient(rgba(0, 0, 0, .01), rgba(0, 0, 0, .01))',
+            bgcolor: isPremiumActive ? 'transparent' : 'background.paper',
+            backgroundImage: isPremiumActive
+              ? (isDark 
+                ? 'radial-gradient(ellipse at 50% 0%, rgba(251, 191, 36, 0.05) 0%, transparent 50%)'
+                : 'radial-gradient(ellipse at 50% 0%, rgba(251, 191, 36, 0.03) 0%, transparent 50%)')
+              : (isDark 
+                ? 'linear-gradient(rgba(255, 255, 255, .02), rgba(255, 255, 255, .02))'
+                : 'linear-gradient(rgba(0, 0, 0, .01), rgba(0, 0, 0, .01))'),
+            position: 'relative',
             '&::-webkit-scrollbar': {
               width: '8px'
             },
@@ -243,14 +327,49 @@ const ChatDrawer = ({
               background: 'transparent'
             },
             '&::-webkit-scrollbar-thumb': {
-              background: theme.palette.divider,
+              background: isPremiumActive ? 'rgba(251, 191, 36, 0.3)' : theme.palette.divider,
               borderRadius: '4px',
               '&:hover': {
-                background: theme.palette.action.hover
+                background: isPremiumActive ? 'rgba(251, 191, 36, 0.5)' : theme.palette.action.hover
               }
             }
           }}
         >
+          {/* Shooting stars in chat */}
+          {isPremiumActive && shootingStars.map((star) => (
+            <Box
+              key={star.id}
+              sx={{
+                position: 'absolute',
+                left: `${star.x}%`,
+                top: `${star.y}%`,
+                width: star.size === 'large' ? '3px' : '2px',
+                height: star.size === 'large' ? '3px' : '2px',
+                background: 'white',
+                borderRadius: '50%',
+                boxShadow: star.size === 'large' 
+                  ? '0 0 8px #fff, 0 0 16px #60A5FA'
+                  : '0 0 6px #fff, 0 0 10px #60A5FA',
+                pointerEvents: 'none',
+                zIndex: 0,
+                '&::after': {
+                  content: '""',
+                  position: 'absolute',
+                  top: '50%',
+                  right: '100%',
+                  width: star.size === 'large' ? '50px' : '30px',
+                  height: '1px',
+                  background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.7))',
+                  transform: 'translateY(-50%)',
+                },
+                animation: `shootingStar ${star.speed}s ease-out forwards`,
+                '@keyframes shootingStar': {
+                  '0%': { transform: 'translate(0, 0)', opacity: 1 },
+                  '100%': { transform: 'translate(120px, 80px)', opacity: 0 },
+                },
+              }}
+            />
+          ))}
           {messages.length === 0 ? (
             <Box
               sx={{
@@ -550,8 +669,8 @@ const ChatDrawer = ({
                         <EmojiEmotions fontSize="small" />
                       </IconButton>
                     </Tooltip>
-                    {appreciationRemaining > 0 && (
-                      <Tooltip title={`Send appreciation (${appreciationRemaining} left today)`}>
+                    {appreciationRemaining > 0 && sentAppreciations.size === 0 && (
+                      <Tooltip title="Send appreciation (1 per day)">
                         <IconButton 
                           size="small" 
                           onClick={handleAppreciationClick}
@@ -560,14 +679,21 @@ const ChatDrawer = ({
                             '&:hover': { bgcolor: 'warning.50' }
                           }}
                         >
-                          <Badge 
-                            badgeContent={appreciationRemaining} 
-                            color="primary"
-                            sx={{ '& .MuiBadge-badge': { fontSize: '0.6rem', minWidth: 14, height: 14 } }}
+                          <Star fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                    {sentAppreciations.size > 0 && (
+                      <Tooltip title="✓ You've sent your daily appreciation">
+                        <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center' }}>
+                          <IconButton 
+                            size="small" 
+                            disabled
+                            sx={{ color: 'success.main', opacity: 0.6 }}
                           >
                             <Star fontSize="small" />
-                          </Badge>
-                        </IconButton>
+                          </IconButton>
+                        </Box>
                       </Tooltip>
                     )}
                     {/* Nudge Button - Show different states */}
@@ -689,128 +815,79 @@ const ChatDrawer = ({
           }}
         >
           <DialogTitle>
-            {selectedAppreciationType ? 'Select Member' : 'Choose Appreciation'}
+            {selectedAppreciationType ? 'Select Member' : 'Send Appreciation'}
+            <Typography variant="caption" display="block" color="text.secondary">
+              You can send 1 appreciation per day – choose wisely!
+            </Typography>
           </DialogTitle>
           <DialogContent>
             {!selectedAppreciationType ? (
               // Step 1: Select appreciation type
-              (() => {
-                // Calculate how many members can receive each type
-                const otherMembers = roomMembers.filter(member => {
-                  const memberId = member.userId?._id || member.userId;
-                  return memberId !== currentUser?.id;
-                });
-                const totalOthers = otherMembers.length;
-                
-                const getAvailableCount = (type) => {
-                  return otherMembers.filter(member => {
-                    const memberId = member.userId?._id || member.userId;
-                    return !sentAppreciations.has(`${memberId}:${type}`);
-                  }).length;
-                };
-                
-                const starAvailable = getAvailableCount('star');
-                const fireAvailable = getAvailableCount('fire');
-                const shieldAvailable = getAvailableCount('shield');
-                
-                return (
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-                    <Button
-                      variant="outlined"
-                      size="large"
-                      startIcon={<Star />}
-                      onClick={() => handleAppreciationTypeSelect('star')}
-                      disabled={starAvailable === 0}
-                      sx={{ 
-                        justifyContent: 'flex-start',
-                        py: 2,
-                        borderColor: starAvailable === 0 ? 'grey.400' : 'warning.main',
-                        color: starAvailable === 0 ? 'grey.500' : 'warning.main',
-                        opacity: starAvailable === 0 ? 0.6 : 1,
-                        '&:hover': {
-                          borderColor: 'warning.dark',
-                          bgcolor: 'warning.50'
-                        }
-                      }}
-                    >
-                      <Box sx={{ textAlign: 'left', flex: 1 }}>
-                        <Typography variant="body1" fontWeight="bold">⭐ Star</Typography>
-                        <Typography variant="caption" color="text.secondary">Good effort / appreciated</Typography>
-                      </Box>
-                      {starAvailable < totalOthers && (
-                        <Chip 
-                          label={starAvailable === 0 ? '✓ All sent' : `${starAvailable} left`}
-                          size="small"
-                          color={starAvailable === 0 ? 'success' : 'default'}
-                          sx={{ ml: 1, fontSize: '0.7rem' }}
-                        />
-                      )}
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      size="large"
-                      startIcon={<Whatshot />}
-                      onClick={() => handleAppreciationTypeSelect('fire')}
-                      disabled={fireAvailable === 0}
-                      sx={{ 
-                        justifyContent: 'flex-start',
-                        py: 2,
-                        borderColor: fireAvailable === 0 ? 'grey.400' : 'error.main',
-                        color: fireAvailable === 0 ? 'grey.500' : 'error.main',
-                        opacity: fireAvailable === 0 ? 0.6 : 1,
-                        '&:hover': {
-                          borderColor: 'error.dark',
-                          bgcolor: 'error.50'
-                        }
-                      }}
-                    >
-                      <Box sx={{ textAlign: 'left', flex: 1 }}>
-                        <Typography variant="body1" fontWeight="bold">🔥 Fire</Typography>
-                        <Typography variant="caption" color="text.secondary">You really showed up today</Typography>
-                      </Box>
-                      {fireAvailable < totalOthers && (
-                        <Chip 
-                          label={fireAvailable === 0 ? '✓ All sent' : `${fireAvailable} left`}
-                          size="small"
-                          color={fireAvailable === 0 ? 'success' : 'default'}
-                          sx={{ ml: 1, fontSize: '0.7rem' }}
-                        />
-                      )}
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      size="large"
-                      startIcon={<Shield />}
-                      onClick={() => handleAppreciationTypeSelect('shield')}
-                      disabled={shieldAvailable === 0}
-                      sx={{ 
-                        justifyContent: 'flex-start',
-                        py: 2,
-                        borderColor: shieldAvailable === 0 ? 'grey.400' : 'info.main',
-                        color: shieldAvailable === 0 ? 'grey.500' : 'info.main',
-                        opacity: shieldAvailable === 0 ? 0.6 : 1,
-                        '&:hover': {
-                          borderColor: 'info.dark',
-                          bgcolor: 'info.50'
-                        }
-                      }}
-                    >
-                      <Box sx={{ textAlign: 'left', flex: 1 }}>
-                        <Typography variant="body1" fontWeight="bold">🛡️ Shield</Typography>
-                        <Typography variant="caption" color="text.secondary">Reliable / kept the streak alive</Typography>
-                      </Box>
-                      {shieldAvailable < totalOthers && (
-                        <Chip 
-                          label={shieldAvailable === 0 ? '✓ All sent' : `${shieldAvailable} left`}
-                          size="small"
-                          color={shieldAvailable === 0 ? 'success' : 'default'}
-                          sx={{ ml: 1, fontSize: '0.7rem' }}
-                        />
-                      )}
-                    </Button>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+                <Button
+                  variant="outlined"
+                  size="large"
+                  startIcon={<Star />}
+                  onClick={() => handleAppreciationTypeSelect('star')}
+                  sx={{ 
+                    justifyContent: 'flex-start',
+                    py: 2,
+                    borderColor: 'warning.main',
+                    color: 'warning.main',
+                    '&:hover': {
+                      borderColor: 'warning.dark',
+                      bgcolor: 'warning.50'
+                    }
+                  }}
+                >
+                  <Box sx={{ textAlign: 'left', flex: 1 }}>
+                    <Typography variant="body1" fontWeight="bold">⭐ Star</Typography>
+                    <Typography variant="caption" color="text.secondary">Good effort / appreciated</Typography>
                   </Box>
-                );
-              })()
+                </Button>
+                <Button
+                  variant="outlined"
+                  size="large"
+                  startIcon={<Whatshot />}
+                  onClick={() => handleAppreciationTypeSelect('fire')}
+                  sx={{ 
+                    justifyContent: 'flex-start',
+                    py: 2,
+                    borderColor: 'error.main',
+                    color: 'error.main',
+                    '&:hover': {
+                      borderColor: 'error.dark',
+                      bgcolor: 'error.50'
+                    }
+                  }}
+                >
+                  <Box sx={{ textAlign: 'left', flex: 1 }}>
+                    <Typography variant="body1" fontWeight="bold">🔥 Fire</Typography>
+                    <Typography variant="caption" color="text.secondary">You really showed up today</Typography>
+                  </Box>
+                </Button>
+                <Button
+                  variant="outlined"
+                  size="large"
+                  startIcon={<Shield />}
+                  onClick={() => handleAppreciationTypeSelect('shield')}
+                  sx={{ 
+                    justifyContent: 'flex-start',
+                    py: 2,
+                    borderColor: 'info.main',
+                    color: 'info.main',
+                    '&:hover': {
+                      borderColor: 'info.dark',
+                      bgcolor: 'info.50'
+                    }
+                  }}
+                >
+                  <Box sx={{ textAlign: 'left', flex: 1 }}>
+                    <Typography variant="body1" fontWeight="bold">🛡️ Shield</Typography>
+                    <Typography variant="caption" color="text.secondary">Reliable / kept the streak alive</Typography>
+                  </Box>
+                </Button>
+              </Box>
             ) : (
               // Step 2: Select member
               <List sx={{ pt: 0 }}>
@@ -826,11 +903,9 @@ const ChatDrawer = ({
                       <ListItemButton
                         key={memberId}
                         onClick={() => handleMemberSelect(memberId)}
-                        disabled={sentAppreciations.has(`${memberId}:${selectedAppreciationType}`)}
                         sx={{
                           borderRadius: 1,
-                          mb: 0.5,
-                          opacity: sentAppreciations.has(`${memberId}:${selectedAppreciationType}`) ? 0.5 : 1
+                          mb: 0.5
                         }}
                       >
                         <ListItemAvatar>
@@ -851,15 +926,6 @@ const ChatDrawer = ({
                                   sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
                                 />
                               ))}
-                              {sentAppreciations.has(`${memberId}:${selectedAppreciationType}`) && (
-                                <Chip
-                                  label="Sent"
-                                  size="small"
-                                  color="success"
-                                  variant="outlined"
-                                  sx={{ height: 18, fontSize: '0.65rem' }}
-                                />
-                              )}
                             </Box>
                           }
                           secondary={`${member.points || 0} points`}

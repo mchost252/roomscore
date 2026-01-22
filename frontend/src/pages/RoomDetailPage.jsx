@@ -31,7 +31,9 @@ import {
   Switch,
   FormControlLabel,
   ToggleButton,
-  ToggleButtonGroup
+  ToggleButtonGroup,
+  CircularProgress,
+  Fab
 } from '@mui/material';
 import {
   ArrowBack,
@@ -56,6 +58,7 @@ import {
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
+import { usePremium } from '../context/PremiumContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import api, { invalidateCache } from '../utils/api';
@@ -65,13 +68,32 @@ import DailyOrbitSummaryModal from '../components/DailyOrbitSummaryModal';
 import RoomOnboardingModal from '../components/RoomOnboardingModal';
 import { MVPCrownIcon } from '../components/icons/ConstellationIcons';
 import { getErrorMessage } from '../utils/errorMessages';
+import { 
+  PremiumCard, 
+  PremiumAvatar, 
+  PremiumIcon,
+  RoomPremiumBackground,
+  RoomPremiumPaper,
+  getRoomPremiumTaskStyles,
+  getRoomPremiumRankStyles,
+  TaskCompleteAnimation,
+  SuccessFeedback,
+  AnimatedNumber,
+  CosmicNudgeAnimation,
+  CosmicStarAnimation,
+  CosmicFireAnimation,
+  CosmicShieldAnimation
+} from '../components/premium';
+import { PremiumLinearProgress } from '../components/premium/PremiumProgress';
 
 const RoomDetailPage = () => {
   const { roomId } = useParams();
   const { user } = useAuth();
   const { socket } = useSocket();
+  const { isGlobalPremium, isRoomPremium, activateRoomPremium, deactivateRoomPremium } = usePremium();
   const navigate = useNavigate();
   const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
 
   const [room, setRoom] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -97,7 +119,7 @@ const RoomDetailPage = () => {
   const [canNudge, setCanNudge] = useState(false);
   const [nudging, setNudging] = useState(false);
   const [nudgeStatus, setNudgeStatus] = useState({ hasCompletedTask: false, alreadySentToday: false });
-  const [appreciationRemaining, setAppreciationRemaining] = useState(3);
+  const [appreciationRemaining, setAppreciationRemaining] = useState(1);
   const [savingSettings, setSavingSettings] = useState(false);
   // Track which appreciations have been sent in the last 24h so UI can disable duplicates
   // Map key: `${toUserId}:${type}` => true
@@ -119,6 +141,21 @@ const RoomDetailPage = () => {
   const [memberToKick, setMemberToKick] = useState(null);
   const [pendingMembers, setPendingMembers] = useState([]);
   const [loadingPending, setLoadingPending] = useState(false);
+  const [roomPremiumCode, setRoomPremiumCode] = useState('');
+  const [activatingRoomPremium, setActivatingRoomPremium] = useState(false);
+  
+  // Animation states
+  const [showTaskCompleteAnimation, setShowTaskCompleteAnimation] = useState(false);
+  const [showSuccessFeedback, setShowSuccessFeedback] = useState(false);
+  
+  // Cosmic animation states for nudge and appreciations
+  const [showCosmicNudge, setShowCosmicNudge] = useState(false);
+  const [showCosmicStar, setShowCosmicStar] = useState(false);
+  const [showCosmicFire, setShowCosmicFire] = useState(false);
+  const [showCosmicShield, setShowCosmicShield] = useState(false);
+  
+  // First-time premium room entry welcome
+  const [showPremiumWelcome, setShowPremiumWelcome] = useState(false);
   const chatContainerRef = React.useRef(null);
   
   // Daily Orbit Summary state
@@ -130,6 +167,91 @@ const RoomDetailPage = () => {
 
   // Determine if current user is the room owner
   const isOwner = room?.owner?._id === user?.id || room?.owner === user?.id;
+  
+  // Check if this room has premium active
+  const roomHasPremium = isRoomPremium(roomId);
+  
+  // Force dark mode when in premium room
+  useEffect(() => {
+    if (roomHasPremium) {
+      const currentTheme = localStorage.getItem('themeMode');
+      if (currentTheme === 'light' || (currentTheme === 'system' && window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        // Save original preference
+        localStorage.setItem('theme_before_premium', currentTheme || 'system');
+        // Force dark mode
+        localStorage.setItem('themeMode', 'dark');
+        window.location.reload(); // Reload to apply theme
+      }
+    } else {
+      // Restore original theme when leaving premium room
+      const originalTheme = localStorage.getItem('theme_before_premium');
+      if (originalTheme) {
+        localStorage.setItem('themeMode', originalTheme);
+        localStorage.removeItem('theme_before_premium');
+      }
+    }
+  }, [roomHasPremium]);
+  
+  // Show first-time premium welcome
+  useEffect(() => {
+    if (roomHasPremium && roomId) {
+      const seenKey = `premium_welcome_seen_${roomId}`;
+      const hasSeen = localStorage.getItem(seenKey);
+      if (!hasSeen) {
+        // Small delay to let the room load first
+        const timer = setTimeout(() => {
+          setShowPremiumWelcome(true);
+          localStorage.setItem(seenKey, 'true');
+        }, 800);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [roomHasPremium, roomId]);
+
+  // Handle room premium activation
+  const handleActivateRoomPremium = async () => {
+    if (!roomPremiumCode.trim()) {
+      setError('Please enter a room premium code');
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+
+    try {
+      setActivatingRoomPremium(true);
+      const result = await activateRoomPremium(roomId, roomPremiumCode);
+      if (result.success) {
+        setSuccess('🎉 Room Premium activated! This room now has premium features.');
+        setRoomPremiumCode('');
+        setTimeout(() => setSuccess(null), 4000);
+      } else {
+        setError(result.message || 'Invalid room premium code');
+        setTimeout(() => setError(null), 3000);
+      }
+    } catch (err) {
+      console.error('Premium activation error:', err);
+      setError('Failed to activate room premium');
+      setTimeout(() => setError(null), 3000);
+    } finally {
+      setActivatingRoomPremium(false);
+    }
+  };
+
+  // Handle room premium deactivation
+  const handleDeactivateRoomPremium = async () => {
+    try {
+      setActivatingRoomPremium(true);
+      const result = await deactivateRoomPremium(roomId);
+      if (result.success) {
+        setSuccess('Room Premium deactivated');
+        setTimeout(() => setSuccess(null), 3000);
+      }
+    } catch (err) {
+      setError('Failed to deactivate room premium');
+      setTimeout(() => setError(null), 3000);
+    } finally {
+      setActivatingRoomPremium(false);
+    }
+  };
 
   const { joinRoom, leaveRoom, isUserOnline } = useSocket();
 
@@ -242,6 +364,11 @@ const RoomDetailPage = () => {
 
   // Handle nudge
   const handleNudge = async () => {
+    // Trigger cosmic animation IMMEDIATELY (before API call)
+    if (roomHasPremium) {
+      setShowCosmicNudge(true);
+    }
+    
     try {
       setNudging(true);
       await api.post(`/nudges/${roomId}`);
@@ -312,6 +439,13 @@ const RoomDetailPage = () => {
       setError('⚠️ You already sent this appreciation to this member in the last 24 hours');
       setTimeout(() => setError(null), 2500);
       return;
+    }
+
+    // Trigger cosmic animation IMMEDIATELY (before API call)
+    if (roomHasPremium) {
+      if (type === 'star') setShowCosmicStar(true);
+      else if (type === 'fire') setShowCosmicFire(true);
+      else if (type === 'shield') setShowCosmicShield(true);
     }
 
     try {
@@ -731,6 +865,12 @@ const RoomDetailPage = () => {
       setSuccess(`+${pts} points added • Room notified`);
       setTimeout(() => setSuccess(null), 3000);
       
+      // Trigger premium animations if room premium is active
+      if (roomHasPremium) {
+        setShowTaskCompleteAnimation(true);
+        setTimeout(() => setShowSuccessFeedback(true), 300);
+      }
+      
       // API call in background (no await - non-blocking)
       api.post(`/rooms/${roomId}/tasks/${taskId}/complete`)
         .then(() => {
@@ -1083,15 +1223,21 @@ const RoomDetailPage = () => {
   const isLoading = !room;
 
   return (
-    <Box sx={{ 
-      width: '100%', 
-      maxWidth: { xs: '100%', sm: '100%', md: 1400, lg: 1600 },
-      mx: 'auto',
-      overflowX: 'hidden',
-      px: { xs: 2, sm: 2, md: 4 },
-      py: { xs: 2, md: 4 },
-      boxSizing: 'border-box',
-    }}>
+    <>
+      {/* Room Premium Background - Constellation Mode */}
+      <RoomPremiumBackground isPremium={roomHasPremium} roomId={roomId} />
+      
+      <Box sx={{ 
+        width: '100%', 
+        maxWidth: { xs: '100%', sm: '100%', md: 1400, lg: 1600 },
+        mx: 'auto',
+        overflowX: 'hidden',
+        px: { xs: 2, sm: 2, md: 4 },
+        py: { xs: 2, md: 4 },
+        boxSizing: 'border-box',
+        position: 'relative',
+        zIndex: 1,
+      }}>
       {/* Room Intro Card (first-time) */}
       {showRoomIntro && (
         <Paper sx={{ p: { xs: 1.5, md: 2 }, mb: 2, borderLeft: 4, borderColor: 'info.main' }}>
@@ -1144,41 +1290,127 @@ const RoomDetailPage = () => {
       {/* Show content as soon as room data is available */}
       {room && (<>
       {/* Header */}
-      <Paper 
-        sx={{ 
-          p: { xs: 2, md: 3 }, 
-          mb: { xs: 2, md: 3 },
-          background: (theme) => theme.palette.mode === 'dark'
-            ? 'linear-gradient(135deg, rgba(59,130,246,0.08) 0%, rgba(99,102,241,0.08) 50%, rgba(139,92,246,0.08) 100%)'
-            : 'linear-gradient(135deg, rgba(59,130,246,0.05) 0%, rgba(99,102,241,0.05) 50%, rgba(139,92,246,0.05) 100%)',
-          borderTop: (theme) => theme.palette.mode === 'dark'
-            ? '2px solid rgba(96,165,250,0.3)'
-            : '2px solid rgba(59,130,246,0.2)'
-        }}
-      >
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+      <Box>
+        {roomHasPremium ? (
+          <Box sx={{ 
+            position: 'relative',
+            mb: { xs: 2, md: 3 },
+            p: 1,
+          }}>
+            {/* Realistic Golden Frame - Outer Border */}
+            <Box
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: 2,
+                border: '3px solid transparent',
+                background: `linear-gradient(${isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)'}, ${isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)'}) padding-box, 
+                            linear-gradient(135deg, #D4AF37, #FFD700, #B8860B, #DAA520, #FFD700, #D4AF37) border-box`,
+                boxShadow: isDark
+                  ? '0 0 20px rgba(212, 175, 55, 0.4), 0 0 40px rgba(212, 175, 55, 0.2), inset 0 0 10px rgba(212, 175, 55, 0.1)'
+                  : '0 0 15px rgba(212, 175, 55, 0.3), 0 0 30px rgba(212, 175, 55, 0.15)',
+                pointerEvents: 'none',
+                zIndex: 0,
+              }}
+            />
+            {/* Inner accent line */}
+            <Box
+              sx={{
+                position: 'absolute',
+                inset: 6,
+                borderRadius: 1.5,
+                border: '1px solid rgba(212, 175, 55, 0.3)',
+                pointerEvents: 'none',
+                zIndex: 0,
+              }}
+            />
+            
+            <Paper 
+              sx={{ 
+                p: { xs: 2, md: 3 },
+                background: isDark
+                  ? 'rgba(15, 23, 42, 0.85)'
+                  : 'rgba(255, 255, 255, 0.9)',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+                position: 'relative',
+                borderRadius: 1.5,
+                border: '1px solid',
+                borderColor: isDark ? 'rgba(212, 175, 55, 0.2)' : 'rgba(212, 175, 55, 0.15)',
+                zIndex: 1,
+              }}
+            >
+              {/* Decorative Crown */}
+              <Box
+                sx={{
+                  position: 'absolute',
+                  top: -20,
+                  left: 16,
+                  fontSize: '1.8rem',
+                  filter: 'drop-shadow(0 4px 8px rgba(212, 175, 55, 0.6)) drop-shadow(0 0 12px rgba(212, 175, 55, 0.4))',
+                  animation: 'crownFloat 3s ease-in-out infinite',
+                  zIndex: 10,
+                  '@keyframes crownFloat': {
+                    '0%, 100%': { transform: 'translateY(0px) rotate(-5deg)' },
+                    '50%': { transform: 'translateY(-2px) rotate(-3deg)' },
+                  }
+                }}
+              >
+                👑
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, md: 2 }, flex: 1, minWidth: 0 }}>
             <IconButton onClick={() => navigate('/rooms')} size="small">
               <ArrowBack sx={{ fontSize: { xs: 20, md: 24 } }} />
             </IconButton>
             <Box sx={{ minWidth: 0, flex: 1 }}>
-              <Typography 
-                variant="h4" 
-                fontWeight="bold" 
-                sx={{ 
-                  fontSize: { xs: '1.2rem', md: '2.125rem' }, 
-                  wordBreak: 'break-word',
-                  background: (theme) => theme.palette.mode === 'dark'
-                    ? 'linear-gradient(135deg, #60A5FA 0%, #818CF8 50%, #A78BFA 100%)'
-                    : 'linear-gradient(135deg, #3B82F6 0%, #6366F1 50%, #8B5CF6 100%)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text'
-                }}
-              >
-                {room.name}
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box 
+                  component="span" 
+                  sx={{ 
+                    fontSize: { xs: '1.2rem', md: '1.8rem' },
+                    filter: 'drop-shadow(0 0 8px rgba(251, 191, 36, 0.6))',
+                    animation: 'sparkle 2s ease-in-out infinite',
+                    '@keyframes sparkle': {
+                      '0%, 100%': { transform: 'scale(1) rotate(0deg)', opacity: 1 },
+                      '50%': { transform: 'scale(1.1) rotate(5deg)', opacity: 0.8 },
+                    }
+                  }}
+                >
+                  ✨
+                </Box>
+                <Typography 
+                  variant="h4" 
+                  fontWeight="bold" 
+                  sx={{ 
+                    fontSize: { xs: '1.2rem', md: '2.125rem' }, 
+                    wordBreak: 'break-word',
+                    background: 'linear-gradient(135deg, #FBBF24 0%, #F59E0B 50%, #D97706 100%)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    backgroundClip: 'text',
+                  }}
+                >
+                  {room.name}
+                </Typography>
+              </Box>
               <Box sx={{ display: 'flex', gap: 0.5, mt: 0.5, flexWrap: 'wrap' }}>
+                {/* Premium Room Badge - subtle indicator */}
+                <Tooltip title="Constellation Mode Active — Premium room features enabled">
+                  <Chip 
+                    label="✨ Premium"
+                    size="small"
+                    sx={{ 
+                      height: { xs: 20, md: 24 }, 
+                      fontSize: { xs: '0.65rem', md: '0.75rem' },
+                      background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.2) 0%, rgba(245, 158, 11, 0.15) 100%)',
+                      border: '1px solid rgba(251, 191, 36, 0.3)',
+                      color: '#FBBF24',
+                      fontWeight: 600,
+                      '& .MuiChip-label': { px: 1 }
+                    }}
+                  />
+                </Tooltip>
                 {isOwner && <Chip label="Owner" size="small" color="primary" sx={{ height: { xs: 20, md: 24 }, fontSize: { xs: '0.65rem', md: '0.75rem' } }} />}
                 <Chip 
                   label={room.isPublic ? 'Public' : 'Private'} 
@@ -1286,7 +1518,136 @@ const RoomDetailPage = () => {
             </Box>
           )}
         </Box>
-      </Paper>
+            </Paper>
+          </Box>
+        ) : (
+          <Paper 
+            sx={{ 
+              p: { xs: 2, md: 3 }, 
+              mb: { xs: 2, md: 3 },
+              background: (theme) => theme.palette.mode === 'dark'
+                ? 'linear-gradient(135deg, rgba(59,130,246,0.08) 0%, rgba(99,102,241,0.08) 50%, rgba(139,92,246,0.08) 100%)'
+                : 'linear-gradient(135deg, rgba(59,130,246,0.05) 0%, rgba(99,102,241,0.05) 50%, rgba(139,92,246,0.05) 100%)',
+              borderTop: (theme) => theme.palette.mode === 'dark'
+                ? '2px solid rgba(96,165,250,0.3)'
+                : '2px solid rgba(59,130,246,0.2)',
+              transition: 'all 0.3s ease'
+            }}
+          >
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, md: 2 }, flex: 1, minWidth: 0 }}>
+                <IconButton onClick={() => navigate('/rooms')} size="small">
+                  <ArrowBack sx={{ fontSize: { xs: 20, md: 24 } }} />
+                </IconButton>
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Typography 
+                    variant="h4" 
+                    fontWeight="bold" 
+                    sx={{ 
+                      fontSize: { xs: '1.2rem', md: '2.125rem' }, 
+                      wordBreak: 'break-word',
+                      background: (theme) => theme.palette.mode === 'dark'
+                        ? 'linear-gradient(135deg, #60A5FA 0%, #818CF8 50%, #A78BFA 100%)'
+                        : 'linear-gradient(135deg, #3B82F6 0%, #6366F1 50%, #8B5CF6 100%)',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                      backgroundClip: 'text'
+                    }}
+                  >
+                    {room.name}
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 0.5, mt: 0.5, flexWrap: 'wrap' }}>
+                    {isOwner && <Chip label="Owner" size="small" color="primary" sx={{ height: { xs: 20, md: 24 }, fontSize: { xs: '0.65rem', md: '0.75rem' } }} />}
+                    <Chip 
+                      label={room.isPublic ? 'Public' : 'Private'} 
+                      size="small" 
+                      color={room.isPublic ? 'success' : 'default'}
+                      sx={{ height: { xs: 20, md: 24 }, fontSize: { xs: '0.65rem', md: '0.75rem' } }}
+                    />
+                    <Chip 
+                      icon={<People sx={{ fontSize: { xs: 12, md: 16 } }} />}
+                      label={`${room.members?.length || 0}`} 
+                      size="small"
+                      sx={{ height: { xs: 20, md: 24 }, fontSize: { xs: '0.65rem', md: '0.75rem' } }}
+                    />
+                    {room.roomStreak > 0 && (
+                      <Tooltip title={`Orbit stable for ${room.roomStreak} day${room.roomStreak > 1 ? 's' : ''}${room.longestRoomStreak > room.roomStreak ? ` (Best: ${room.longestRoomStreak})` : ''}`}>
+                        <Chip 
+                          label={`🌟 ${room.roomStreak} day${room.roomStreak > 1 ? 's' : ''}`}
+                          size="small"
+                          color="warning"
+                          sx={{ height: { xs: 20, md: 24 }, fontSize: { xs: '0.65rem', md: '0.75rem' } }}
+                        />
+                      </Tooltip>
+                    )}
+                    <Tooltip title="Room Guide">
+                      <IconButton 
+                        size="small" 
+                        onClick={() => setRoomOnboardingOpen(true)}
+                        sx={{ 
+                          width: { xs: 20, md: 24 }, 
+                          height: { xs: 20, md: 24 },
+                          opacity: 0.6,
+                          '&:hover': { opacity: 1 }
+                        }}
+                      >
+                        <HelpOutline sx={{ fontSize: { xs: 14, md: 16 } }} />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                </Box>
+              </Box>
+              <Box sx={{ display: 'flex', gap: 0.5 }}>
+                {isOwner && (
+                  <Tooltip title="Room Settings">
+                    <IconButton size="small" onClick={() => {
+                      setRoomSettings({
+                        name: room.name,
+                        description: room.description || '',
+                        isPublic: room.isPublic ?? !room.isPrivate,
+                        maxMembers: room.maxMembers,
+                        chatRetentionDays: room.chatRetentionDays ?? 5
+                      });
+                      setSettingsOpen(true);
+                    }}>
+                      <Settings sx={{ fontSize: { xs: 20, md: 24 } }} />
+                    </IconButton>
+                  </Tooltip>
+                )}
+                {!isOwner && (
+                  <IconButton size="small" onClick={() => setLeaveDialogOpen(true)}>
+                    <ExitToApp sx={{ fontSize: { xs: 20, md: 24 } }} />
+                  </IconButton>
+                )}
+              </Box>
+            </Box>
+            {room.description && (
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontSize: { xs: '0.75rem', md: '0.875rem' } }}>
+                {room.description}
+              </Typography>
+            )}
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+              <Button
+                onClick={handleCopyJoinCode}
+                startIcon={<ContentCopy sx={{ fontSize: { xs: 16, md: 20 } }} />}
+                size="small"
+                sx={{ fontSize: { xs: '0.7rem', md: '0.875rem' }, py: { xs: 0.5, md: 1 } }}
+              >
+                Copy Join Code
+              </Button>
+              {myMember && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <EmojiEvents color="warning" sx={{ fontSize: { xs: 18, md: 24 } }} />
+                  <Typography variant="body2" sx={{ fontSize: { xs: '0.75rem', md: '0.875rem' } }}>
+                    Your Points: <strong>{myMember.points}</strong>
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          </Paper>
+        )}
+      </Box>
+
 
       {/* Alerts */}
       {error && (
@@ -1303,7 +1664,32 @@ const RoomDetailPage = () => {
       <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: { xs: 2, md: 3 }, width: '100%' }}>
         {/* Main Content */}
         <Box sx={{ flex: { md: 2 }, width: '100%', minWidth: 0 }}>
-          <Paper sx={{ mb: { xs: 2, md: 3 } }}>
+          <Paper sx={{ 
+            mb: { xs: 2, md: 3 },
+            // Premium glassmorphism styling
+            ...(roomHasPremium && {
+              background: isDark
+                ? 'linear-gradient(135deg, rgba(251, 191, 36, 0.08) 0%, rgba(234, 179, 8, 0.12) 100%)'
+                : 'linear-gradient(135deg, rgba(251, 191, 36, 0.03) 0%, rgba(234, 179, 8, 0.06) 100%)',
+              backdropFilter: 'blur(20px) saturate(180%)',
+              border: '1px solid',
+              borderColor: isDark ? 'rgba(251, 191, 36, 0.2)' : 'rgba(251, 191, 36, 0.15)',
+              boxShadow: isDark
+                ? '0 0 25px rgba(251, 191, 36, 0.15), 0 0 50px rgba(251, 191, 36, 0.08), 0 4px 20px rgba(0, 0, 0, 0.3)'
+                : '0 0 20px rgba(251, 191, 36, 0.12), 0 0 40px rgba(251, 191, 36, 0.06), 0 4px 15px rgba(0, 0, 0, 0.08)',
+              '&::before': {
+                content: '""',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: '2px',
+                background: 'linear-gradient(90deg, transparent, rgba(251, 191, 36, 0.6), transparent)',
+                zIndex: 1,
+              },
+              position: 'relative'
+            })
+          }}>
             <Tabs 
               value={tabValue} 
               onChange={(e, newValue) => setTabValue(newValue)}
@@ -1311,6 +1697,21 @@ const RoomDetailPage = () => {
               scrollButtons="auto"
               allowScrollButtonsMobile
               sx={{
+                // Add gradient header based on active tab (premium only)
+                ...(roomHasPremium && {
+                  background: tabValue === 0 
+                    ? 'linear-gradient(135deg, rgba(249, 115, 22, 0.3) 0%, rgba(120, 53, 15, 0.15) 100%)' // Bright orange to dark orange for Tasks
+                    : tabValue === 1
+                      ? 'linear-gradient(135deg, rgba(96, 165, 250, 0.3) 0%, rgba(30, 58, 138, 0.15) 100%)' // Bright blue to dark blue for Leaderboard
+                      : 'linear-gradient(135deg, rgba(34, 211, 238, 0.3) 0%, rgba(8, 145, 178, 0.15) 100%)', // Bright cyan to dark cyan for Chat
+                  borderBottom: '1px solid',
+                  borderColor: tabValue === 0 
+                    ? 'rgba(249, 115, 22, 0.4)'
+                    : tabValue === 1
+                      ? 'rgba(96, 165, 250, 0.4)'
+                      : 'rgba(34, 211, 238, 0.4)',
+                  transition: 'background 0.8s ease, border-color 0.8s ease', // Slow dissolve
+                }),
                 '& .MuiTab-root': {
                   minHeight: { xs: 48, md: 64 },
                   fontSize: { xs: '0.7rem', md: '0.875rem' },
@@ -1340,7 +1741,12 @@ const RoomDetailPage = () => {
 
           {/* Tasks Tab */}
           {tabValue === 0 && (
-            <Paper sx={{ p: { xs: 2, md: 3 }, width: '100%', maxWidth: '100%' }}>
+            <RoomPremiumPaper 
+              isPremium={roomHasPremium} 
+              variant="default"
+              enableScanBorder={roomHasPremium}
+              sx={{ p: { xs: 2, md: 3 }, width: '100%', maxWidth: '100%' }}
+            >
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: { xs: 2, md: 3 } }}>
                 <Typography variant="h6" fontWeight="bold" sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
                   Daily Tasks
@@ -1512,12 +1918,16 @@ const RoomDetailPage = () => {
                 </List>
               );
               })()}
-            </Paper>
+            </RoomPremiumPaper>
           )}
 
           {/* Leaderboard Tab */}
           {tabValue === 1 && (
-            <Paper sx={{ p: { xs: 2, md: 3 }, width: '100%', maxWidth: '100%' }}>
+            <RoomPremiumPaper 
+              isPremium={roomHasPremium} 
+              variant="sidebar"
+              sx={{ p: { xs: 2, md: 3 }, width: '100%', maxWidth: '100%' }}
+            >
               <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
                 Leaderboard
               </Typography>
@@ -1566,12 +1976,16 @@ const RoomDetailPage = () => {
                     </ListItem>
                   ))}
               </List>
-            </Paper>
+            </RoomPremiumPaper>
           )}
 
           {/* Chat Tab */}
           {tabValue === 2 && (
-            <Paper sx={{ p: { xs: 2, md: 3 }, height: { xs: 400, md: 500 }, display: 'flex', flexDirection: 'column', width: '100%', maxWidth: '100%' }}>
+            <RoomPremiumPaper 
+              isPremium={roomHasPremium} 
+              variant="chat"
+              sx={{ p: { xs: 2, md: 3 }, height: { xs: 400, md: 500 }, display: 'flex', flexDirection: 'column', width: '100%', maxWidth: '100%' }}
+            >
               <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ fontSize: { xs: '1rem', md: '1.25rem' } }}>
                 Room Chat
               </Typography>
@@ -1587,17 +2001,37 @@ const RoomDetailPage = () => {
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 1,
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  WebkitTapHighlightColor: 'transparent',
+                  touchAction: 'manipulation',
                 }}
                 id="chat-container"
                 onDoubleClick={() => setChatDrawerOpen(true)}
-                title="Double-click to open full chat"
+                onTouchEnd={(e) => {
+                  // Handle double-tap for mobile
+                  const now = Date.now();
+                  const DOUBLE_TAP_DELAY = 300;
+                  if (chatContainerRef.current) {
+                    const lastTap = chatContainerRef.current.lastTap || 0;
+                    if (now - lastTap < DOUBLE_TAP_DELAY) {
+                      e.preventDefault();
+                      setChatDrawerOpen(true);
+                      chatContainerRef.current.lastTap = 0;
+                    } else {
+                      chatContainerRef.current.lastTap = now;
+                    }
+                  }
+                }}
+                title="Double-tap to open full chat"
               >
                 {chatMessages.length === 0 ? (
                   <Box sx={{ textAlign: 'center', py: 4 }}>
                     <Chat sx={{ fontSize: 60, color: 'text.secondary', mb: 2 }} />
                     <Typography variant="body2" color="text.secondary">
                       No messages yet. Start the conversation!
+                    </Typography>
+                    <Typography variant="caption" color="text.disabled" sx={{ mt: 1, display: 'block' }}>
+                      Double-tap to open full chat
                     </Typography>
                   </Box>
                 ) : (
@@ -1790,7 +2224,7 @@ const RoomDetailPage = () => {
               <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
                 Encourage your teammates or discuss tasks
               </Typography>
-            </Paper>
+            </RoomPremiumPaper>
           )}
         </Box>
 
@@ -1866,7 +2300,43 @@ const RoomDetailPage = () => {
           )}
 
           {/* Stats Card */}
-          <Card sx={{ mb: 3, width: '100%', maxWidth: '100%' }}>
+          <Card sx={{ 
+            mb: 3, 
+            width: '100%', 
+            maxWidth: '100%',
+            ...((isGlobalPremium || roomHasPremium) && {
+              background: isDark
+                ? roomHasPremium 
+                  ? 'linear-gradient(135deg, rgba(251, 191, 36, 0.08) 0%, rgba(245, 158, 11, 0.06) 100%)'
+                  : 'linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.95) 100%)'
+                : roomHasPremium
+                  ? 'linear-gradient(135deg, rgba(251, 191, 36, 0.04) 0%, rgba(245, 158, 11, 0.02) 100%)'
+                  : 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 250, 252, 0.98) 100%)',
+              border: `1px solid ${roomHasPremium 
+                ? (isDark ? 'rgba(251, 191, 36, 0.25)' : 'rgba(251, 191, 36, 0.15)')
+                : (isDark ? 'rgba(96, 165, 250, 0.2)' : 'rgba(99, 102, 241, 0.1)')}`,
+              boxShadow: roomHasPremium
+                ? (isDark 
+                  ? '0 0 20px rgba(251, 191, 36, 0.15), 0 0 40px rgba(251, 191, 36, 0.08)'
+                  : '0 0 15px rgba(251, 191, 36, 0.1), 0 0 30px rgba(251, 191, 36, 0.05)')
+                : (isDark
+                  ? '0 0 20px rgba(96, 165, 250, 0.15), 0 0 40px rgba(139, 92, 246, 0.08)'
+                  : '0 0 15px rgba(99, 102, 241, 0.1), 0 0 30px rgba(139, 92, 246, 0.05)'),
+              position: 'relative',
+              overflow: 'hidden',
+              '&::before': {
+                content: '""',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: '2px',
+                background: roomHasPremium
+                  ? `linear-gradient(90deg, transparent, ${isDark ? 'rgba(251, 191, 36, 0.6)' : 'rgba(251, 191, 36, 0.4)'}, transparent)`
+                  : `linear-gradient(90deg, transparent, ${isDark ? 'rgba(96, 165, 250, 0.5)' : 'rgba(99, 102, 241, 0.3)'}, transparent)`,
+              },
+            }),
+          }}>
             <CardContent>
               <Typography variant="h6" fontWeight="bold" gutterBottom>
                 Your Stats
@@ -1893,7 +2363,49 @@ const RoomDetailPage = () => {
           </Card>
 
           {/* Members List */}
-          <Paper sx={{ p: 2, width: '100%', maxWidth: '100%' }}>
+          <RoomPremiumPaper 
+            isPremium={roomHasPremium} 
+            variant="sidebar"
+            sx={{ 
+              p: 2, 
+              width: '100%', 
+              maxWidth: '100%',
+              // Edge light sweep - rotating glow
+              ...(roomHasPremium && {
+                position: 'relative',
+                overflow: 'hidden',
+                '&::before': {
+                  content: '""',
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  width: '200%',
+                  height: '200%',
+                  background: 'conic-gradient(from 0deg, transparent 0deg, transparent 340deg, rgba(139, 92, 246, 0.8) 350deg, rgba(167, 139, 250, 1) 355deg, rgba(139, 92, 246, 0.8) 360deg)',
+                  animation: 'spinGlow 6s linear infinite',
+                  transformOrigin: 'center',
+                  pointerEvents: 'none',
+                  zIndex: 0,
+                },
+                '&::after': {
+                  content: '""',
+                  position: 'absolute',
+                  inset: 2,
+                  borderRadius: 'inherit',
+                  background: isDark ? 'rgba(15, 23, 42, 0.98)' : 'rgba(255, 255, 255, 0.98)',
+                  zIndex: 0,
+                },
+                '& > *': {
+                  position: 'relative',
+                  zIndex: 1,
+                },
+                '@keyframes spinGlow': {
+                  '0%': { transform: 'translate(-50%, -50%) rotate(0deg)' },
+                  '100%': { transform: 'translate(-50%, -50%) rotate(360deg)' },
+                },
+              })
+            }}
+          >
             <Typography variant="h6" fontWeight="bold" gutterBottom>
               Members ({room.members?.length || 0})
             </Typography>
@@ -1980,7 +2492,7 @@ const RoomDetailPage = () => {
                 );
               })}
             </List>
-          </Paper>
+          </RoomPremiumPaper>
         </Box>
       </Box>
       </>
@@ -2008,8 +2520,27 @@ const RoomDetailPage = () => {
         onClose={() => setSettingsOpen(false)}
         maxWidth="sm"
         fullWidth
+        PaperProps={{
+          sx: roomHasPremium ? {
+            background: isDark
+              ? 'linear-gradient(180deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)'
+              : 'linear-gradient(180deg, #ffffff 0%, #fefce8 50%, #ffffff 100%)',
+            border: `1px solid ${isDark ? 'rgba(251, 191, 36, 0.2)' : 'rgba(251, 191, 36, 0.15)'}`,
+            boxShadow: isDark
+              ? '0 0 40px rgba(251, 191, 36, 0.15), 0 25px 50px rgba(0, 0, 0, 0.5)'
+              : '0 0 30px rgba(251, 191, 36, 0.1), 0 25px 50px rgba(0, 0, 0, 0.15)',
+          } : {}
+        }}
       >
-        <DialogTitle>Room Settings</DialogTitle>
+        <DialogTitle sx={roomHasPremium ? {
+          background: isDark
+            ? 'linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(139, 92, 246, 0.08) 100%)'
+            : 'linear-gradient(135deg, rgba(251, 191, 36, 0.08) 0%, rgba(139, 92, 246, 0.05) 100%)',
+          borderBottom: `1px solid ${isDark ? 'rgba(251, 191, 36, 0.2)' : 'rgba(251, 191, 36, 0.15)'}`,
+          color: isDark ? '#FBBF24' : '#D97706',
+        } : {}}>
+          {roomHasPremium ? '✨ Room Settings' : 'Room Settings'}
+        </DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
             <TextField
@@ -2081,6 +2612,227 @@ const RoomDetailPage = () => {
             
             <Divider sx={{ my: 2 }} />
             
+            {/* Room Premium Section - Glassmorphism Style */}
+            {isOwner && (
+              <Box sx={{
+                position: 'relative',
+                borderRadius: 3,
+                overflow: 'hidden',
+                background: isDark
+                  ? 'linear-gradient(135deg, rgba(251, 191, 36, 0.08) 0%, rgba(234, 179, 8, 0.12) 100%)'
+                  : 'linear-gradient(135deg, rgba(251, 191, 36, 0.03) 0%, rgba(234, 179, 8, 0.06) 100%)',
+                backdropFilter: 'blur(20px)',
+                border: '1px solid',
+                borderColor: isDark ? 'rgba(251, 191, 36, 0.2)' : 'rgba(251, 191, 36, 0.15)',
+                boxShadow: isDark
+                  ? '0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(251, 191, 36, 0.2)'
+                  : '0 8px 32px rgba(251, 191, 36, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.5)',
+                '&::before': {
+                  content: '""',
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: '1px',
+                  background: 'linear-gradient(90deg, transparent, rgba(251, 191, 36, 0.3), transparent)',
+                },
+                p: 3
+              }}>
+                {/* Constellation-style header */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
+                  <Box sx={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: '50%',
+                    background: 'linear-gradient(135deg, #F59E0B, #EAB308)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 4px 12px rgba(251, 191, 36, 0.3)',
+                    animation: roomHasPremium ? 'pulse 2s infinite' : 'none',
+                    '@keyframes pulse': {
+                      '0%, 100%': { opacity: 1, transform: 'scale(1)' },
+                      '50%': { opacity: 0.8, transform: 'scale(1.05)' }
+                    }
+                  }}>
+                    <Typography sx={{ fontSize: 16 }}>⭐</Typography>
+                  </Box>
+                  <Typography variant="h6" fontWeight="bold" sx={{ 
+                    background: 'linear-gradient(135deg, #F59E0B, #EAB308, #F59E0B)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    backgroundClip: 'text'
+                  }}>
+                    Constellation Mode
+                  </Typography>
+                </Box>
+                
+                {!roomHasPremium ? (
+                  <Box>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
+                      Transform this room with premium glassmorphism UI, animated particles, and constellation-grade features.
+                    </Typography>
+                    
+                    {/* Dark Mode Only Warning */}
+                    <Box sx={{ 
+                      mb: 3, 
+                      p: 1.5, 
+                      borderRadius: 2,
+                      background: isDark ? 'rgba(168, 85, 247, 0.1)' : 'rgba(168, 85, 247, 0.05)',
+                      border: '1px solid',
+                      borderColor: isDark ? 'rgba(168, 85, 247, 0.3)' : 'rgba(168, 85, 247, 0.2)',
+                    }}>
+                      <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', gap: 1, fontWeight: 600, color: '#A855F7' }}>
+                        🌙 Dark Mode Only
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                        Constellation Mode is optimized for dark mode. Once activated, you won't be able to switch to light mode while in this room.
+                      </Typography>
+                    </Box>
+                    
+                    <Box sx={{ display: 'flex', gap: 1.5, mb: 2 }}>
+                      <TextField
+                        placeholder="Enter activation code"
+                        value={roomPremiumCode}
+                        onChange={(e) => setRoomPremiumCode(e.target.value.toUpperCase())}
+                        onKeyPress={(e) => e.key === 'Enter' && !activatingRoomPremium && handleActivateRoomPremium()}
+                        disabled={activatingRoomPremium}
+                        sx={{ 
+                          flex: 1,
+                          '& .MuiOutlinedInput-root': {
+                            background: isDark ? 'rgba(0, 0, 0, 0.2)' : 'rgba(255, 255, 255, 0.7)',
+                            backdropFilter: 'blur(10px)',
+                            border: '1px solid',
+                            borderColor: isDark ? 'rgba(251, 191, 36, 0.3)' : 'rgba(251, 191, 36, 0.2)',
+                            borderRadius: 2,
+                            '&:hover': {
+                              borderColor: isDark ? 'rgba(251, 191, 36, 0.5)' : 'rgba(251, 191, 36, 0.3)',
+                            },
+                            '&.Mui-focused': {
+                              borderColor: '#F59E0B',
+                              boxShadow: '0 0 0 2px rgba(251, 191, 36, 0.1)'
+                            }
+                          },
+                          '& .MuiOutlinedInput-input': {
+                            fontFamily: 'monospace',
+                            letterSpacing: 1,
+                            textAlign: 'center'
+                          }
+                        }}
+                      />
+                      <Button
+                        variant="contained"
+                        onClick={handleActivateRoomPremium}
+                        disabled={activatingRoomPremium || !roomPremiumCode.trim()}
+                        sx={{
+                          minWidth: 120,
+                          background: activatingRoomPremium 
+                            ? 'linear-gradient(135deg, #6B7280, #9CA3AF)'
+                            : 'linear-gradient(135deg, #F59E0B, #EAB308)',
+                          color: 'white',
+                          fontWeight: 'bold',
+                          borderRadius: 2,
+                          boxShadow: '0 4px 12px rgba(251, 191, 36, 0.3)',
+                          transition: 'all 0.2s ease',
+                          '&:hover': {
+                            transform: 'translateY(-1px)',
+                            boxShadow: '0 6px 16px rgba(251, 191, 36, 0.4)',
+                            background: 'linear-gradient(135deg, #D97706, #CA8A04)',
+                          },
+                          '&:disabled': {
+                            transform: 'none',
+                            background: 'linear-gradient(135deg, #6B7280, #9CA3AF)',
+                            color: 'rgba(255,255,255,0.5)'
+                          }
+                        }}
+                      >
+                        {activatingRoomPremium ? (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <CircularProgress size={16} color="inherit" />
+                            Activating
+                          </Box>
+                        ) : (
+                          'Activate'
+                        )}
+                      </Button>
+                    </Box>
+                    
+                    <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                      ROOM-PREMIUM • ORBIT-ROOM-VIP • KRIOS-ROOM-ELITE
+                    </Typography>
+                  </Box>
+                ) : (
+                  <Box>
+                    <Box sx={{ 
+                      p: 2.5, 
+                      borderRadius: 2, 
+                      background: isDark 
+                        ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(22, 163, 74, 0.15))'
+                        : 'linear-gradient(135deg, rgba(34, 197, 94, 0.05), rgba(22, 163, 74, 0.1))',
+                      border: '1px solid',
+                      borderColor: isDark ? 'rgba(34, 197, 94, 0.3)' : 'rgba(34, 197, 94, 0.2)',
+                      mb: 3,
+                      position: 'relative',
+                      overflow: 'hidden',
+                      '&::before': {
+                        content: '""',
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: '1px',
+                        background: 'linear-gradient(90deg, transparent, rgba(34, 197, 94, 0.4), transparent)',
+                      }
+                    }}>
+                      <Typography variant="body1" fontWeight="bold" sx={{ 
+                        color: '#22C55E', 
+                        mb: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1 
+                      }}>
+                        ✨ Constellation Mode Active
+                        <Box sx={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: '50%',
+                          background: '#22C55E',
+                          animation: 'pulse 1.5s infinite',
+                          '@keyframes pulse': {
+                            '0%, 100%': { opacity: 1 },
+                            '50%': { opacity: 0.5 }
+                          }
+                        }} />
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Premium glassmorphism UI, particle effects, and constellation features enabled.
+                      </Typography>
+                    </Box>
+                    
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={handleDeactivateRoomPremium}
+                      disabled={activatingRoomPremium}
+                      sx={{ 
+                        borderColor: '#F59E0B',
+                        color: '#F59E0B',
+                        borderRadius: 2,
+                        '&:hover': {
+                          borderColor: '#D97706',
+                          backgroundColor: 'rgba(251, 191, 36, 0.04)'
+                        }
+                      }}
+                    >
+                      {activatingRoomPremium ? 'Deactivating...' : 'Deactivate Premium'}
+                    </Button>
+                  </Box>
+                )}
+              </Box>
+            )}
+            
+            <Divider sx={{ my: 2 }} />
+            
             {/* Danger Zone */}
             <Box>
               <Typography variant="body2" color="error" fontWeight="bold" gutterBottom>
@@ -2111,6 +2863,8 @@ const RoomDetailPage = () => {
             onClick={async () => {
               try {
                 setSavingSettings(true);
+                setError(null); // Clear any previous errors
+                
                 // Update basic room info
                 await api.put(`/rooms/${roomId}`, {
                   name: roomSettings.name,
@@ -2127,14 +2881,16 @@ const RoomDetailPage = () => {
                 });
 
                 setSuccess('Room settings updated!');
-                setTimeout(() => setSuccess(null), 3000);
                 setSettingsOpen(false);
+                setTimeout(() => setSuccess(null), 3000);
                 loadRoomDetails();
               } catch (err) {
+                console.error('Settings save error:', err);
                 setError(err.response?.data?.message || 'Failed to update settings');
                 setTimeout(() => setError(null), 5000);
               } finally {
                 setSavingSettings(false);
+                setActivatingRoomPremium(false); // Reset premium activation state too
               }
             }}
             disabled={savingSettings}
@@ -2426,6 +3182,7 @@ const RoomDetailPage = () => {
       {/* Task Type Selector */}
       <TaskTypeSelector
         open={taskTypeOpen}
+        roomId={roomId}
         onClose={() => setTaskTypeOpen(false)}
         isOwner={isOwner}
         onSelect={(type) => {
@@ -2447,8 +3204,8 @@ const RoomDetailPage = () => {
         messages={chatMessages}
         onSendMessage={handleSendMessageFromDrawer}
         currentUser={user}
-        // Keep chat header stable; room name is shown in the room page already
-        roomName={'Room Chat'}
+        roomName={room?.name || 'Room Chat'}
+        roomId={roomId}
         roomMembers={room?.members || []}
         onSendAppreciation={handleAppreciation}
         appreciationRemaining={appreciationRemaining}
@@ -2466,6 +3223,7 @@ const RoomDetailPage = () => {
         onClose={() => setOrbitSummaryOpen(false)}
         summary={orbitSummary}
         roomName={room?.name}
+        roomId={roomId}
       />
 
       {/* Room Onboarding Modal */}
@@ -2476,7 +3234,120 @@ const RoomDetailPage = () => {
         roomId={room?._id}
         userId={user?.id || user?._id}
       />
+      
+      {/* Premium Animations */}
+      {roomHasPremium && (
+        <>
+          {/* Task Completion */}
+          <TaskCompleteAnimation 
+            show={showTaskCompleteAnimation} 
+            onComplete={() => setShowTaskCompleteAnimation(false)} 
+          />
+          <SuccessFeedback 
+            show={showSuccessFeedback} 
+            onComplete={() => setShowSuccessFeedback(false)} 
+          />
+          
+          {/* Cosmic Nudge Animation */}
+          <CosmicNudgeAnimation 
+            show={showCosmicNudge} 
+            onComplete={() => setShowCosmicNudge(false)} 
+          />
+          
+          {/* Cosmic Appreciation Animations */}
+          <CosmicStarAnimation 
+            show={showCosmicStar} 
+            onComplete={() => setShowCosmicStar(false)} 
+          />
+          <CosmicFireAnimation 
+            show={showCosmicFire} 
+            onComplete={() => setShowCosmicFire(false)} 
+          />
+          <CosmicShieldAnimation 
+            show={showCosmicShield} 
+            onComplete={() => setShowCosmicShield(false)} 
+          />
+          
+          {/* Premium Welcome Notification */}
+          <Dialog
+            open={showPremiumWelcome}
+            onClose={() => setShowPremiumWelcome(false)}
+            maxWidth="xs"
+            fullWidth
+            PaperProps={{
+              sx: {
+                background: isDark
+                  ? 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)'
+                  : 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 50%, #fffbeb 100%)',
+                border: `1px solid ${isDark ? 'rgba(251, 191, 36, 0.3)' : 'rgba(251, 191, 36, 0.2)'}`,
+                borderRadius: 3,
+                overflow: 'hidden',
+                textAlign: 'center',
+              }
+            }}
+          >
+            <Box sx={{ p: 4 }}>
+              {/* Animated star icon */}
+              <Box
+                sx={{
+                  fontSize: '4rem',
+                  mb: 2,
+                  animation: 'premiumStar 2s ease-in-out infinite',
+                  filter: 'drop-shadow(0 0 20px rgba(251, 191, 36, 0.6))',
+                  '@keyframes premiumStar': {
+                    '0%, 100%': { transform: 'scale(1) rotate(0deg)' },
+                    '50%': { transform: 'scale(1.1) rotate(10deg)' },
+                  }
+                }}
+              >
+                ✨
+              </Box>
+              
+              <Typography 
+                variant="h5" 
+                fontWeight="bold" 
+                sx={{ 
+                  mb: 1,
+                  background: 'linear-gradient(135deg, #FBBF24 0%, #F59E0B 50%, #D97706 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                }}
+              >
+                Welcome to Constellation Mode
+              </Typography>
+              
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                This room has premium features enabled! Enjoy cosmic animations, enhanced visuals, and a stellar experience.
+              </Typography>
+              
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'center', mb: 3 }}>
+                <Chip label="🌟 Animated Background" size="small" sx={{ bgcolor: 'rgba(251, 191, 36, 0.1)', border: '1px solid rgba(251, 191, 36, 0.2)' }} />
+                <Chip label="🎯 Task Animations" size="small" sx={{ bgcolor: 'rgba(251, 191, 36, 0.1)', border: '1px solid rgba(251, 191, 36, 0.2)' }} />
+                <Chip label="💫 Cosmic Effects" size="small" sx={{ bgcolor: 'rgba(251, 191, 36, 0.1)', border: '1px solid rgba(251, 191, 36, 0.2)' }} />
+              </Box>
+              
+              <Button
+                variant="contained"
+                onClick={() => setShowPremiumWelcome(false)}
+                sx={{
+                  background: 'linear-gradient(135deg, #FBBF24 0%, #F59E0B 100%)',
+                  color: '#1f2937',
+                  fontWeight: 'bold',
+                  px: 4,
+                  '&:hover': {
+                    background: 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)',
+                  }
+                }}
+              >
+                Let's Go! 🚀
+              </Button>
+            </Box>
+          </Dialog>
+        </>
+      )}
     </Box>
+    </>
   );
 };
 

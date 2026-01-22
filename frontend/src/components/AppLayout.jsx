@@ -35,7 +35,10 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useTheme as useCustomTheme } from '../context/ThemeContext';
 import { useSocket } from '../context/SocketContext';
+import { usePremium } from '../context/PremiumContext';
 import NotificationPopup from './NotificationPopup';
+import { PremiumBackground } from './premium';
+import { PremiumBadge } from './premium';
 import api from '../utils/api';
 
 // Sidebar widths
@@ -58,6 +61,7 @@ const AppLayout = ({ children }) => {
   const { user, logout } = useAuth();
   const { mode, setThemeMode } = useCustomTheme();
   const { socket } = useSocket();
+  const { isGlobalPremium } = usePremium();
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [unreadMessages, setUnreadMessages] = useState(0);
@@ -160,14 +164,26 @@ const AppLayout = ({ children }) => {
         alignItems: isExpanded ? 'flex-start' : 'center',
         py: 2,
         px: isExpanded ? 2 : 0,
-        bgcolor: isDark 
-          ? 'rgba(15, 23, 42, 0.95)' 
-          : 'rgba(255, 255, 255, 0.95)',
+        bgcolor: isGlobalPremium
+          ? (isDark ? 'rgba(15, 23, 42, 0.92)' : 'rgba(255, 255, 255, 0.92)')
+          : (isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)'),
         backdropFilter: 'blur(10px)',
-        borderRight: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+        borderRight: `1px solid ${
+          isGlobalPremium 
+            ? (isDark ? 'rgba(96, 165, 250, 0.15)' : 'rgba(99, 102, 241, 0.1)')
+            : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)')
+        }`,
         transition: 'width 0.3s ease, padding 0.3s ease',
         overflowX: 'hidden',
         overflowY: 'auto',
+        position: 'relative',
+        zIndex: 10,
+        // Premium glow effect on sidebar
+        ...(isGlobalPremium && {
+          boxShadow: isDark 
+            ? '4px 0 30px rgba(96, 165, 250, 0.08), 0 0 60px rgba(139, 92, 246, 0.05)'
+            : '4px 0 20px rgba(99, 102, 241, 0.05)',
+        }),
       }}
     >
       {/* Logo and Toggle */}
@@ -216,18 +232,26 @@ const AppLayout = ({ children }) => {
             />
           </Box>
           {isExpanded && (
-            <Typography
-              variant="h6"
-              sx={{
-                fontWeight: 700,
-                background: 'linear-gradient(135deg, #60A5FA 0%, #F59E0B 100%)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              Krios
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography
+                variant="h6"
+                sx={{
+                  fontWeight: 700,
+                  background: isGlobalPremium
+                    ? 'linear-gradient(135deg, #60A5FA 0%, #8B5CF6 50%, #F59E0B 100%)'
+                    : 'linear-gradient(135deg, #60A5FA 0%, #F59E0B 100%)',
+                  backgroundSize: isGlobalPremium ? '200% auto' : 'auto',
+                  animation: isGlobalPremium ? 'nebulaShift 4s ease infinite' : 'none',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  whiteSpace: 'nowrap',
+                  filter: isGlobalPremium ? 'drop-shadow(0 0 8px rgba(96, 165, 250, 0.4))' : 'none',
+                }}
+              >
+                Krios
+              </Typography>
+              {isGlobalPremium && <PremiumBadge size="small" showText={false} />}
+            </Box>
           )}
         </Box>
         
@@ -277,6 +301,15 @@ const AppLayout = ({ children }) => {
                     ? (isDark ? '#60A5FA' : '#3B82F6')
                     : (isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)'),
                   transition: 'all 0.2s ease',
+                  // Premium glow on active nav item
+                  ...(isGlobalPremium && active && {
+                    boxShadow: isDark 
+                      ? '0 0 20px rgba(96, 165, 250, 0.2), inset 0 0 15px rgba(96, 165, 250, 0.05)'
+                      : '0 0 15px rgba(59, 130, 246, 0.15)',
+                    '& .MuiSvgIcon-root': {
+                      filter: 'drop-shadow(0 0 6px rgba(96, 165, 250, 0.6))',
+                    },
+                  }),
                   '&:hover': {
                     bgcolor: active
                       ? (isDark ? 'rgba(96, 165, 250, 0.25)' : 'rgba(59, 130, 246, 0.2)')
@@ -578,14 +611,18 @@ const AppLayout = ({ children }) => {
   };
 
   return (
-    <Box sx={{ display: 'flex', height: '100dvh', overflow: 'hidden' }}>
+    <Box sx={{ display: 'flex', height: '100dvh', overflow: 'hidden', position: 'relative', bgcolor: isDark ? '#0f172a' : '#f8fafc' }}>
+      {/* Premium Background - Nebula & Stars - BEHIND everything */}
+      {isGlobalPremium && <PremiumBackground />}
+
       {/* Backdrop overlay when desktop sidebar is expanded */}
       <Backdrop
         open={sidebarExpanded && !isMobile}
         onClick={() => setSidebarExpanded(false)}
         sx={{
           zIndex: (theme) => theme.zIndex.drawer - 1,
-          bgcolor: 'rgba(0, 0, 0, 0.5)',
+          bgcolor: isGlobalPremium ? 'rgba(0, 0, 0, 0.6)' : 'rgba(0, 0, 0, 0.5)',
+          backdropFilter: isGlobalPremium ? 'blur(4px)' : 'none',
         }}
       />
 
@@ -601,32 +638,59 @@ const AppLayout = ({ children }) => {
           alignItems: 'center',
           justifyContent: 'space-between',
           px: 1.5,
-          bgcolor: isDark 
-            ? 'rgba(15, 23, 42, 0.98)' 
-            : 'rgba(255, 255, 255, 0.98)',
-          borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+          bgcolor: isGlobalPremium
+            ? (isDark ? 'rgba(15, 23, 42, 0.92)' : 'rgba(255, 255, 255, 0.92)')
+            : (isDark ? 'rgba(15, 23, 42, 0.98)' : 'rgba(255, 255, 255, 0.98)'),
+          backdropFilter: 'blur(12px)',
+          zIndex: 100,
+          borderBottom: `1px solid ${
+            isGlobalPremium 
+              ? (isDark ? 'rgba(96, 165, 250, 0.15)' : 'rgba(99, 102, 241, 0.1)')
+              : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)')
+          }`,
           zIndex: (theme) => theme.zIndex.appBar,
+          // Premium glow on mobile header
+          ...(isGlobalPremium && {
+            boxShadow: isDark 
+              ? '0 4px 30px rgba(96, 165, 250, 0.1), 0 0 60px rgba(139, 92, 246, 0.05)'
+              : '0 4px 20px rgba(99, 102, 241, 0.08)',
+          }),
         }}
       >
         {/* Hamburger Menu + App Name */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <IconButton
             onClick={() => setMobileOpen(true)}
-            sx={{ color: isDark ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.8)' }}
+            sx={{ 
+              color: isDark ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.8)',
+              ...(isGlobalPremium && {
+                '&:hover': {
+                  background: isDark ? 'rgba(96, 165, 250, 0.1)' : 'rgba(99, 102, 241, 0.08)',
+                },
+              }),
+            }}
           >
             <MenuIcon />
           </IconButton>
-          <Typography
-            variant="h6"
-            sx={{
-              fontWeight: 700,
-              background: 'linear-gradient(135deg, #60A5FA 0%, #F59E0B 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-            }}
-          >
-            Krios
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography
+              variant="h6"
+              sx={{
+                fontWeight: 700,
+                background: isGlobalPremium
+                  ? 'linear-gradient(135deg, #60A5FA 0%, #8B5CF6 50%, #F59E0B 100%)'
+                  : 'linear-gradient(135deg, #60A5FA 0%, #F59E0B 100%)',
+                backgroundSize: isGlobalPremium ? '200% auto' : 'auto',
+                animation: isGlobalPremium ? 'nebulaShift 4s ease infinite' : 'none',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                filter: isGlobalPremium ? 'drop-shadow(0 0 6px rgba(96, 165, 250, 0.4))' : 'none',
+              }}
+            >
+              Krios
+            </Typography>
+            {isGlobalPremium && <PremiumBadge size="small" showText={false} />}
+          </Box>
         </Box>
 
         {/* Notifications */}
@@ -693,18 +757,24 @@ const AppLayout = ({ children }) => {
           flexGrow: 1,
           height: '100dvh',
           overflow: 'hidden',
-          bgcolor: isDark 
-            ? 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)'
-            : 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
-          background: isDark 
-            ? 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)'
-            : 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
+          // Make background transparent/semi-transparent when premium to show nebula
+          bgcolor: 'transparent',
+          background: isGlobalPremium
+            ? (isDark 
+                ? 'linear-gradient(135deg, rgba(15, 23, 42, 0.5) 0%, rgba(30, 41, 59, 0.6) 100%)'
+                : 'linear-gradient(135deg, rgba(248, 250, 252, 0.7) 0%, rgba(226, 232, 240, 0.7) 100%)')
+            : (isDark 
+                ? 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)'
+                : 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)'),
           display: 'flex',
           flexDirection: 'column',
+          position: 'relative',
+          zIndex: 1,
         }}
       >
         {/* Page Content */}
         <Box
+          className={isGlobalPremium ? 'premium-scrollbar' : ''}
           sx={{
             flex: 1,
             overflowY: 'auto',

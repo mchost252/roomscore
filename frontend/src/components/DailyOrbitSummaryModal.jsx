@@ -11,6 +11,7 @@ import {
   LinearProgress,
   Fade,
   Zoom,
+  keyframes,
 } from '@mui/material';
 import { useTheme as useMuiTheme } from '@mui/material/styles';
 import CloseIcon from '@mui/icons-material/Close';
@@ -22,6 +23,32 @@ import {
   OrbitDimmedIcon,
   InactiveStarIcon,
 } from './icons/ConstellationIcons';
+import { usePremium } from '../context/PremiumContext';
+
+// Premium animations for room summary
+const cardSlideUp = keyframes`
+  0% { opacity: 0; transform: translateY(20px); }
+  100% { opacity: 1; transform: translateY(0); }
+`;
+
+const countUp = keyframes`
+  0% { opacity: 0; transform: scale(0.8); }
+  50% { transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
+`;
+
+const ringProgress = keyframes`
+  0% { stroke-dashoffset: 100; }
+`;
+
+const softGlow = keyframes`
+  0%, 100% { box-shadow: 0 0 8px rgba(251, 191, 36, 0.4), 0 0 16px rgba(251, 191, 36, 0.2); }
+  50% { box-shadow: 0 0 16px rgba(251, 191, 36, 0.6), 0 0 32px rgba(251, 191, 36, 0.3); }
+`;
+
+const barGrow = keyframes`
+  0% { width: 0%; }
+`;
 
 /**
  * Daily Orbit Summary Modal
@@ -320,6 +347,7 @@ const DailyOrbitSummaryModal = ({
   onClose, 
   summary,
   roomName,
+  roomId,
 }) => {
   const theme = useMuiTheme();
   const isDark = theme.palette.mode === 'dark';
@@ -327,14 +355,20 @@ const DailyOrbitSummaryModal = ({
   const [showEncouragement, setShowEncouragement] = useState(false);
   const [encouragementMessage, setEncouragementMessage] = useState('');
   
+  // Premium features
+  const { isRoomPremium, isGlobalPremium, trackDailySummaryViewed } = usePremium();
+  const isPremium = (roomId && isRoomPremium(roomId)) || isGlobalPremium;
+  
   useEffect(() => {
     if (open) {
       const timer = setTimeout(() => setShowContent(true), 300);
+      // Track daily summary view for premium prompting
+      trackDailySummaryViewed();
       return () => clearTimeout(timer);
     } else {
       setShowContent(false);
     }
-  }, [open]);
+  }, [open, trackDailySummaryViewed]);
 
   // Handle close with encouragement animation
   const handleClose = () => {
@@ -431,8 +465,9 @@ const DailyOrbitSummaryModal = ({
           boxShadow: isDark 
             ? '0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 100px rgba(96, 165, 250, 0.1)'
             : '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-          maxHeight: { xs: '85vh', sm: '80vh' },
-          mx: { xs: 2, sm: 3 },
+          maxHeight: { xs: '75vh', sm: '70vh' },
+          maxWidth: { xs: '92vw', sm: 450 },
+          mx: { xs: 1, sm: 'auto' },
           my: 'auto',
         }
       }}
@@ -498,13 +533,13 @@ const DailyOrbitSummaryModal = ({
             </Fade>
           </Box>
           
-          {/* Room Status Banner */}
+          {/* Room Status Banner - Compact */}
           <Fade in={showContent} timeout={1400}>
             <Box
               sx={{
-                mx: 3,
-                p: 2,
-                borderRadius: 3,
+                mx: { xs: 1.5, sm: 2 },
+                p: { xs: 1.5, sm: 2 },
+                borderRadius: 2,
                 background: isOrbitStable
                   ? isDark 
                     ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(96, 165, 250, 0.15))'
@@ -521,122 +556,148 @@ const DailyOrbitSummaryModal = ({
               }}
             >
               <Typography 
-                variant="subtitle1" 
+                variant="body2" 
                 fontWeight={600}
                 color={isOrbitStable ? 'success.main' : 'text.secondary'}
+                sx={{ fontSize: { xs: '0.8rem', sm: '0.875rem' } }}
               >
                 {isOrbitStable 
-                  ? '✨ Orbit Stable — Great teamwork yesterday!'
-                  : '🌑 Orbit Dimmed — No activity yesterday'
+                  ? '✨ Orbit Stable!'
+                  : '🌑 Orbit Dimmed'
                 }
               </Typography>
               
-              <Box sx={{ display: 'flex', justifyContent: 'center', gap: 3, mt: 1.5 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'center', gap: { xs: 2, sm: 3 }, mt: 1 }}>
                 <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="h6" fontWeight={700} color="primary.main">
+                  <Typography 
+                    variant="body1" 
+                    fontWeight={700} 
+                    color="primary.main"
+                    sx={isPremium ? {
+                      animation: `${countUp} 0.5s ease-out forwards`,
+                      animationDelay: '0.3s',
+                      opacity: 0,
+                    } : {}}
+                  >
                     {summary.totalTasksCompleted}
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Tasks Done
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+                    Tasks
                   </Typography>
                 </Box>
                 <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="h6" fontWeight={700} color="secondary.main">
+                  <Typography 
+                    variant="body1" 
+                    fontWeight={700} 
+                    color="secondary.main"
+                    sx={isPremium ? {
+                      animation: `${countUp} 0.5s ease-out forwards`,
+                      animationDelay: '0.4s',
+                      opacity: 0,
+                    } : {}}
+                  >
                     {summary.roomStreak}
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Room Streak
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+                    Streak
                   </Typography>
                 </Box>
                 <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="h6" fontWeight={700} color="success.main">
+                  <Typography 
+                    variant="body1" 
+                    fontWeight={700} 
+                    color="success.main"
+                    sx={isPremium ? {
+                      animation: `${countUp} 0.5s ease-out forwards`,
+                      animationDelay: '0.5s',
+                      opacity: 0,
+                    } : {}}
+                  >
                     {summary.activeMembers}/{summary.totalMembers}
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
                     Active
                   </Typography>
                 </Box>
               </Box>
               
               {/* Activity bar */}
-              <Box sx={{ mt: 2 }}>
+              <Box sx={{ mt: 1.5 }}>
                 <LinearProgress
                   variant="determinate"
                   value={activityPercentage}
                   sx={{
-                    height: 6,
-                    borderRadius: 3,
+                    height: 4,
+                    borderRadius: 2,
                     background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
                     '& .MuiLinearProgress-bar': {
-                      borderRadius: 3,
+                      borderRadius: 2,
                       background: isOrbitStable
                         ? 'linear-gradient(90deg, #22c55e, #60A5FA)'
                         : isDark ? '#475569' : '#94a3b8',
+                      ...(isPremium && {
+                        animation: `${barGrow} 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards`,
+                        animationDelay: '0.6s',
+                      }),
                     },
                   }}
                 />
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                  {activityPercentage}% orbit activity
-                </Typography>
               </Box>
             </Box>
           </Fade>
           
-          {/* MVP Highlight */}
+          {/* MVP Highlight - Compact */}
           {summary.mvp && (
             <Fade in={showContent} timeout={1600}>
               <Box
                 sx={{
-                  mx: { xs: 2, sm: 3 },
-                  mt: 2,
-                  p: { xs: 1.5, sm: 2 },
-                  borderRadius: 3,
+                  mx: { xs: 1.5, sm: 2 },
+                  mt: 1.5,
+                  p: { xs: 1, sm: 1.5 },
+                  borderRadius: 2,
                   background: isDark
                     ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(251, 191, 36, 0.1))'
                     : 'linear-gradient(135deg, rgba(217, 119, 6, 0.1), rgba(245, 158, 11, 0.05))',
                   border: `1px solid ${isDark ? 'rgba(245, 158, 11, 0.3)' : 'rgba(217, 119, 6, 0.3)'}`,
                   display: 'flex',
-                  flexDirection: { xs: 'column', sm: 'row' },
-                  alignItems: { xs: 'flex-start', sm: 'center' },
-                  gap: { xs: 1.5, sm: 2 },
+                  alignItems: 'center',
+                  gap: 1.5,
+                  ...(isPremium && {
+                    animation: `${cardSlideUp} 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards, ${softGlow} 2s ease-in-out infinite 1s`,
+                    animationDelay: '0.2s',
+                    opacity: 0,
+                  }),
                 }}
               >
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
-                  <MVPCrownIcon size={40} glowing animated />
-                  <Box sx={{ flex: 1 }}>
-                    <Typography variant="caption" color="text.secondary" fontWeight={500}>
-                      YESTERDAY'S MVP
-                    </Typography>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Avatar 
-                        src={summary.mvp.avatar} 
-                        sx={{ width: 28, height: 28 }}
-                      >
-                        {summary.mvp.username?.[0]?.toUpperCase()}
-                      </Avatar>
-                      <Typography variant="subtitle1" fontWeight={700}>
-                        {summary.mvp.username}
-                      </Typography>
-                    </Box>
-                  </Box>
-                </Box>
-                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: { xs: 'flex-start', sm: 'flex-end' }, gap: 0.5 }}>
-                  {summary.mvp.mvpScore && (
-                    <Chip
-                      label={`⭐ ${summary.mvp.mvpScore} pts`}
-                      size="small"
-                      sx={{
-                        background: 'linear-gradient(135deg, #F59E0B, #FBBF24)',
-                        color: '#0f172a',
-                        fontWeight: 700,
-                        fontSize: '0.75rem',
-                      }}
-                    />
-                  )}
+                <MVPCrownIcon size={28} glowing animated />
+                <Avatar 
+                  src={summary.mvp.avatar} 
+                  sx={{ width: 24, height: 24 }}
+                >
+                  {summary.mvp.username?.[0]?.toUpperCase()}
+                </Avatar>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography variant="body2" fontWeight={600} noWrap>
+                    {summary.mvp.username}
+                  </Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
-                    Consistency & Contribution
+                    Yesterday's MVP
                   </Typography>
                 </Box>
+                {summary.mvp.mvpScore && (
+                  <Chip
+                    label={`⭐ ${summary.mvp.mvpScore}`}
+                    size="small"
+                    sx={{
+                      height: 20,
+                      background: 'linear-gradient(135deg, #F59E0B, #FBBF24)',
+                      color: '#0f172a',
+                      fontWeight: 700,
+                      fontSize: '0.65rem',
+                      '& .MuiChip-label': { px: 1 }
+                    }}
+                  />
+                )}
               </Box>
             </Fade>
           )}

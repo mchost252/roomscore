@@ -651,13 +651,21 @@ const MessagesPage = () => {
             right: 0,
             bottom: 0,
             bgcolor: 'background.paper',
-            zIndex: 1200, // Increased to be above AppLayout sidebar backdrop (which is drawer zIndex - 1)
+            zIndex: 1300, // Higher to be above AppLayout mobile header (which is zIndex: 100)
             overflow: 'hidden',
             // Ensure this view is fully opaque and covers everything
             isolation: 'isolate',
           }}>
             {/* Chat Header */}
-            <Paper elevation={2} sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2, borderRadius: 0 }}>
+            <Paper elevation={2} sx={{ 
+              p: 1.5, 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 1.5, 
+              borderRadius: 0,
+              minHeight: 64, // Ensure enough height
+              flexShrink: 0, // Don't shrink
+            }}>
               <IconButton onClick={() => navigate('/messages')}>
                 <ArrowBack />
               </IconButton>
