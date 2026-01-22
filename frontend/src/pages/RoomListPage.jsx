@@ -337,8 +337,8 @@ const RoomListPage = () => {
               : (theme) => theme.palette.mode === 'dark'
                 ? '1px solid rgba(96,165,250,0.2)'
                 : '1px solid rgba(59,130,246,0.15)',
-            p: 2,
-            pb: 1.5
+            p: { xs: 1.5, md: 2 },
+            pb: { xs: 1, md: 1.5 }
           }}
         >
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -348,6 +348,7 @@ const RoomListPage = () => {
                 fontWeight="bold" 
                 gutterBottom
                 sx={{
+                  fontSize: { xs: '1rem', md: '1.25rem' },
                   background: isPremiumRoom
                     ? (theme) => theme.palette.mode === 'dark'
                       ? 'linear-gradient(135deg, #FBBF24 0%, #F59E0B 50%, #D97706 100%)'
@@ -367,7 +368,9 @@ const RoomListPage = () => {
                   <Chip 
                     label="✨ Premium" 
                     size="small" 
-                    sx={{ 
+                    sx={{
+                      height: { xs: 20, md: 24 },
+                      fontSize: { xs: '0.7rem', md: '0.8125rem' }, 
                       background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.2) 0%, rgba(245, 158, 11, 0.15) 100%)',
                       border: '1px solid rgba(251, 191, 36, 0.3)',
                       color: '#FBBF24',
@@ -376,24 +379,24 @@ const RoomListPage = () => {
                     }}
                   />
                 )}
-                {isOwner && <Chip label="Owner" size="small" color="primary" />}
+                {isOwner && <Chip label="Owner" size="small" color="primary" sx={{ height: { xs: 20, md: 24 }, fontSize: { xs: '0.7rem', md: '0.8125rem' } }} />}
                 {room.isPublic ? (
-                  <Chip icon={<Public />} label="Public" size="small" color="success" />
+                  <Chip icon={<Public sx={{ fontSize: { xs: 14, md: 18 } }} />} label="Public" size="small" color="success" sx={{ height: { xs: 20, md: 24 }, fontSize: { xs: '0.7rem', md: '0.8125rem' } }} />
                 ) : (
-                  <Chip icon={<Lock />} label="Private" size="small" />
+                  <Chip icon={<Lock sx={{ fontSize: { xs: 14, md: 18 } }} />} label="Private" size="small" sx={{ height: { xs: 20, md: 24 }, fontSize: { xs: '0.7rem', md: '0.8125rem' } }} />
                 )}
               </Box>
             </Box>
           </Box>
         </Box>
 
-        <CardContent sx={{ pt: 2 }}>
+        <CardContent sx={{ pt: { xs: 1.5, md: 2 }, px: { xs: 1.5, md: 2 }, pb: { xs: 1.5, md: 2 } }}>
 
           {room.description && (
             <Typography 
               variant="body2" 
               color="text.secondary" 
-              sx={{ mb: 2, minHeight: '40px' }}
+              sx={{ mb: { xs: 1.5, md: 2 }, minHeight: { xs: '30px', md: '40px' }, fontSize: { xs: '0.8rem', md: '0.875rem' } }}
             >
               {room.description.length > 120 
                 ? `${room.description.substring(0, 120)}...` 
@@ -402,18 +405,18 @@ const RoomListPage = () => {
           )}
 
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Box sx={{ display: 'flex', gap: 2 }}>
+            <Box sx={{ display: 'flex', gap: { xs: 1.5, md: 2 } }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <Groups fontSize="small" color="action" />
-                <Typography variant="body2" color="text.secondary">
+                <Groups sx={{ fontSize: { xs: 16, md: 20 } }} color="action" />
+                <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', md: '0.875rem' } }}>
                   {memberCount}/{room.maxMembers || 50}
                 </Typography>
               </Box>
               
               {myMember && (
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <EmojiEvents fontSize="small" color="warning" />
-                  <Typography variant="body2" color="text.secondary">
+                  <EmojiEvents sx={{ fontSize: { xs: 16, md: 20 } }} color="warning" />
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', md: '0.875rem' } }}>
                     {myMember.points} pts
                   </Typography>
                 </Box>
@@ -421,14 +424,14 @@ const RoomListPage = () => {
             </Box>
 
             {room.tasks && (
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: { xs: '0.7rem', md: '0.75rem' } }}>
                 {room.tasks.filter(t => t.isActive).length} tasks
               </Typography>
             )}
           </Box>
 
           {!isMember && room.isPublic && (
-            <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+            <Box sx={{ mt: { xs: 1.5, md: 2 }, pt: { xs: 1.5, md: 2 }, borderTop: '1px solid', borderColor: 'divider' }}>
               {memberCount >= (room.maxMembers || 50) ? (
                 <Button 
                   variant="outlined" 
