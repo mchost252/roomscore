@@ -49,7 +49,7 @@ export const CosmicNudgeAnimation = ({ show, onComplete }) => {
 
   useEffect(() => {
     if (show) {
-      const timer = setTimeout(() => onComplete?.(), 2000); // Extended to 2 seconds
+      const timer = setTimeout(() => onComplete?.(), 2000);
       return () => clearTimeout(timer);
     }
   }, [show, onComplete]);
@@ -237,7 +237,7 @@ export const CosmicFireAnimation = ({ show, onComplete }) => {
 
   useEffect(() => {
     if (show) {
-      const timer = setTimeout(() => onComplete?.(), 2000); // Extended to 2 seconds
+      const timer = setTimeout(() => onComplete?.(), 2000);
       return () => clearTimeout(timer);
     }
   }, [show, onComplete]);
