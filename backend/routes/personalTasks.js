@@ -1,18 +1,22 @@
 const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth');
-const PersonalTask = require('../models/PersonalTask');
-const User = require('../models/User');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 
 // @route   GET /api/personal-tasks
 // @desc    Get user's personal tasks
 // @access  Private
 router.get('/', protect, async (req, res, next) => {
   try {
-    const tasks = await PersonalTask.find({
-      userId: req.user.id,
-      isActive: true
-    }).sort({ createdAt: -1 });
+    const tasks = await prisma.personalTask.findMany({
+      where: {
+        userId: req.user.id
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
 
     res.json({ success: true, tasks });
   } catch (error) {
@@ -25,19 +29,20 @@ router.get('/', protect, async (req, res, next) => {
 // @access  Private
 router.post('/', protect, async (req, res, next) => {
   try {
-    const { title, description, frequency, points, dueDate } = req.body;
+    const { title, description, taskType, dueDate } = req.body;
 
     if (!title || title.trim().length === 0) {
       return res.status(400).json({ success: false, message: 'Title is required' });
     }
 
-    const task = await PersonalTask.create({
-      userId: req.user.id,
-      title: title.trim(),
-      description: description?.trim(),
-      frequency: frequency || 'daily',
-      points: points || 10,
-      dueDate
+    const task = await prisma.personalTask.create({
+      data: {
+        userId: req.user.id,
+        title: title.trim(),
+        description: description?.trim(),
+        taskType: taskType || 'daily',
+        dueDate: dueDate ? new Date(dueDate) : null
+      }
     });
 
     res.json({ success: true, task });
@@ -51,28 +56,31 @@ router.post('/', protect, async (req, res, next) => {
 // @access  Private
 router.put('/:taskId', protect, async (req, res, next) => {
   try {
-    const task = await PersonalTask.findById(req.params.taskId);
+    const task = await prisma.personalTask.findUnique({
+      where: { id: req.params.taskId }
+    });
 
     if (!task) {
       return res.status(404).json({ success: false, message: 'Task not found' });
     }
 
-    if (task.userId.toString() !== req.user.id) {
+    if (task.userId !== req.user.id) {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
-    const { title, description, frequency, points, dueDate, isActive } = req.body;
+    const { title, description, taskType, dueDate } = req.body;
 
-    if (title !== undefined) task.title = title.trim();
-    if (description !== undefined) task.description = description.trim();
-    if (frequency !== undefined) task.frequency = frequency;
-    if (points !== undefined) task.points = points;
-    if (dueDate !== undefined) task.dueDate = dueDate;
-    if (isActive !== undefined) task.isActive = isActive;
+    const updatedTask = await prisma.personalTask.update({
+      where: { id: req.params.taskId },
+      data: {
+        ...(title !== undefined && { title: title.trim() }),
+        ...(description !== undefined && { description: description.trim() }),
+        ...(taskType !== undefined && { taskType }),
+        ...(dueDate !== undefined && { dueDate: dueDate ? new Date(dueDate) : null })
+      }
+    });
 
-    await task.save();
-
-    res.json({ success: true, task });
+    res.json({ success: true, task: updatedTask });
   } catch (error) {
     next(error);
   }
@@ -83,17 +91,21 @@ router.put('/:taskId', protect, async (req, res, next) => {
 // @access  Private
 router.delete('/:taskId', protect, async (req, res, next) => {
   try {
-    const task = await PersonalTask.findById(req.params.taskId);
+    const task = await prisma.personalTask.findUnique({
+      where: { id: req.params.taskId }
+    });
 
     if (!task) {
       return res.status(404).json({ success: false, message: 'Task not found' });
     }
 
-    if (task.userId.toString() !== req.user.id) {
+    if (task.userId !== req.user.id) {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
-    await task.deleteOne();
+    await prisma.personalTask.delete({
+      where: { id: req.params.taskId }
+    });
 
     res.json({ success: true, message: 'Task deleted' });
   } catch (error) {
@@ -106,13 +118,15 @@ router.delete('/:taskId', protect, async (req, res, next) => {
 // @access  Private
 router.post('/:taskId/complete', protect, async (req, res, next) => {
   try {
-    const task = await PersonalTask.findById(req.params.taskId);
+    const task = await prisma.personalTask.findUnique({
+      where: { id: req.params.taskId }
+    });
 
     if (!task) {
       return res.status(404).json({ success: false, message: 'Task not found' });
     }
 
-    if (task.userId.toString() !== req.user.id) {
+    if (task.userId !== req.user.id) {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
@@ -120,16 +134,25 @@ router.post('/:taskId/complete', protect, async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Task already completed today' });
     }
 
-    task.isCompleted = true;
-    task.completedAt = new Date();
-    await task.save();
+    const updatedTask = await prisma.personalTask.update({
+      where: { id: req.params.taskId },
+      data: {
+        isCompleted: true,
+        completedAt: new Date()
+      }
+    });
 
-    // Award points
-    const user = await User.findById(req.user.id);
-    user.totalPoints += task.points;
-    await user.save();
+    // Increment user's total tasks completed
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        totalTasksCompleted: {
+          increment: 1
+        }
+      }
+    });
 
-    res.json({ success: true, task, pointsAwarded: task.points });
+    res.json({ success: true, task: updatedTask });
   } catch (error) {
     next(error);
   }

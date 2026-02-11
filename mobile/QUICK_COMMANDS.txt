@@ -1,0 +1,32 @@
+# QUICK ADB COMMANDS - Copy & Paste Ready
+# Always include PATH reload for each command in VSCode
+
+# 1. LAUNCH APP
+$env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User'); adb shell am start -n com.krios.hub/.MainActivity
+
+# 2. CHECK DEVICES
+$env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User'); adb devices
+
+# 3. VIEW NATIVE MODULE LOGS
+$env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User'); adb logcat | Select-String "KriosEngine"
+
+# 4. VIEW REACT NATIVE LOGS
+$env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User'); adb logcat | Select-String "ReactNativeJS"
+
+# 5. CLEAR APP DATA
+$env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User'); adb shell pm clear com.krios.hub
+
+# 6. UNINSTALL APP
+$env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User'); adb uninstall com.krios.hub
+
+# 7. REINSTALL APK
+$env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User'); adb install -r "C:\Users\obinn\Downloads\your-app.apk"
+
+# 8. TEST BACKEND CONNECTION (replace with your IP)
+$env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User'); adb shell curl http://192.168.1.X:5000/health
+
+# 9. STOP APP
+$env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User'); adb shell am force-stop com.krios.hub
+
+# 10. VIEW ALL APP LOGS
+$env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User'); adb logcat | Select-String "com.krios"

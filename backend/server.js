@@ -22,16 +22,14 @@ const directMessageRoutes = require('./routes/directMessages');
 const nudgeRoutes = require('./routes/nudges');
 const appreciationRoutes = require('./routes/appreciations');
 const orbitSummaryRoutes = require('./routes/orbitSummary');
+const personalTaskRoutes = require('./routes/personalTasks');
 
 // Import socket handler
 const socketHandler = require('./socket/socketHandler');
 const { setIO } = require('./socket/io');
 
-// Cron jobs (legacy Mongo implementation) are disabled by default.
-// Enable only if you have migrated cron jobs to Prisma.
-if (process.env.ENABLE_CRON_JOBS === 'true') {
-  require('./services/cronJobs');
-}
+// Cron jobs removed - chat retention handled by chatRetentionService
+// Other cron functionality can be re-implemented with Prisma if needed
 
 const app = express();
 const server = http.createServer(app);
@@ -160,6 +158,7 @@ app.use('/api/direct-messages', directMessageRoutes);
 app.use('/api/nudges', nudgeRoutes);
 app.use('/api/appreciations', appreciationRoutes);
 app.use('/api/orbit-summary', orbitSummaryRoutes);
+app.use('/api/personal-tasks', personalTaskRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
