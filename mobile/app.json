@@ -1,58 +1,45 @@
 {
   "expo": {
-    "name": "KRIOS",
-    "slug": "krios-hub",
+    "name": "RoomScore",
+    "slug": "roomscore-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "auto",
-    "newArchEnabled": true,
-    "scheme": "krios",
+    "userInterfaceStyle": "automatic",
+    "scheme": "roomscore",
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "bundleIdentifier": "com.krios.hub",
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.roomscore.mobile"
     },
     "android": {
-      "package": "com.krios.hub",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1a1a2e"
+        "backgroundColor": "#ffffff"
       },
-      "permissions": [
-        "INTERNET",
-        "ACCESS_NETWORK_STATE",
-        "VIBRATE"
-      ],
-      "usesCleartextTraffic": true,
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.roomscore.mobile",
+      "softInputMode": "adjustResize",
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "extra": {
-      "eas": {
-        "projectId": "f271459e-a0b8-45e3-badb-698624f7f677"
-      }
-    },
     "plugins": [
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "compileSdkVersion": 34,
-            "targetSdkVersion": 34,
-            "minSdkVersion": 24,
-            "buildToolsVersion": "34.0.0",
-            "usesCleartextTraffic": true
-          }
-        }
-      ]
-    ]
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "263bfc91-f69e-41cc-be03-7c8864ac7913"
+      }
+    }
   }
 }

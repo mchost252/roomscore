@@ -1,19 +1,13 @@
 {
   "cli": {
-    "version": ">= 14.0.0"
+    "version": ">= 13.2.0"
   },
   "build": {
     "development": {
       "developmentClient": true,
       "distribution": "internal",
       "android": {
-        "buildType": "apk",
-        "image": "latest",
-        "gradleCommand": ":app:assembleDebug"
-      },
-      "env": {
-        "JAVA_HOME": "/usr/lib/jvm/java-17-openjdk-amd64",
-        "GRADLE_VERSION": "8.8"
+        "buildType": "apk"
       }
     },
     "preview": {
