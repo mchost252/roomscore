@@ -25,14 +25,43 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import taskService, { PersonalTask } from '../../services/taskService';
 import aiTaskParser from '../../services/aiTaskParser';
+import Svg, { Circle } from 'react-native-svg';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// Batch 11: Animated TouchableOpacity for K button pulse
+const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 
 interface Message {
   id: number;
   text: string;
   isUser: boolean;
+  timestamp?: number;
+  isSuggestion?: boolean;
+  suggestionData?: {
+    title: string;
+    priority?: string;
+    dueDate?: string;
+    reason?: string;
+  };
 }
+
+// Batch 4: Mood chips configuration
+const MOOD_CHIPS = [
+  { key: 'calm', label: 'Calm', icon: 'leaf-outline', color: '#10b981', bgColor: 'rgba(16, 185, 129, 0.15)' },
+  { key: 'focused', label: 'Focused', icon: 'eye-outline', color: '#3b82f6', bgColor: 'rgba(59, 130, 246, 0.15)' },
+  { key: 'light', label: 'Light', icon: 'sunny-outline', color: '#f59e0b', bgColor: 'rgba(245, 158, 11, 0.15)' },
+  { key: 'overwhelmed', label: 'Overwhelmed', icon: 'cloud-outline', color: '#ef4444', bgColor: 'rgba(239, 68, 68, 0.15)' },
+  { key: 'motivated', label: 'Motivated', icon: 'flame-outline', color: '#8b5cf6', bgColor: 'rgba(139, 92, 246, 0.15)' },
+];
+
+// Batch 9: Bucket chips for task modal
+const BUCKET_CHIPS = [
+  { key: 'today', label: 'Today', icon: 'today-outline' },
+  { key: 'tomorrow', label: 'Tomorrow', icon: 'calendar-outline' },
+  { key: 'thisWeek', label: 'This Week', icon: 'calendar-number-outline' },
+  { key: 'backlog', label: 'Backlog', icon: 'file-tray-outline' },
+];
 
 const DarkTheme = {
   background: '#0a0a12',
@@ -70,6 +99,41 @@ const LightTheme = {
   dimBg: 'rgba(0,0,0,0.3)',
 };
 
+// Helper functions
+const getTimeEmoji = () => {
+  const hour = new Date().getHours();
+  if (hour < 6) return '🌙';
+  if (hour < 12) return '🌅';
+  if (hour < 17) return '☀️';
+  if (hour < 21) return '🌆';
+  return '🌙';
+};
+
+const getGreeting = () => {
+    const hour = new Date().getHours();
+    const day = new Date().getDay();
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dayName = dayNames[day];
+
+    // Time-based greeting with day awareness
+    if (hour >= 5 && hour < 12) {
+      if (day === 1) return 'Fresh Monday morning';
+      if (day === 5) return 'Happy Friday morning';
+      return `Good ${dayName} morning`;
+    }
+    if (hour >= 12 && hour < 17) {
+      if (day === 5) return 'Happy Friday afternoon';
+      return `Good ${dayName} afternoon`;
+    }
+    if (hour >= 17 && hour < 21) {
+      if (day === 5) return 'Happy Friday evening';
+      return `Good ${dayName} evening`;
+    }
+    return `Good ${dayName} night`;
+  };
+
+
+
 export default function HomeScreen() {
   const { user } = useAuth();
   const { isDark, theme: themeMode, setTheme: setThemeMode } = useTheme();
@@ -100,6 +164,12 @@ export default function HomeScreen() {
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [showDurationPicker, setShowDurationPicker] = useState(false);
   const [taskFilter, setTaskFilter] = useState<'all' | 'priority' | 'dueDate'>('all');
+
+  // Batch 13: Focus session celebration and stats
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [focusStats, setFocusStats] = useState({ sessions: 0, totalMinutes: 0, efficiency: 85 });
+  const celebrationScale = useRef(new Animated.Value(0)).current;
+  const celebrationOpacity = useRef(new Animated.Value(0)).current;
   const [showFilters, setShowFilters] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -112,6 +182,29 @@ export default function HomeScreen() {
   const [newTaskDueTime, setNewTaskDueTime] = useState<string>('');
   const [newTaskFrequency, setNewTaskFrequency] = useState<'one-time' | 'daily' | 'weekly'>('one-time');
   const [isCalendarExpanded, setIsCalendarExpanded] = useState(false);
+
+  // Batch 9: Task modal states
+  const [selectedBucket, setSelectedBucket] = useState<string | null>(null);
+  const [showMoreOptions, setShowMoreOptions] = useState(false);
+  const [modalSlideAnim] = useState(new Animated.Value(0));
+  const moreOptionsAnim = useRef(new Animated.Value(0)).current;
+
+  // Batch 4: Mood chips state
+  const [selectedMood, setSelectedMood] = useState<string | null>(null);
+  const moodAnim = useRef(new Animated.Value(0)).current;
+
+  // Batch 3: Task inline action states
+  const [snoozeTaskId, setSnoozeTaskId] = useState<string | null>(null);
+  const snoozeAnim = useRef(new Animated.Value(0)).current;
+
+  // Batch 1: Toast & Undo states
+  const [toastMessage, setToastMessage] = useState('');
+  const toastUndoRef = useRef<(() => Promise<void> | void) | null>(null);
+  const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const toastAnim = useRef(new Animated.Value(0)).current;
+
+  // Batch 12: Search state
+  const [searchQuery, setSearchQuery] = useState('');
   
   const theme = isDark ? DarkTheme : LightTheme;
   
@@ -122,15 +215,141 @@ export default function HomeScreen() {
   const tasksSlideAnim = useRef(new Animated.Value(0)).current;
   const scrollViewRef = useRef<ScrollView>(null);
 
+  // Batch 10: Orb drift animations
+  const orb1Drift = useRef(new Animated.Value(0)).current;
+  const orb2Drift = useRef(new Animated.Value(0)).current;
+  const orb3Drift = useRef(new Animated.Value(0)).current;
+
+  // Batch 11: K button pulse animation
+  const kButtonPulse = useRef(new Animated.Value(1)).current;
+
+  // Load settings from AsyncStorage
+  const loadSettings = async () => {
+    try {
+      const savedNavStyle = await AsyncStorage.getItem('navStyle');
+      if (savedNavStyle) {
+        setNavStyle(savedNavStyle as 'circular' | 'drawer');
+      }
+    } catch (error) {
+      console.error('Error loading settings:', error);
+    }
+  };
+
+  // Load tasks from taskService
+  const loadTasks = async () => {
+    try {
+      const allTasks = await taskService.getLocalTasks();
+      const incompleteTasks = allTasks.filter(t => !t.isCompleted);
+      
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const nextWeek = new Date(today);
+      nextWeek.setDate(nextWeek.getDate() + 7);
+
+      // Categorize tasks
+      const upcoming = incompleteTasks.filter(t => {
+        if (!t.dueDate) return true;
+        const dueDate = new Date(t.dueDate);
+        return dueDate >= today;
+      });
+
+      const ongoing = incompleteTasks.filter(t => {
+        if (!t.dueDate) return false;
+        const dueDate = new Date(t.dueDate);
+        return dueDate < today;
+      });
+
+      const focus = upcoming.filter(t => t.priority === 'high').slice(0, 3);
+
+      setTasks(allTasks);
+      setUpcomingTasks(upcoming);
+      setOngoingTasks(ongoing);
+      setFocusTasks(focus);
+    } catch (error) {
+      console.error('Error loading tasks:', error);
+    }
+  };
+
+  // Batch 5: Get contextual lead line based on tasks and time
+  const getLeadLine = () => {
+    const hour = new Date().getHours();
+    const totalTasks = upcomingTasks.length + ongoingTasks.length;
+
+    if (selectedMood === 'overwhelmed') {
+      return "Let's break things down into manageable pieces";
+    }
+    if (selectedMood === 'motivated') {
+      return "Perfect time to crush your goals!";
+    }
+    if (selectedMood === 'calm') {
+      return "Let's ease into the day smoothly";
+    }
+
+    if (hour < 12) {
+      if (totalTasks === 0) return "Ready to plan your day?";
+      if (totalTasks <= 3) return "Light day ahead - you've got this";
+      return `${totalTasks} tasks waiting - let's prioritize`;
+    }
+    if (hour < 17) {
+      const completedToday = tasks.filter(t => t.completedAt && new Date(t.completedAt).toDateString() === new Date().toDateString()).length;
+      if (completedToday > 0) return `${completedToday} tasks completed - keep the momentum!`;
+      return "Time to make progress on your priorities";
+    }
+    if (hour < 21) {
+      return "Wrapping up the day - what's left to finish?";
+    }
+    return "Time to rest and recharge for tomorrow";
+  };
+
   useEffect(() => {
     loadSettings();
     loadTasks();
-    
+
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 800,
       useNativeDriver: true,
     }).start();
+
+    // Start orb drift animations
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(orb1Drift, { toValue: 1, duration: 8000, useNativeDriver: true }),
+        Animated.timing(orb1Drift, { toValue: 0, duration: 8000, useNativeDriver: true }),
+      ])
+    ).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(orb2Drift, { toValue: 1, duration: 12000, useNativeDriver: true }),
+        Animated.timing(orb2Drift, { toValue: 0, duration: 12000, useNativeDriver: true }),
+      ])
+    ).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(orb3Drift, { toValue: 1, duration: 10000, useNativeDriver: true }),
+        Animated.timing(orb3Drift, { toValue: 0, duration: 10000, useNativeDriver: true }),
+      ])
+    ).start();
+
+    // Batch 11: K button pulse animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(kButtonPulse, {
+          toValue: 1.06,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(kButtonPulse, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
   }, []);
 
   useFocusEffect(
@@ -258,94 +477,23 @@ export default function HomeScreen() {
     };
   }, []);
 
-  const loadSettings = async () => {
-    try {
-      const nav = await AsyncStorage.getItem('navStyle');
-      if (nav === 'circular' || nav === 'drawer') setNavStyle(nav);
-    } catch (e) {}
-  };
-
-  const loadTasks = async () => {
-    try {
-      await taskService.syncTasks();
-      const [upcoming, ongoing, focus] = await Promise.all([
-        taskService.getUpcomingTasks(),
-        taskService.getOngoingTasks(),
-        taskService.getTopPriorityTasks(3),
-      ]);
-      setUpcomingTasks(upcoming);
-      setOngoingTasks(ongoing);
-      setFocusTasks(focus);
-      setTasks(await taskService.getLocalTasks());
-    } catch (error) {
-      console.error('Error loading tasks:', error);
+  // Animate snooze dropdown
+  useEffect(() => {
+    if (snoozeTaskId) {
+      Animated.spring(snoozeAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 100,
+        friction: 10,
+      }).start();
+    } else {
+      Animated.timing(snoozeAnim, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
     }
-  };
-
-  const getTimeEmoji = () => {
-    const hour = new Date().getHours();
-    if (hour >= 5 && hour < 12) return '🌅';
-    if (hour >= 12 && hour < 17) return '☀️';
-    if (hour >= 17 && hour < 21) return '🌆';
-    return '🌙';
-  };
-
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour >= 5 && hour < 12) return 'Good morning';
-    if (hour >= 12 && hour < 17) return 'Good afternoon';
-    if (hour >= 17 && hour < 21) return 'Good evening';
-    return 'Good night';
-  };
-
-  const processAIResponse = (input: string): string => {
-    const lowerInput = input.toLowerCase();
-    
-    if (lowerInput.includes('motivate') || lowerInput.includes('motivation')) {
-      return "Small steps lead to big changes. You've got this! Every task you complete is a victory. Keep pushing forward! 💪";
-    }
-    
-    if (lowerInput.includes('suggest')) {
-      return "Suggested Tasks:\n\n📌 Review weekly goals (high)\n📌 Organize workspace (low)\n📌 Plan next week (medium)\n\nWant me to add any of these?";
-    }
-    
-    if (lowerInput.includes('analyze') || lowerInput.includes('priority') || lowerInput.includes('what\'s my')) {
-      return "Here's your task analysis:\n\n✅ High priority: 2 tasks\n📋 Medium priority: 5 tasks\n📝 Low priority: 3 tasks\n\nYou're doing great!";
-    }
-    
-    if (lowerInput.includes('tips') || lowerInput.includes('advice')) {
-      return "Here are some productivity tips:\n\n1. 🧘 Start with the hardest task\n2. 📵 Use the 2-minute rule\n3. 🎯 Focus on one thing at a time\n4. 💧 Stay hydrated!\n\nNeed help with anything specific?";
-    }
-    
-    if (lowerInput.includes('add') && lowerInput.includes('by')) {
-      const match = lowerInput.match(/add (.+?) by (\w+ \d+)/);
-      if (match) {
-        return `Done! I've added "${match[1]}" due on ${match[2]} with medium priority.`;
-      }
-    }
-    
-    if (lowerInput.includes('add') || lowerInput.includes('new task') || lowerInput.includes('create task')) {
-      return "I can help you add tasks! Just tell me:\n\n• Task name\n• Due date\n• Priority (high/medium/low)\n\nWhat would you like to add?";
-    }
-    
-    if (lowerInput.includes('yes') || lowerInput.includes('sure') || lowerInput.includes('please')) {
-      return "Done! I've added 3 tasks to your list:\n\n✅ Review weekly goals (high)\n✅ Organize workspace (low)\n✅ Plan next week (medium)";
-    }
-    
-    if (lowerInput.includes('hello') || lowerInput.includes('hi') || lowerInput.includes('hey')) {
-      return `Hey there! ${getGreeting()}, ${user?.username || 'there'}! 👋\n\nHow can I help you stay productive today?`;
-    }
-    
-    if (lowerInput.includes('thank')) {
-      return "You're welcome! 😊 Keep crushing those goals!";
-    }
-    
-    if (lowerInput.includes('bye') || lowerInput.includes('goodbye')) {
-      return "Goodbye! Come back soon! Take care! ✨";
-    }
-    
-    return "I understand! How can I assist you with your productivity today?";
-  };
+  }, [snoozeTaskId]);
 
   const handleSendMessage = async (text?: string) => {
     const textToSend = text || message;
@@ -454,8 +602,16 @@ export default function HomeScreen() {
 
   const handleCompleteTask = async (taskId: string) => {
     try {
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return;
+      
       await taskService.completeTask(taskId);
       await loadTasks();
+      
+      showToast('Task completed! 🎉', async () => {
+        await taskService.uncompleteTask(taskId);
+        await loadTasks();
+      });
     } catch (error) {
       console.error('Error completing task:', error);
     }
@@ -477,37 +633,235 @@ export default function HomeScreen() {
     setTimerSeconds(timerDuration * 60);
   };
 
+  // Batch 1: Toast & Undo functions
+  const showToast = (message: string, undoAction?: () => Promise<void> | void) => {
+    // Clear any existing toast timer
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+
+    // Store undo action in ref to avoid stale closure issues
+    toastUndoRef.current = undoAction || null;
+    setToastMessage(message);
+
+    // Animate in
+    Animated.spring(toastAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 80,
+      friction: 10,
+    }).start();
+
+    // Auto-dismiss after 4 seconds
+    toastTimerRef.current = setTimeout(() => {
+      dismissToast();
+    }, 4000);
+  };
+
+  const dismissToast = () => {
+    Animated.timing(toastAnim, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      setToastMessage('');
+      toastUndoRef.current = null;
+    });
+  };
+
+  const handleToastUndo = async () => {
+    if (toastUndoRef.current && typeof toastUndoRef.current === 'function') {
+      try {
+        await toastUndoRef.current();
+      } catch (error) {
+        console.error('Undo action failed:', error);
+      }
+    }
+    dismissToast();
+  };
+
+  // Batch 7: Context-aware prompt chips based on mood and tasks
+  const getPromptChips = () => {
+    const totalTasks = upcomingTasks.length + ongoingTasks.length;
+    
+    if (selectedMood === 'overwhelmed') {
+      return [
+        { label: 'Simplify my day', icon: 'sparkles-outline' },
+        { label: 'Most important?', icon: 'flag-outline' },
+        { label: 'Take a break', icon: 'cafe-outline' },
+      ];
+    }
+    if (selectedMood === 'motivated') {
+      return [
+        { label: 'Challenge me', icon: 'trophy-outline' },
+        { label: "What's next?", icon: 'arrow-forward-outline' },
+        { label: 'Deep focus', icon: 'fitness-outline' },
+      ];
+    }
+    if (selectedMood === 'calm') {
+      return [
+        { label: 'Ease into it', icon: 'leaf-outline' },
+        { label: 'Show my day', icon: 'calendar-outline' },
+        { label: 'Quick add', icon: 'add-circle-outline' },
+      ];
+    }
+    if (totalTasks === 0) {
+      return [
+        { label: 'Start fresh', icon: 'sunny-outline' },
+        { label: 'Set a goal', icon: 'flag-outline' },
+        { label: 'Plan week', icon: 'calendar-outline' },
+      ];
+    }
+    if (totalTasks > 5) {
+      return [
+        { label: 'Prioritize', icon: 'filter-outline' },
+        { label: 'Delegate?', icon: 'people-outline' },
+        { label: 'Focus mode', icon: 'eye-outline' },
+      ];
+    }
+    return [
+      { label: "What's next?", icon: 'arrow-forward-outline' },
+      { label: 'Show my day', icon: 'calendar-outline' },
+      { label: 'Quick add', icon: 'add-circle-outline' },
+    ];
+  };
+
+  // Batch 9: Task modal helper functions
+  const getBucketDate = (bucket: string): Date | null => {
+    const now = new Date();
+    if (bucket === 'today') {
+      now.setHours(23, 59, 0, 0);
+      return now;
+    }
+    if (bucket === 'tomorrow') {
+      now.setDate(now.getDate() + 1);
+      now.setHours(12, 0, 0, 0);
+      return now;
+    }
+    if (bucket === 'thisWeek') {
+      const dayOfWeek = now.getDay();
+      const daysUntilFriday = dayOfWeek <= 5 ? 5 - dayOfWeek : 0;
+      now.setDate(now.getDate() + Math.max(daysUntilFriday, 1));
+      now.setHours(17, 0, 0, 0);
+      return now;
+    }
+    return null;
+  };
+
+  const openTaskModal = () => {
+    setShowTaskModal(true);
+    setShowMoreOptions(false);
+    setSelectedBucket(null);
+    Animated.spring(modalSlideAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 65,
+      friction: 11,
+    }).start();
+  };
+
+  const closeTaskModal = () => {
+    Animated.timing(modalSlideAnim, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      setShowTaskModal(false);
+      setShowMoreOptions(false);
+      setSelectedBucket(null);
+      setNewTaskTitle('');
+      setNewTaskDescription('');
+      setNewTaskPriority('medium');
+      setNewTaskDueDate(null);
+    });
+  };
+
   const handleCreateTask = async () => {
     if (!newTaskTitle.trim()) return;
-    
+
     try {
+      const dueDate = selectedBucket ? getBucketDate(selectedBucket) : newTaskDueDate;
       await taskService.createTask({
         title: newTaskTitle.trim(),
+        description: newTaskDescription.trim() || undefined,
         taskType: 'one-time',
         priority: newTaskPriority,
-      });
+        dueDate: dueDate ? dueDate.toISOString() : undefined,
+      } as any);
       await loadTasks();
-      setShowTaskModal(false);
-      setNewTaskTitle('');
-      setNewTaskPriority('medium');
+      closeTaskModal();
+      showToast('Task created successfully!');
     } catch (error) {
       console.error('Error creating task:', error);
     }
   };
 
+  // Batch 2: Suggestion card handlers
+  const handleAcceptSuggestion = (suggestionData: any) => {
+    if (suggestionData) {
+      setNewTaskTitle(suggestionData.title);
+      if (suggestionData.priority) {
+        setNewTaskPriority(suggestionData.priority as 'high' | 'medium' | 'low');
+      }
+      if (suggestionData.dueDate) {
+        setNewTaskDueDate(new Date(suggestionData.dueDate));
+      }
+      setShowTaskModal(true);
+      
+      // Update the suggestion message to show accepted state
+      setMessages(prev => prev.map(msg => 
+        msg.suggestionData?.title === suggestionData.title 
+          ? { ...msg, text: msg.text + '\n\n✅ Added to your tasks!' }
+          : msg
+      ));
+    }
+  };
+
+  const handleSkipSuggestion = (suggestionTitle: string) => {
+    setMessages(prev => prev.filter(msg => 
+      !(msg.isSuggestion && msg.suggestionData?.title === suggestionTitle)
+    ));
+    showToast('Suggestion dismissed');
+  };
+
+  // Batch 12: Helper to highlight search matches
+  const highlightSearchMatch = (text: string, query: string): { text: string; match: boolean }[] => {
+    if (!query.trim()) return [{ text, match: false }];
+    const lowerText = text.toLowerCase();
+    const lowerQuery = query.toLowerCase();
+    const index = lowerText.indexOf(lowerQuery);
+    if (index === -1) return [{ text, match: false }];
+    return [
+      { text: text.slice(0, index), match: false },
+      { text: text.slice(index, index + query.length), match: true },
+      { text: text.slice(index + query.length), match: false },
+    ];
+  };
+
   const getFilteredTasks = () => {
     const currentTasks = activeTab === 'upcoming' ? upcomingTasks : ongoingTasks;
-    if (taskFilter === 'all') return currentTasks;
-    if (taskFilter === 'priority') return [...currentTasks].sort((a, b) => {
+    
+    // Batch 12: Apply search filter first
+    let filtered = currentTasks;
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = currentTasks.filter(task => 
+        task.title.toLowerCase().includes(query) ||
+        (task.description && task.description.toLowerCase().includes(query))
+      );
+    }
+    
+    if (taskFilter === 'all') return filtered;
+    if (taskFilter === 'priority') return [...filtered].sort((a, b) => {
       const priorityOrder = { high: 0, medium: 1, low: 2 };
       return (priorityOrder[a.priority || 'medium'] || 1) - (priorityOrder[b.priority || 'medium'] || 1);
     });
-    if (taskFilter === 'dueDate') return [...currentTasks].sort((a, b) => {
+    if (taskFilter === 'dueDate') return [...filtered].sort((a, b) => {
       if (!a.dueDate) return 1;
       if (!b.dueDate) return -1;
       return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
     });
-    return currentTasks;
+    return filtered;
   };
 
   useEffect(() => {
@@ -517,6 +871,8 @@ export default function HomeScreen() {
         setTimerSeconds(prev => {
           if (prev <= 1) {
             setIsTimerRunning(false);
+            // Batch 13: Trigger celebration on completion
+            handleSessionComplete();
             return 0;
           }
           return prev - 1;
@@ -525,6 +881,58 @@ export default function HomeScreen() {
     }
     return () => clearInterval(interval);
   }, [isTimerRunning, timerSeconds]);
+
+  // Batch 13: Load focus stats from AsyncStorage
+  const loadFocusStats = async () => {
+    try {
+      const statsJson = await AsyncStorage.getItem('focusStats');
+      if (statsJson) {
+        setFocusStats(JSON.parse(statsJson));
+      }
+    } catch (error) {
+      console.error('Error loading focus stats:', error);
+    }
+  };
+
+  // Batch 13: Save focus stats to AsyncStorage
+  const saveFocusStats = async (stats: typeof focusStats) => {
+    try {
+      await AsyncStorage.setItem('focusStats', JSON.stringify(stats));
+    } catch (error) {
+      console.error('Error saving focus stats:', error);
+    }
+  };
+
+  // Batch 13: Handle session complete with celebration
+  const handleSessionComplete = async () => {
+    const newStats = {
+      sessions: focusStats.sessions + 1,
+      totalMinutes: focusStats.totalMinutes + timerDuration,
+      efficiency: Math.min(100, focusStats.efficiency + 2),
+    };
+    setFocusStats(newStats);
+    await saveFocusStats(newStats);
+    
+    // Trigger celebration animation
+    setShowCelebration(true);
+    Animated.parallel([
+      Animated.spring(celebrationScale, { toValue: 1, tension: 50, friction: 5, useNativeDriver: true }),
+      Animated.timing(celebrationOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+    ]).start();
+
+    // Auto-dismiss after 3 seconds
+    setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(celebrationScale, { toValue: 0, duration: 200, useNativeDriver: true }),
+        Animated.timing(celebrationOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+      ]).start(() => setShowCelebration(false));
+    }, 3000);
+  };
+
+  // Load focus stats on mount
+  useEffect(() => {
+    loadFocusStats();
+  }, []);
 
   const circularNavItems: Array<{icon: any; label: string; route: string; color: string; angle: number}> = [
     { icon: 'home-outline' as const, label: 'Home', route: '/(home)', color: '#6366f1', angle: 0 },
@@ -550,6 +958,66 @@ export default function HomeScreen() {
     setShowNavMenu(false);
     setShowCircularNav(false);
     setShowTasks(false);
+  };
+
+  // Batch 3: Task inline action handlers
+  const getTaskBucket = (task: PersonalTask): string => {
+    if (!task.dueDate) return 'Backlog';
+    const now = new Date();
+    const due = new Date(task.dueDate);
+    const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    
+    if (diffDays < 0) return 'Overdue';
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Tomorrow';
+    if (diffDays <= 7) return 'This week';
+    return 'Later';
+  };
+
+  const handleSnoozeTask = async (taskId: string, minutes: number) => {
+    try {
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return;
+      
+      const newDueDate = new Date();
+      newDueDate.setMinutes(newDueDate.getMinutes() + minutes);
+      
+      await taskService.updateTask(taskId, { 
+        dueDate: newDueDate.toISOString() 
+      });
+      await loadTasks();
+      setSnoozeTaskId(null);
+      
+      const label = minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h`;
+      showToast(`Snoozed for ${label}`, async () => {
+        // Undo: restore original due date
+        await taskService.updateTask(taskId, { 
+          dueDate: task.dueDate 
+        });
+        await loadTasks();
+      });
+    } catch (error) {
+      console.error('Error snoozing task:', error);
+    }
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return;
+      
+      await taskService.deleteTask(taskId);
+      await loadTasks();
+      setSnoozeTaskId(null);
+
+      showToast('Task deleted', async () => {
+        // Undo: restore task by setting pendingDelete to false
+        await taskService.updateTask(taskId, { pendingDelete: false });
+        await loadTasks();
+      });
+    } catch (error) {
+      console.error('Error deleting task:', error);
+    }
   };
 
   const handleKPress = () => {
@@ -582,8 +1050,68 @@ export default function HomeScreen() {
         pointerEvents="none"
       />
       
-      <View style={[styles.glowOrb1, isDark && styles.glowOrb1Dark]} pointerEvents="none" />
-      <View style={[styles.glowOrb2, isDark && styles.glowOrb2Dark]} pointerEvents="none" />
+      {/* Batch 10: Animated Glow Orbs with Drift */}
+      <Animated.View
+        style={[
+          styles.glowOrb1,
+          isDark && styles.glowOrb1Dark,
+          {
+            transform: [{
+              translateX: orb1Drift.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 30]
+              })
+            }, {
+              translateY: orb1Drift.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 20]
+              })
+            }]
+          }
+        ]}
+        pointerEvents="none"
+      />
+      <Animated.View
+        style={[
+          styles.glowOrb2,
+          isDark && styles.glowOrb2Dark,
+          {
+            transform: [{
+              translateX: orb2Drift.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, -25]
+              })
+            }, {
+              translateY: orb2Drift.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, -15]
+              })
+            }]
+          }
+        ]}
+        pointerEvents="none"
+      />
+      {/* Batch 10: Third Glow Orb (Teal) */}
+      <Animated.View
+        style={[
+          styles.glowOrb3,
+          isDark && styles.glowOrb3Dark,
+          {
+            transform: [{
+              translateX: orb3Drift.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 20]
+              })
+            }, {
+              translateY: orb3Drift.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, -25]
+              })
+            }]
+          }
+        ]}
+        pointerEvents="none"
+      />
 
       {/* Dim Background when nav is open */}
       {isNavOpen && (
@@ -613,9 +1141,75 @@ export default function HomeScreen() {
                 {getGreeting()}, {user?.username || 'there'}!
               </Text>
             </View>
+            <Text style={[styles.leadLine, { color: theme.textSecondary }]}>
+              {getLeadLine()}
+            </Text>
           </View>
 
-          <Pressable 
+          {/* Batch 4: Mood Chips */}
+          <View style={styles.moodSection}>
+            <Text style={[styles.moodLabel, { color: theme.textSecondary }]}>How are you feeling?</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.moodChipsContainer}
+            >
+              {MOOD_CHIPS.map((mood) => {
+                const isSelected = selectedMood === mood.key;
+                return (
+                  <TouchableOpacity
+                    key={mood.key}
+                    style={[
+                      styles.moodChip,
+                      {
+                        backgroundColor: isSelected ? mood.bgColor : theme.surface,
+                        borderColor: isSelected ? mood.color : theme.border,
+                        borderWidth: isSelected ? 2 : 1,
+                      }
+                    ]}
+                    onPress={() => {
+                      setSelectedMood(isSelected ? null : mood.key);
+                      // Animate selection
+                      Animated.spring(moodAnim, {
+                        toValue: isSelected ? 0 : 1,
+                        useNativeDriver: true,
+                        tension: 100,
+                        friction: 8,
+                      }).start();
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name={mood.icon as any}
+                      size={18}
+                      color={isSelected ? mood.color : theme.textTertiary}
+                    />
+                    <Text
+                      style={[
+                        styles.moodChipText,
+                        {
+                          color: isSelected ? mood.color : theme.textSecondary,
+                          fontWeight: isSelected ? '700' : '500',
+                        }
+                      ]}
+                    >
+                      {mood.label}
+                    </Text>
+                    {isSelected && (
+                      <View style={[styles.moodIndicator, { backgroundColor: mood.color }]} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            {selectedMood && (
+              <Text style={[styles.moodContext, { color: theme.textTertiary }]}>
+                AI will adjust responses for your {MOOD_CHIPS.find(m => m.key === selectedMood)?.label.toLowerCase()} state
+              </Text>
+            )}
+          </View>
+
+          <Pressable
             style={[styles.calendarSection, { backgroundColor: theme.surface, borderColor: theme.border }]}
             onPress={() => {
               if (!isCalendarExpanded) {
@@ -693,6 +1287,36 @@ export default function HomeScreen() {
             />
           </Pressable>
 
+          {/* Batch 6: Up Next Preview */}
+          {!showTasks && upcomingTasks.length > 0 && (
+            <TouchableOpacity
+              style={[styles.upNextContainer, { backgroundColor: theme.surface, borderColor: theme.border }]}
+              onPress={() => setShowTasks(true)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.upNextLeft}>
+                <View style={[styles.upNextDot, { backgroundColor: theme.primary }]} />
+                <View>
+                  <Text style={[styles.upNextLabel, { color: theme.primary }]}>UP NEXT</Text>
+                  <Text style={[styles.upNextTitle, { color: theme.text }]} numberOfLines={1}>
+                    {upcomingTasks[0].title}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.upNextRight}>
+                <Text style={[styles.upNextTime, { color: theme.textTertiary }]}>
+                  {upcomingTasks[0].dueDate ? formatDate(upcomingTasks[0].dueDate) : 'No due date'}
+                </Text>
+                {upcomingTasks.length > 1 && (
+                  <View style={[styles.upNextBadge, { backgroundColor: theme.primary + '20' }]}>
+                    <Text style={[styles.upNextBadgeText, { color: theme.primary }]}>+{upcomingTasks.length - 1}</Text>
+                  </View>
+                )}
+                <Ionicons name="chevron-forward" size={18} color={theme.textTertiary} />
+              </View>
+            </TouchableOpacity>
+          )}
+
           {showTasks ? (
             <>
               {/* Tasks Content */}
@@ -763,7 +1387,19 @@ export default function HomeScreen() {
                           ))}
                         </View>
                       )}
-                      <View style={[styles.focusCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                        <View style={[styles.focusCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                        {/* Batch 8: Enhanced focus mode with current task indicator */}
+                        {isTimerRunning && focusTasks.length > 0 && (
+                          <View style={[styles.focusedTaskHeader, { backgroundColor: theme.primary + '15' }]}>
+                            <Ionicons name="flame" size={16} color={theme.primary} />
+                            <Text style={[styles.focusedTaskLabel, { color: theme.primary }]}>FOCUSING ON</Text>
+                          </View>
+                        )}
+                        {isTimerRunning && focusTasks.length > 0 && (
+                          <Text style={[styles.focusedTaskTitle, { color: theme.text }]} numberOfLines={2}>
+                            {focusTasks[0].title}
+                          </Text>
+                        )}
                         <LinearGradient
                           colors={['#6366f1', '#8b5cf6']}
                           start={{ x: 0, y: 0 }}
@@ -771,17 +1407,48 @@ export default function HomeScreen() {
                           style={styles.focusGradient}
                         >
                           <View style={styles.focusIconContainer}>
-                            <Ionicons name="bulb" size={32} color="#fff" />
+                            <Ionicons name={isTimerRunning ? "flame" : "bulb"} size={32} color="#fff" />
                           </View>
                         </LinearGradient>
-                        <Text style={[styles.focusTitle, { color: theme.text }]}>Focus Mode</Text>
-                        <Text style={[styles.focusSubtitle, { color: theme.textTertiary }]}>
-                          Set a timer and minimize distractions
+                        <Text style={[styles.focusTitle, { color: theme.text }]}>
+                          {isTimerRunning ? 'Deep Focus' : 'Focus Mode'}
                         </Text>
+                        <Text style={[styles.focusSubtitle, { color: theme.textTertiary }]}>
+                          {isTimerRunning ? 'Stay in the zone!' : 'Set a timer and minimize distractions'}
+                        </Text>
+                        {/* Batch 13: SVG Progress Ring around timer */}
                         <View style={styles.focusTimerContainer}>
-                          <Text style={[styles.focusTimer, { color: theme.primary }]}>
-                            {Math.floor(timerSeconds / 60)}:{(timerSeconds % 60).toString().padStart(2, '0')}
-                          </Text>
+                          <View style={styles.progressRingContainer}>
+                            <Svg width={140} height={140} style={styles.progressRing}>
+                              {/* Background circle */}
+                              <Circle
+                                cx={70}
+                                cy={70}
+                                r={62}
+                                stroke={isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}
+                                strokeWidth={6}
+                                fill="transparent"
+                              />
+                              {/* Progress circle */}
+                              <Circle
+                                cx={70}
+                                cy={70}
+                                r={62}
+                                stroke={isTimerRunning ? theme.primary : theme.textTertiary}
+                                strokeWidth={6}
+                                fill="transparent"
+                                strokeDasharray={2 * Math.PI * 62}
+                                strokeDashoffset={2 * Math.PI * 62 * (1 - timerSeconds / (timerDuration * 60))}
+                                strokeLinecap="round"
+                                transform="rotate(-90, 70, 70)"
+                              />
+                            </Svg>
+                            <View style={styles.timerTextContainer}>
+                              <Text style={[styles.focusTimer, { color: theme.primary }]}>
+                                {Math.floor(timerSeconds / 60)}:{(timerSeconds % 60).toString().padStart(2, '0')}
+                              </Text>
+                            </View>
+                          </View>
                         </View>
                         {!isTimerRunning ? (
                           <TouchableOpacity 
@@ -824,20 +1491,56 @@ export default function HomeScreen() {
 
                       <View style={[styles.focusStatsCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                         <View style={styles.focusStat}>
-                          <Text style={[styles.focusStatValue, { color: theme.primary }]}>4</Text>
+                          <Text style={[styles.focusStatValue, { color: theme.primary }]}>{focusStats.sessions}</Text>
                           <Text style={[styles.focusStatLabel, { color: theme.textTertiary }]}>Sessions</Text>
                         </View>
                         <View style={styles.focusStatDivider} />
                         <View style={styles.focusStat}>
-                          <Text style={[styles.focusStatValue, { color: theme.accent }]}>1h 40m</Text>
+                          <Text style={[styles.focusStatValue, { color: theme.accent }]}>
+                            {Math.floor(focusStats.totalMinutes / 60)}h {focusStats.totalMinutes % 60}m
+                          </Text>
                           <Text style={[styles.focusStatLabel, { color: theme.textTertiary }]}>Focused</Text>
                         </View>
                         <View style={styles.focusStatDivider} />
                         <View style={styles.focusStat}>
-                          <Text style={[styles.focusStatValue, { color: theme.success }]}>85%</Text>
+                          <Text style={[styles.focusStatValue, { color: theme.success }]}>{focusStats.efficiency}%</Text>
                           <Text style={[styles.focusStatLabel, { color: theme.textTertiary }]}>Efficiency</Text>
                         </View>
                       </View>
+
+                      {/* Batch 13: Celebration Overlay */}
+                      {showCelebration && (
+                        <Animated.View 
+                          style={[
+                            styles.celebrationOverlay,
+                            {
+                              opacity: celebrationOpacity,
+                              transform: [{ scale: celebrationScale }],
+                            }
+                          ]}
+                        >
+                          <LinearGradient
+                            colors={['#6366f1', '#8b5cf6', '#a855f7']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.celebrationCard}
+                          >
+                            <Ionicons name="trophy" size={48} color="#fbbf24" />
+                            <Text style={styles.celebrationTitle}>Session Complete!</Text>
+                            <Text style={styles.celebrationSubtitle}>Great focus! You completed a {timerDuration} minute session.</Text>
+                            <View style={styles.celebrationStats}>
+                              <View style={styles.celebrationStat}>
+                                <Text style={styles.celebrationStatValue}>{focusStats.sessions}</Text>
+                                <Text style={styles.celebrationStatLabel}>Total Sessions</Text>
+                              </View>
+                              <View style={styles.celebrationStat}>
+                                <Text style={styles.celebrationStatValue}>{focusStats.totalMinutes}</Text>
+                                <Text style={styles.celebrationStatLabel}>Minutes Focused</Text>
+                              </View>
+                            </View>
+                          </LinearGradient>
+                        </Animated.View>
+                      )}
                     </View>
                   </ScrollView>
                 ) : (
@@ -883,13 +1586,27 @@ export default function HomeScreen() {
                       
                       {getFilteredTasks().length === 0 ? (
                         <View style={styles.emptyState}>
-                          <Ionicons name="checkmark-done-circle-outline" size={64} color={theme.textTertiary} />
-                          <Text style={[styles.emptyStateText, { color: theme.textTertiary }]}>
-                            {activeTab === 'upcoming' ? 'No upcoming tasks! 🎉' : 'No ongoing tasks'}
-                          </Text>
-                          <Text style={[styles.emptyStateSubtext, { color: theme.textTertiary }]}>
-                            {activeTab === 'upcoming' ? 'Add a new task to get started' : 'Start a task to see it here'}
-                          </Text>
+                          {searchQuery.trim() ? (
+                            <>
+                              <Ionicons name="search-outline" size={64} color={theme.textTertiary} />
+                              <Text style={[styles.emptyStateText, { color: theme.textTertiary }]}>
+                                No tasks match "{searchQuery}"
+                              </Text>
+                              <Text style={[styles.emptyStateSubtext, { color: theme.textTertiary }]}>
+                                Try a different search term
+                              </Text>
+                            </>
+                          ) : (
+                            <>
+                              <Ionicons name="checkmark-done-circle-outline" size={64} color={theme.textTertiary} />
+                              <Text style={[styles.emptyStateText, { color: theme.textTertiary }]}>
+                                {activeTab === 'upcoming' ? 'No upcoming tasks! 🎉' : 'No ongoing tasks'}
+                              </Text>
+                              <Text style={[styles.emptyStateSubtext, { color: theme.textTertiary }]}>
+                                {activeTab === 'upcoming' ? 'Add a new task to get started' : 'Start a task to see it here'}
+                              </Text>
+                            </>
+                          )}
                         </View>
                       ) : (
                         <FlatList
@@ -900,25 +1617,104 @@ export default function HomeScreen() {
                           showsVerticalScrollIndicator={false}
                           renderItem={({ item: task }) => {
                             const color = task.priority === 'high' ? '#ef4444' : task.priority === 'medium' ? '#f59e0b' : '#10b981';
+                            const isSnoozing = snoozeTaskId === task.id;
+                            const bucket = getTaskBucket(task);
+                            const progress = task.dueDate && task.createdAt
+                              ? Math.min(1, Math.max(0, (Date.now() - new Date(task.createdAt).getTime()) / (new Date(task.dueDate).getTime() - new Date(task.createdAt).getTime())))
+                              : 0;
                             
                             return (
-                              <TouchableOpacity 
-                                style={[styles.taskCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                              <View 
+                                style={[styles.taskCard, { backgroundColor: theme.surface, borderColor: theme.border, borderLeftWidth: 3, borderLeftColor: color }]}
                               >
-                                <View style={[styles.taskPriorityDot, { backgroundColor: color }]} />
                                 <View style={styles.taskContent}>
-                                  <Text style={[styles.taskTitle, { color: theme.text }]}>{task.title}</Text>
-                                  <Text style={[styles.taskTime, { color: theme.textTertiary }]}>
-                                    {task.dueDate ? formatDate(task.dueDate) : 'No due date'}
+                                  <View style={styles.taskTitleRow}>
+                                    {searchQuery.trim() ? (
+                                      <Text style={[styles.taskTitle, { color: theme.text }]} numberOfLines={1}>
+                                        {highlightSearchMatch(task.title, searchQuery).map((part, i) => (
+                                          <Text key={i} style={part.match ? { backgroundColor: theme.primary + '40', color: theme.primary } : {}}>
+                                            {part.text}
+                                          </Text>
+                                        ))}
+                                      </Text>
+                                    ) : (
+                                      <Text style={[styles.taskTitle, { color: theme.text }]} numberOfLines={1}>{task.title}</Text>
+                                    )}
+                                  </View>
+                                  <Text style={[styles.taskSubtitle, { color: theme.textTertiary }]}>
+                                    {bucket} {task.dueDate ? ` · ${formatDate(task.dueDate)}` : ''}
                                   </Text>
+                                  {/* Progress bar for ongoing tasks */}
+                                  {progress > 0 && activeTab === 'ongoing' && (
+                                    <View style={[styles.taskProgressBg, { backgroundColor: theme.surfaceActive }]}>
+                                      <View style={[styles.taskProgressFill, { backgroundColor: color, width: `${Math.round(progress * 100)}%` }]} />
+                                    </View>
+                                  )}
                                 </View>
-                                <TouchableOpacity 
-                                  style={styles.taskCheck}
-                                  onPress={() => handleCompleteTask(task.id)}
-                                >
-                                  <Ionicons name={task.completedAt ? "checkmark-circle" : "ellipse-outline"} size={24} color={task.completedAt ? theme.success : theme.textTertiary} />
-                                </TouchableOpacity>
-                              </TouchableOpacity>
+                                {/* Inline action icons - Simple and clean */}
+                                <View style={styles.taskActions}>
+                                  <TouchableOpacity style={styles.taskActionIcon} onPress={() => handleCompleteTask(task.id)}>
+                                    <Ionicons name="checkmark-circle-outline" size={20} color={theme.success} />
+                                  </TouchableOpacity>
+                                  <TouchableOpacity style={styles.taskActionIcon} onPress={() => setSnoozeTaskId(isSnoozing ? null : task.id)}>
+                                    <Ionicons name={isSnoozing ? "chevron-up" : "time-outline"} size={20} color={isSnoozing ? theme.primary : theme.warning} />
+                                  </TouchableOpacity>
+                                  <TouchableOpacity style={styles.taskActionIcon} onPress={() => handleDeleteTask(task.id)}>
+                                    <Ionicons name="trash-outline" size={20} color={theme.textTertiary} />
+                                  </TouchableOpacity>
+                                </View>
+
+                                {/* Snooze dropdown - Smooth animated expansion */}
+                                {isSnoozing && (
+                                  <Animated.View
+                                    style={[
+                                      styles.snoozeDropdown,
+                                      {
+                                        borderTopColor: theme.border,
+                                        opacity: snoozeAnim,
+                                        transform: [{
+                                          translateY: snoozeAnim.interpolate({
+                                            inputRange: [0, 1],
+                                            outputRange: [-10, 0]
+                                          })
+                                        }]
+                                      }
+                                    ]}
+                                  >
+                                    <Text style={[styles.snoozeLabel, { color: theme.textSecondary }]}>Snooze until:</Text>
+                                    <View style={styles.snoozeButtonsRow}>
+                                      <TouchableOpacity
+                                        style={[styles.snoozeChip, { borderColor: theme.border, backgroundColor: theme.surfaceActive }]}
+                                        onPress={() => handleSnoozeTask(task.id, 10)}
+                                      >
+                                        <Ionicons name="time-outline" size={14} color={theme.primary} />
+                                        <Text style={[styles.snoozeChipText, { color: theme.text }]}>10 min</Text>
+                                      </TouchableOpacity>
+                                      <TouchableOpacity
+                                        style={[styles.snoozeChip, { borderColor: theme.border, backgroundColor: theme.surfaceActive }]}
+                                        onPress={() => handleSnoozeTask(task.id, 30)}
+                                      >
+                                        <Ionicons name="time-outline" size={14} color={theme.primary} />
+                                        <Text style={[styles.snoozeChipText, { color: theme.text }]}>30 min</Text>
+                                      </TouchableOpacity>
+                                      <TouchableOpacity
+                                        style={[styles.snoozeChip, { borderColor: theme.border, backgroundColor: theme.surfaceActive }]}
+                                        onPress={() => handleSnoozeTask(task.id, 60)}
+                                      >
+                                        <Ionicons name="time-outline" size={14} color={theme.primary} />
+                                        <Text style={[styles.snoozeChipText, { color: theme.text }]}>1 hour</Text>
+                                      </TouchableOpacity>
+                                      <TouchableOpacity
+                                        style={[styles.snoozeChip, { borderColor: theme.border, backgroundColor: theme.surfaceActive }]}
+                                        onPress={() => handleSnoozeTask(task.id, 1440)}
+                                      >
+                                        <Ionicons name="calendar-outline" size={14} color={theme.primary} />
+                                        <Text style={[styles.snoozeChipText, { color: theme.text }]}>Tomorrow</Text>
+                                      </TouchableOpacity>
+                                    </View>
+                                  </Animated.View>
+                                )}
+                              </View>
                             );
                           }}
                         />
@@ -950,8 +1746,8 @@ export default function HomeScreen() {
                         style={styles.toolbarKLogo}
                         resizeMode="contain"
                       />
-                    </LinearGradient>
-                  </TouchableOpacity>
+                      </LinearGradient>
+                    </TouchableOpacity>
 
                   {/* Search Bar */}
                   <View style={[styles.toolbarSearch, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -960,7 +1756,14 @@ export default function HomeScreen() {
                       style={[styles.toolbarSearchInput, { color: theme.text }]}
                       placeholder="Search tasks..."
                       placeholderTextColor={theme.textTertiary}
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
                     />
+                    {searchQuery.length > 0 && (
+                      <TouchableOpacity onPress={() => setSearchQuery('')}>
+                        <Ionicons name="close-circle" size={18} color={theme.textTertiary} />
+                      </TouchableOpacity>
+                    )}
                   </View>
 
                   {/* Filter Button */}
@@ -995,35 +1798,87 @@ export default function HomeScreen() {
                 contentContainerStyle={styles.messagesContent}
               >
                 {messages.map((msg) => (
-                  <View 
-                    key={msg.id} 
-                    style={[
-                      styles.messageBubble,
-                      msg.isUser ? styles.userMessage : styles.aiMessage
-                    ]}
-                  >
-                    {!msg.isUser && (
-                      <View style={[styles.aiAvatar, { backgroundColor: theme.primary }]}>
-                        <Image 
-                          source={require('../../assets/krios-logo.png')}
-                          style={styles.aiLogoImage}
-                          resizeMode="contain"
-                        />
+                  <View key={msg.id}>
+                    {/* Regular Message Bubble */}
+                    <View 
+                      style={[
+                        styles.messageBubble,
+                        msg.isUser ? styles.userMessage : styles.aiMessage
+                      ]}
+                    >
+                      {!msg.isUser && (
+                        <View style={[styles.aiAvatar, { backgroundColor: theme.primary }]}>
+                          <Image 
+                            source={require('../../assets/krios-logo.png')}
+                            style={styles.aiLogoImage}
+                            resizeMode="contain"
+                          />
+                        </View>
+                      )}
+                      <View style={[
+                        styles.messageContent,
+                        msg.isUser 
+                          ? { backgroundColor: theme.primary }
+                          : { backgroundColor: theme.surface }
+                      ]}>
+                        <Text style={[
+                          styles.messageText,
+                          { color: msg.isUser ? '#fff' : theme.text }
+                        ]}>
+                          {msg.text}
+                        </Text>
+                      </View>
+                    </View>
+                    
+                    {/* Batch 2: Suggestion Card */}
+                    {msg.isSuggestion && msg.suggestionData && (
+                      <View style={[styles.suggestionCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                        <View style={[styles.suggestionBadge, { backgroundColor: theme.primary + '20' }]}>
+                          <Text style={[styles.suggestionBadgeText, { color: theme.primary }]}>💡 Suggested</Text>
+                        </View>
+                        <Text style={[styles.suggestionTitle, { color: theme.text }]}>{msg.suggestionData.title}</Text>
+                        <View style={styles.suggestionMeta}>
+                          {msg.suggestionData.priority && (
+                            <Text style={[
+                              styles.suggestionPriority,
+                              { color: msg.suggestionData.priority === 'high' ? '#ef4444' : msg.suggestionData.priority === 'medium' ? '#f59e0b' : '#10b981' }
+                            ]}>
+                              {msg.suggestionData.priority.charAt(0).toUpperCase() + msg.suggestionData.priority.slice(1)} priority
+                            </Text>
+                          )}
+                        </View>
+                        {msg.suggestionData.reason && (
+                          <Text style={[styles.suggestionReason, { color: theme.textSecondary }]}>{msg.suggestionData.reason}</Text>
+                        )}
+                        <View style={styles.suggestionActions}>
+                          <TouchableOpacity 
+                            style={[styles.suggestionAcceptBtn, { backgroundColor: theme.primary }]}
+                            onPress={() => handleAcceptSuggestion(msg.suggestionData!)}
+                          >
+                            <Text style={{ color: '#fff', fontWeight: '600' }}>Accept</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity 
+                            style={[styles.suggestionAdjustBtn, { borderColor: theme.border }]}
+                            onPress={() => handleAcceptSuggestion(msg.suggestionData!)}
+                          >
+                            <Text style={{ color: theme.text, fontWeight: '600' }}>Adjust</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity 
+                            style={styles.suggestionSkipBtn}
+                            onPress={() => handleSkipSuggestion(msg.suggestionData?.title || '')}
+                          >
+                            <Text style={{ color: theme.textTertiary }}>Skip</Text>
+                          </TouchableOpacity>
+                        </View>
                       </View>
                     )}
-                    <View style={[
-                      styles.messageContent,
-                      msg.isUser 
-                        ? { backgroundColor: theme.primary }
-                        : { backgroundColor: theme.surface }
-                    ]}>
-                      <Text style={[
-                        styles.messageText,
-                        { color: msg.isUser ? '#fff' : theme.text }
-                      ]}>
-                        {msg.text}
+                    
+                    {/* Timestamp */}
+                    {msg.timestamp && (
+                      <Text style={[styles.messageTimestamp, { color: theme.textTertiary, alignSelf: msg.isUser ? 'flex-end' : 'flex-start' }]}>
+                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </Text>
-                    </View>
+                    )}
                   </View>
                 ))}
               </ScrollView>
@@ -1035,56 +1890,30 @@ export default function HomeScreen() {
                 <View style={[styles.inputWrapper, { backgroundColor: isDark ? 'rgba(20, 20, 35, 0.95)' : 'rgba(255, 255, 255, 0.95)', borderColor: theme.border }]}
                 >
                   <View style={styles.inputContainer}>
-                    <View style={styles.promptTemplates}>
-                    <TouchableOpacity 
-                      style={[
-                        styles.promptButton, 
-                        { backgroundColor: theme.surface, borderColor: theme.border },
-                        isSending && styles.promptButtonDisabled
-                      ]}
-                      onPress={() => handleQuickPrompt('Suggest')}
-                      disabled={isSending}
+                    {/* Batch 7: Dynamic prompt chips based on mood and context */}
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.promptTemplates}
                     >
-                      <Ionicons name="bulb-outline" size={14} color={isSending ? theme.textTertiary : theme.warning} />
-                      <Text style={[styles.promptButtonText, { color: isSending ? theme.textTertiary : theme.text }]}>Suggest</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={[
-                        styles.promptButton, 
-                        { backgroundColor: theme.surface, borderColor: theme.border },
-                        isSending && styles.promptButtonDisabled
-                      ]}
-                      onPress={() => handleQuickPrompt('Analyze')}
-                      disabled={isSending}
-                    >
-                      <Ionicons name="analytics-outline" size={14} color={isSending ? theme.textTertiary : theme.primary} />
-                      <Text style={[styles.promptButtonText, { color: isSending ? theme.textTertiary : theme.text }]}>Analyze</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={[
-                        styles.promptButton, 
-                        { backgroundColor: theme.surface, borderColor: theme.border },
-                        isSending && styles.promptButtonDisabled
-                      ]}
-                      onPress={() => handleQuickPrompt('Motivate')}
-                      disabled={isSending}
-                    >
-                      <Ionicons name="flame-outline" size={14} color={isSending ? theme.textTertiary : theme.accent} />
-                      <Text style={[styles.promptButtonText, { color: isSending ? theme.textTertiary : theme.text }]}>Motivate</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={[
-                        styles.promptButton, 
-                        { backgroundColor: theme.surface, borderColor: theme.border },
-                        isSending && styles.promptButtonDisabled
-                      ]}
-                      onPress={() => handleQuickPrompt('Tips')}
-                      disabled={isSending}
-                    >
-                      <Ionicons name="sparkles-outline" size={14} color={isSending ? theme.textTertiary : theme.success} />
-                      <Text style={[styles.promptButtonText, { color: isSending ? theme.textTertiary : theme.text }]}>Tips</Text>
-                    </TouchableOpacity>
-                  </View>
+                      {getPromptChips().map((prompt, index) => (
+                        <TouchableOpacity
+                          key={index}
+                          style={[
+                            styles.promptChip,
+                            { backgroundColor: theme.surface, borderColor: theme.border },
+                            isSending && styles.promptButtonDisabled
+                          ]}
+                          onPress={() => handleQuickPrompt(prompt.label)}
+                          disabled={isSending}
+                        >
+                          <Ionicons name={prompt.icon as any} size={14} color={isSending ? theme.textTertiary : theme.primary} />
+                          <Text style={[styles.promptChipText, { color: isSending ? theme.textTertiary : theme.textSecondary }]}>
+                            {prompt.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
 
                   <View style={[
                     styles.messageContainer,
@@ -1094,8 +1923,11 @@ export default function HomeScreen() {
                       borderWidth: 1.5,
                     }
                   ]}>
-                    <TouchableOpacity 
-                      style={styles.inputKButton}
+                    <AnimatedTouchableOpacity
+                      style={[
+                        styles.inputKButton,
+                        { transform: [{ scale: kButtonPulse }] }
+                      ]}
                       onPress={handleKPress}
                       activeOpacity={0.7}
                     >
@@ -1111,7 +1943,7 @@ export default function HomeScreen() {
                           resizeMode="contain"
                         />
                       </LinearGradient>
-                    </TouchableOpacity>
+                    </AnimatedTouchableOpacity>
                     <TextInput
                       style={[styles.input, { color: theme.text }]}
                       placeholder="Message Krios AI..."
@@ -1157,8 +1989,36 @@ export default function HomeScreen() {
           />
           <View style={[styles.navMenuContainer, { backgroundColor: isDark ? 'rgba(15, 15, 25, 0.98)' : '#ffffff' }]}>
             <View style={[styles.navMenuHandle, { backgroundColor: isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.15)' }]} />
+
+            {/* Batch 11: User Header in Drawer */}
+            <View style={styles.drawerUserHeader}>
+              <View style={[styles.drawerAvatar, { backgroundColor: theme.primary + '20' }]}>
+                <Ionicons name="person" size={28} color={theme.primary} />
+              </View>
+              <View style={styles.drawerUserInfo}>
+                <Text style={[styles.drawerUsername, { color: isDark ? '#fff' : '#0f172a' }]}>
+                  {user?.username || 'Guest'}
+                </Text>
+                <Text style={[styles.drawerUserEmail, { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }]}>
+                  {user?.email || 'Not signed in'}
+                </Text>
+              </View>
+              {selectedMood && (
+                <View style={[styles.drawerMoodChip, { backgroundColor: MOOD_CHIPS.find(m => m.key === selectedMood)?.bgColor || theme.surface }]}>
+                  <Ionicons
+                    name={MOOD_CHIPS.find(m => m.key === selectedMood)?.icon as any}
+                    size={14}
+                    color={MOOD_CHIPS.find(m => m.key === selectedMood)?.color || theme.text}
+                  />
+                  <Text style={[styles.drawerMoodText, { color: MOOD_CHIPS.find(m => m.key === selectedMood)?.color || theme.text }]}>
+                    {MOOD_CHIPS.find(m => m.key === selectedMood)?.label}
+                  </Text>
+                </View>
+              )}
+            </View>
+
             <Text style={[styles.navMenuTitle, { color: isDark ? '#fff' : '#0f172a' }]}>Navigate</Text>
-            
+
             {drawerNavItems.map((item, index) => (
               <TouchableOpacity 
                 key={index}
@@ -1224,6 +2084,10 @@ export default function HomeScreen() {
                     }}
                   >
                     <Ionicons name={item.icon} size={24} color={item.color} />
+                    {/* Batch 11: Label below icon */}
+                    <Text style={[styles.circularNavLabel, { color: item.color }]}>
+                      {item.label}
+                    </Text>
                   </TouchableOpacity>
                 </Animated.View>
               );
@@ -1232,57 +2096,203 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* Task Creation Modal */}
+      {/* Batch 9: Task Creation Modal - Bottom Sheet Style */}
       {showTaskModal && (
         <View style={styles.modalOverlay}>
-          <Pressable style={styles.modalBackdrop} onPress={() => setShowTaskModal(false)} />
-          <View style={[styles.taskModal, { backgroundColor: theme.background }]}>
+          <Pressable style={styles.modalBackdrop} onPress={closeTaskModal} />
+          <Animated.View
+            style={[
+              styles.taskModalSheet,
+              { backgroundColor: theme.background },
+              {
+                transform: [{
+                  translateY: modalSlideAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [600, 0]
+                  })
+                }]
+              }
+            ]}
+          >
+            {/* Handle bar */}
+            <View style={styles.modalHandleBar}>
+              <View style={[styles.modalHandle, { backgroundColor: theme.textTertiary }]} />
+            </View>
+
             <View style={styles.taskModalHeader}>
-              <Text style={[styles.taskModalTitle, { color: theme.text }]}>Create New Task</Text>
-              <TouchableOpacity onPress={() => setShowTaskModal(false)}>
+              <Text style={[styles.taskModalTitle, { color: theme.text }]}>New Task</Text>
+              <TouchableOpacity onPress={closeTaskModal} style={styles.modalCloseButton}>
                 <Ionicons name="close" size={24} color={theme.textTertiary} />
               </TouchableOpacity>
             </View>
-            
+
+            {/* Task Title */}
             <TextInput
               style={[styles.taskModalInput, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.border }]}
-              placeholder="Task title..."
+              placeholder="What needs to be done?"
               placeholderTextColor={theme.textTertiary}
               value={newTaskTitle}
               onChangeText={setNewTaskTitle}
               autoFocus
+              returnKeyType="done"
+              onSubmitEditing={handleCreateTask}
             />
-            
-            <Text style={[styles.taskModalLabel, { color: theme.textSecondary }]}>Priority</Text>
-            <View style={styles.priorityButtons}>
-              {(['high', 'medium', 'low'] as const).map(priority => (
-                <TouchableOpacity
-                  key={priority}
-                  style={[
-                    styles.priorityButton,
-                    { backgroundColor: theme.surface, borderColor: theme.border },
-                    newTaskPriority === priority && { backgroundColor: theme.primary + '30', borderColor: theme.primary }
-                  ]}
-                  onPress={() => setNewTaskPriority(priority)}
-                >
-                  <Text style={[
-                    styles.priorityButtonText,
-                    { color: newTaskPriority === priority ? theme.primary : theme.textTertiary }
-                  ]}>
-                    {priority.charAt(0).toUpperCase() + priority.slice(1)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+
+            {/* Bucket Chips */}
+            <View style={styles.bucketChipsContainer}>
+              <Text style={[styles.bucketLabel, { color: theme.textSecondary }]}>When</Text>
+              <View style={styles.bucketChips}>
+                {BUCKET_CHIPS.map((bucket) => (
+                  <TouchableOpacity
+                    key={bucket.key}
+                    style={[
+                      styles.bucketChip,
+                      { backgroundColor: theme.surface, borderColor: theme.border },
+                      selectedBucket === bucket.key && {
+                        backgroundColor: theme.primary + '20',
+                        borderColor: theme.primary
+                      }
+                    ]}
+                    onPress={() => setSelectedBucket(selectedBucket === bucket.key ? null : bucket.key)}
+                  >
+                    <Ionicons
+                      name={bucket.icon as any}
+                      size={14}
+                      color={selectedBucket === bucket.key ? theme.primary : theme.textTertiary}
+                    />
+                    <Text style={[
+                      styles.bucketChipText,
+                      { color: selectedBucket === bucket.key ? theme.primary : theme.textSecondary }
+                    ]}>
+                      {bucket.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
-            
+
+            {/* Quick Create Button */}
             <TouchableOpacity
-              style={[styles.taskModalButton, { backgroundColor: theme.primary }]}
+              style={[
+                styles.taskModalButton,
+                { backgroundColor: newTaskTitle.trim() ? theme.primary : theme.surfaceActive },
+                !newTaskTitle.trim() && { opacity: 0.6 }
+              ]}
               onPress={handleCreateTask}
+              disabled={!newTaskTitle.trim()}
             >
-              <Text style={styles.taskModalButtonText}>Create Task</Text>
+              <Text style={[styles.taskModalButtonText, { color: newTaskTitle.trim() ? '#fff' : theme.textTertiary }]}>
+                Create Task
+              </Text>
+            </TouchableOpacity>
+
+            {/* More Options Toggle */}
+            <TouchableOpacity
+              style={styles.moreOptionsToggle}
+              onPress={() => {
+                setShowMoreOptions(!showMoreOptions);
+                Animated.spring(moreOptionsAnim, {
+                  toValue: showMoreOptions ? 0 : 1,
+                  useNativeDriver: true,
+                  tension: 100,
+                  friction: 10,
+                }).start();
+              }}
+            >
+              <Text style={[styles.moreOptionsText, { color: theme.primary }]}>
+                {showMoreOptions ? 'Less options' : 'More options'}
+              </Text>
+              <Ionicons
+                name={showMoreOptions ? 'chevron-up' : 'chevron-down'}
+                size={16}
+                color={theme.primary}
+              />
+            </TouchableOpacity>
+
+            {/* Collapsible More Options */}
+            {showMoreOptions && (
+              <Animated.View style={styles.moreOptionsContainer}>
+                {/* Description */}
+                <View style={styles.modalSection}>
+                  <Text style={[styles.modalSectionLabel, { color: theme.textSecondary }]}>Description (optional)</Text>
+                  <TextInput
+                    style={[
+                      styles.taskModalInput,
+                      styles.descriptionInput,
+                      { backgroundColor: theme.surface, color: theme.text, borderColor: theme.border }
+                    ]}
+                    placeholder="Add details..."
+                    placeholderTextColor={theme.textTertiary}
+                    value={newTaskDescription}
+                    onChangeText={setNewTaskDescription}
+                    multiline
+                    numberOfLines={3}
+                    textAlignVertical="top"
+                  />
+                </View>
+
+                {/* Priority */}
+                <View style={styles.modalSection}>
+                  <Text style={[styles.modalSectionLabel, { color: theme.textSecondary }]}>Priority</Text>
+                  <View style={styles.priorityButtons}>
+                    {(['high', 'medium', 'low'] as const).map(priority => (
+                      <TouchableOpacity
+                        key={priority}
+                        style={[
+                          styles.priorityButton,
+                          { backgroundColor: theme.surface, borderColor: theme.border },
+                          newTaskPriority === priority && {
+                            backgroundColor: priority === 'high' ? '#ef444420' : priority === 'medium' ? '#f59e0b20' : '#10b98120',
+                            borderColor: priority === 'high' ? '#ef4444' : priority === 'medium' ? '#f59e0b' : '#10b981'
+                          }
+                        ]}
+                        onPress={() => setNewTaskPriority(priority)}
+                      >
+                        <View style={[
+                          styles.priorityDot,
+                          { backgroundColor: priority === 'high' ? '#ef4444' : priority === 'medium' ? '#f59e0b' : '#10b981' }
+                        ]} />
+                        <Text style={[
+                          styles.priorityButtonText,
+                          { color: newTaskPriority === priority ? theme.text : theme.textTertiary }
+                        ]}>
+                          {priority.charAt(0).toUpperCase() + priority.slice(1)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              </Animated.View>
+            )}
+          </Animated.View>
+        </View>
+      )}
+      
+      {/* Batch 1: Toast Notification */}
+      {toastMessage !== '' && (
+        <Animated.View 
+          style={[
+            styles.toast,
+            {
+              backgroundColor: isDark ? 'rgba(30, 30, 50, 0.95)' : 'rgba(255, 255, 255, 0.97)',
+              borderColor: theme.border,
+              transform: [{ translateY: toastAnim.interpolate({ inputRange: [0, 1], outputRange: [100, 0] }) }],
+              opacity: toastAnim,
+            },
+          ]}
+        >
+          <View style={styles.toastContent}>
+            <Ionicons name="checkmark-circle" size={20} color={theme.success} />
+            <Text style={[styles.toastText, { color: theme.text }]}>{toastMessage}</Text>
+            {/* Undo button - always show handleToastUndo, it will check the ref */}
+            <TouchableOpacity style={[styles.toastUndoButton, { backgroundColor: theme.primary + '20' }]} onPress={handleToastUndo}>
+              <Text style={[styles.toastUndoText, { color: theme.primary }]}>Undo</Text>
             </TouchableOpacity>
           </View>
-        </View>
+          <TouchableOpacity style={styles.toastDismiss} onPress={dismissToast}>
+            <Ionicons name="close" size={18} color={theme.textTertiary} />
+          </TouchableOpacity>
+        </Animated.View>
       )}
     </View>
   );
@@ -1324,6 +2334,19 @@ const styles = StyleSheet.create({
   glowOrb2Dark: {
     backgroundColor: 'rgba(236, 72, 153, 0.15)',
   },
+  // Batch 10: Third Glow Orb (Teal)
+  glowOrb3: {
+    position: 'absolute',
+    bottom: -80,
+    right: -60,
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: 'rgba(20, 184, 166, 0.12)',
+  },
+  glowOrb3Dark: {
+    backgroundColor: 'rgba(20, 184, 166, 0.18)',
+  },
   themeToggle: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 54 : 44,
@@ -1350,6 +2373,115 @@ const styles = StyleSheet.create({
   greeting: {
     fontSize: 18,
     fontWeight: '600',
+  },
+  leadLine: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginTop: 4,
+    opacity: 0.9,
+  },
+  // Batch 4: Mood chips styles
+  moodSection: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+  },
+  moodLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 10,
+    opacity: 0.8,
+  },
+  moodChipsContainer: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingRight: 20,
+  },
+  moodChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  moodChipText: {
+    fontSize: 13,
+  },
+  moodIndicator: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginLeft: 2,
+  },
+  moodContext: {
+    fontSize: 11,
+    marginTop: 8,
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  // Batch 6: Up Next styles
+  upNextContainer: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  upNextLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  upNextDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  upNextLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: 2,
+  },
+  upNextTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    maxWidth: 200,
+  },
+  upNextRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  upNextTime: {
+    fontSize: 12,
+  },
+  upNextBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  upNextBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   calendarSection: {
     marginHorizontal: 20,
@@ -1466,6 +2598,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
+  messageTimestamp: {
+    fontSize: 11,
+    marginTop: 4,
+    marginHorizontal: 4,
+  },
   circularNavWrapper: {
     position: 'absolute',
     bottom: Platform.OS === 'ios' ? 280 : 270,
@@ -1566,8 +2703,8 @@ const styles = StyleSheet.create({
   },
   promptTemplates: {
     flexDirection: 'row',
-    marginBottom: 10,
-    gap: 6,
+    gap: 8,
+    paddingRight: 20,
   },
   promptButton: {
     flex: 1,
@@ -1578,6 +2715,19 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 12,
     borderWidth: 1,
+  },
+  promptChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 6,
+  },
+  promptChipText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
   promptButtonDisabled: {
     opacity: 0.5,
@@ -1664,6 +2814,53 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     fontSize: 15,
     fontWeight: '500',
+  },
+  // Batch 11: Drawer user header styles
+  drawerUserHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    marginBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(128,128,128,0.1)',
+  },
+  drawerAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  drawerUserInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  drawerUsername: {
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  drawerUserEmail: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  drawerMoodChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 6,
+  },
+  drawerMoodText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  // Batch 11: Circular nav label
+  circularNavLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 4,
+    textAlign: 'center',
   },
   tasksScreen: {
     ...StyleSheet.absoluteFillObject,
@@ -1771,6 +2968,56 @@ const styles = StyleSheet.create({
   taskCheck: {
     padding: 4,
   },
+  // Batch 3: Task inline action styles
+  taskTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  taskSubtitle: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  taskActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  taskActionIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  snoozeDropdown: {
+    width: '100%',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+  },
+  snoozeLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  snoozeButtonsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  snoozeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 6,
+  },
+  snoozeChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
   focusMode: {
     alignItems: 'center',
     gap: 16,
@@ -1864,6 +3111,66 @@ const styles = StyleSheet.create({
   },
   focusStatLabel: {
     fontSize: 11,
+  },
+  progressRingContainer: {
+    width: 140,
+    height: 140,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  progressRing: {
+    position: 'absolute',
+  },
+  timerTextContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  celebrationOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    zIndex: 100,
+  },
+  celebrationCard: {
+    padding: 32,
+    borderRadius: 24,
+    alignItems: 'center',
+    marginHorizontal: 40,
+  },
+  celebrationTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#fff',
+    marginTop: 16,
+  },
+  celebrationSubtitle: {
+    fontSize: 16,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  celebrationStats: {
+    flexDirection: 'row',
+    marginTop: 24,
+    gap: 32,
+  },
+  celebrationStat: {
+    alignItems: 'center',
+  },
+  celebrationStatValue: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#fbbf24',
+  },
+  celebrationStatLabel: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.7)',
+    marginTop: 4,
   },
   tasksToolbar: {
     marginHorizontal: 20,
@@ -1960,6 +3267,30 @@ const styles = StyleSheet.create({
   focusTaskRank: {
     fontSize: 20,
     fontWeight: '700',
+  },
+  // Batch 8: Enhanced focus mode styles
+  focusedTaskHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  focusedTaskLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  focusedTaskTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 20,
+    lineHeight: 24,
   },
   emptyState: {
     alignItems: 'center',
@@ -2107,8 +3438,200 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   taskModalButtonText: {
-    color: '#fff',
     fontSize: 16,
     fontWeight: '700',
+  },
+
+  // Batch 9: New Task Modal styles
+  taskModalSheet: {
+    width: '100%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -5 },
+    shadowOpacity: 0.2,
+    shadowRadius: 15,
+    elevation: 10,
+    maxHeight: '85%',
+  },
+  modalHandleBar: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+  },
+  modalCloseButton: {
+    padding: 4,
+  },
+  bucketChipsContainer: {
+    marginBottom: 16,
+  },
+  bucketLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 10,
+  },
+  bucketChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  bucketChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    gap: 6,
+  },
+  bucketChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  moreOptionsToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    gap: 4,
+  },
+  moreOptionsText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  moreOptionsContainer: {
+    marginTop: 8,
+  },
+  modalSection: {
+    marginBottom: 16,
+  },
+  modalSectionLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 10,
+  },
+  descriptionInput: {
+    height: 80,
+    paddingTop: 12,
+    paddingBottom: 12,
+  },
+  priorityDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+
+  // Batch 1: Toast styles
+  toast: {
+    position: 'absolute',
+    bottom: 100,
+    left: 20,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    zIndex: 2000,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  toastContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  toastText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  toastUndoButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  toastUndoText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  toastDismiss: {
+    padding: 4,
+  },
+  
+  // Batch 2: Suggestion card styles
+  suggestionCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    marginTop: 8,
+    marginBottom: 12,
+    marginHorizontal: 20,
+  },
+  suggestionBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  suggestionBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  suggestionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  suggestionMeta: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 8,
+  },
+  suggestionPriority: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  suggestionReason: {
+    fontSize: 13,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  suggestionActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  suggestionAcceptBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  suggestionAdjustBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  suggestionSkipBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
   },
 });
