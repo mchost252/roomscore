@@ -1,375 +1,616 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Image } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View, Text, StyleSheet, TouchableOpacity, ScrollView,
+  Alert, Dimensions, TextInput, Keyboard, Platform,
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useAnimatedScrollHandler,
+  withTiming,
+  withSpring,
+  withDelay,
+  withRepeat,
+  withSequence,
+  interpolate,
+  Extrapolation,
+  Easing,
+} from 'react-native-reanimated';
 import { useAuth } from '../../context/AuthContext';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useTheme } from '../../context/ThemeContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ActivityHeatmap } from '../../components/profile/ActivityHeatmap';
+import { AchievementBadge } from '../../components/profile/AchievementBadge';
 
-const DarkTheme = {
-  background: '#0a0a12',
-  surface: 'rgba(255,255,255,0.06)',
-  text: '#ffffff',
-  textSecondary: 'rgba(255,255,255,0.7)',
-  textTertiary: 'rgba(255,255,255,0.45)',
-  border: 'rgba(255,255,255,0.1)',
-  gradient: ['#1e1b4b', '#312e81', '#0a0a12', '#0a0a12'],
-  glow1: 'rgba(99, 102, 241, 0.2)',
-  glow2: 'rgba(168, 85, 247, 0.2)',
-  glow3: 'rgba(236, 72, 153, 0.2)',
-};
+// Conditional Skia import
+let SkCanvas: any, SkRect: any, skVec: any,
+  SkLinearGradient: any, SkRadialGradient: any, SkBlurMask: any, SkRoundedRect: any;
+let SKIA_OK = false;
+if (Platform.OS !== 'web') {
+  try {
+    const S = require('@shopify/react-native-skia');
+    SkCanvas = S.Canvas;
+    SkRect = S.Rect;
+    skVec = S.vec;
+    SkLinearGradient = S.LinearGradient;
+    SkRadialGradient = S.RadialGradient;
+    SkBlurMask = S.BlurMask;
+    SkRoundedRect = S.RoundedRect;
+    SKIA_OK = true;
+  } catch (e) {}
+}
 
-const LightTheme = {
-  background: '#fafafa',
-  surface: 'rgba(0,0,0,0.04)',
-  text: '#0f172a',
-  textSecondary: 'rgba(15, 23, 42, 0.7)',
-  textTertiary: 'rgba(15, 23, 42, 0.45)',
-  border: 'rgba(0,0,0,0.08)',
-  gradient: ['#ede9fe', '#e0e7ff', '#fafafa', '#fafafa'],
-  glow1: 'rgba(99, 102, 241, 0.1)',
-  glow2: 'rgba(168, 85, 247, 0.1)',
-  glow3: 'rgba(236, 72, 153, 0.1)',
-};
+const { width: SW } = Dimensions.get('window');
+const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
 
-export default function ProfileScreen() {
-  const router = useRouter();
-  const { user, logout } = useAuth();
-  const [isDarkMode, setIsDarkMode] = useState(true);
-  
-  const theme = isDarkMode ? DarkTheme : LightTheme;
+const HERO_SIZE = 88;
+const MINI_SIZE = 32;
+const COLLAPSE_AT = 130; // scroll px where hero fully collapses
 
+type TabKey = 'about' | 'activity' | 'achievements';
+
+/* ═══════════════════════════════════════════════════════════
+   Skia Liquid Shimmer Card
+   ═══════════════════════════════════════════════════════════ */
+function LiquidCard({ children, w, h, dark, style }: {
+  children: React.ReactNode; w: number; h: number; dark: boolean; style?: any;
+}) {
+  const shimX = useSharedValue(-w);
   useEffect(() => {
-    loadTheme();
-  }, []);
-
-  const loadTheme = async () => {
-    try {
-      const saved = await AsyncStorage.getItem('isDarkMode');
-      if (saved !== null) {
-        setIsDarkMode(saved === 'true');
-      }
-    } catch (e) {}
-  };
-
-  const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Logout', 
-          style: 'destructive',
-          onPress: async () => {
-            await logout();
-          }
-        },
-      ]
+    shimX.value = withRepeat(
+      withSequence(
+        withTiming(w * 1.5, { duration: 3200, easing: Easing.inOut(Easing.ease) }),
+        withTiming(-w, { duration: 0 }),
+      ), -1, false,
     );
-  };
+  }, [w]);
+  const shimStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: shimX.value }],
+  }));
 
-  const stats = [
-    { label: 'Current Streak', value: user?.streak || 0, icon: 'flame', color: '#F59E0B', glow: theme.glow3 },
-    { label: 'Tasks Done', value: user?.totalTasksCompleted || 0, icon: 'checkmark-circle', color: '#10B981', glow: theme.glow1 },
-    { label: 'Rooms', value: 2, icon: 'people', color: '#8B5CF6', glow: theme.glow2 },
-  ];
+  const borderClr = dark ? 'rgba(99,102,241,0.16)' : 'rgba(99,102,241,0.10)';
 
-  const quickActions = [
-    { icon: 'calendar-outline', label: 'Schedule', color: '#6366f1' },
-    { icon: 'trophy-outline', label: 'Achievements', color: '#f59e0b' },
-    { icon: 'analytics-outline', label: 'Analytics', color: '#10b981' },
-    { icon: 'heart-outline', color: '#ec4899' },
-  ];
-
-  const menuItems = [
-    { icon: 'create-outline', label: 'Edit Profile', color: '#6366f1', action: 'edit' },
-    { icon: 'notifications-outline', label: 'Notifications', color: '#f59e0b', action: '' },
-    { icon: 'moon-outline', label: 'Appearance', color: '#8b5cf6', action: '' },
-    { icon: 'lock-closed-outline', label: 'Privacy', color: '#10b981', action: '' },
-    { icon: 'help-circle-outline', label: 'Help & Support', color: '#ec4899', action: '' },
-  ];
+  if (!SKIA_OK) {
+    return (
+      <View style={[{ borderRadius: 22, overflow: 'hidden' }, style]}>
+        <LinearGradient
+          colors={dark
+            ? ['rgba(99,102,241,0.10)', 'rgba(139,92,246,0.06)', 'rgba(99,102,241,0.10)'] as any
+            : ['rgba(99,102,241,0.05)', 'rgba(167,139,250,0.03)', 'rgba(99,102,241,0.05)'] as any}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+          style={[StyleSheet.absoluteFill, { borderRadius: 22 }]}
+        />
+        <Animated.View style={[{ position: 'absolute', top: 0, width: w * 0.5, height: '100%' }, shimStyle]}>
+          <LinearGradient
+            colors={dark
+              ? ['transparent', 'rgba(255,255,255,0.03)', 'rgba(255,255,255,0.06)', 'rgba(255,255,255,0.03)', 'transparent'] as any
+              : ['transparent', 'rgba(99,102,241,0.02)', 'rgba(99,102,241,0.05)', 'rgba(99,102,241,0.02)', 'transparent'] as any}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+        <View style={{ ...StyleSheet.absoluteFillObject, borderRadius: 22, borderWidth: 1, borderColor: borderClr }} />
+        {children}
+      </View>
+    );
+  }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <LinearGradient
-        colors={theme.gradient as any}
-        locations={[0, 0.15, 0.5, 1]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="chevron-back" size={28} color={theme.text} />
-        </TouchableOpacity>
-        <Text style={[styles.title, { color: theme.text }]}>Profile</Text>
-        <TouchableOpacity 
-          style={[styles.settingsButton, { backgroundColor: theme.surface }]}
-          onPress={() => router.push('/(home)/settings')}
-        >
-          <Ionicons name="settings-outline" size={22} color={theme.text} />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.profileSection}>
-          <View style={styles.avatarWrapper}>
-            <LinearGradient
-              colors={['#6366f1', '#8b5cf6', '#a855f7']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.avatarGradient}
-            >
-              <Text style={styles.avatarText}>
-                {user?.username?.charAt(0).toUpperCase() || 'U'}
-              </Text>
-            </LinearGradient>
-            <TouchableOpacity style={styles.editAvatarButton}>
-              <Ionicons name="camera" size={14} color="#fff" />
-            </TouchableOpacity>
-          </View>
-          <Text style={[styles.username, { color: theme.text }]}>
-            {user?.username || 'User'}
-          </Text>
-          <Text style={[styles.email, { color: theme.textSecondary }]}>
-            {user?.email || 'user@example.com'}
-          </Text>
-          
-          <View style={styles.quickActions}>
-            {quickActions.map((action, index) => (
-              <TouchableOpacity 
-                key={index} 
-                style={[styles.quickActionButton, { backgroundColor: action.color + '20' }]}
-              >
-                <Ionicons name={action.icon as any} size={20} color={action.color} />
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.statsContainer}>
-          {stats.map((stat, index) => (
-            <View 
-              key={index} 
-              style={[styles.statCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
-            >
-              <View style={[styles.statIcon, { backgroundColor: stat.glow }]}>
-                <Ionicons name={stat.icon as any} size={20} color={stat.color} />
-              </View>
-              <Text style={[styles.statValue, { color: theme.text }]}>
-                {stat.value}
-              </Text>
-              <Text style={[styles.statLabel, { color: theme.textTertiary }]}>
-                {stat.label}
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        <View style={[styles.menuSection, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          {menuItems.map((item, index) => (
-            <TouchableOpacity 
-              key={index} 
-              style={[
-                styles.menuItem,
-                index < menuItems.length - 1 && { borderBottomColor: theme.border }
-              ]}
-              onPress={() => {
-                if (item.action === 'edit') {
-                  Alert.alert('Edit Profile', 'Profile editing coming soon!');
-                } else if (item.label === 'Appearance') {
-                  router.push('/(home)/settings');
-                } else if (item.label === 'Notifications') {
-                  Alert.alert('Notifications', 'Notification settings coming soon!');
-                } else if (item.label === 'Privacy') {
-                  Alert.alert('Privacy', 'Privacy settings coming soon!');
-                } else if (item.label === 'Help & Support') {
-                  Alert.alert('Help & Support', 'Contact support coming soon!');
-                }
-              }}
-            >
-              <View style={[styles.menuIcon, { backgroundColor: item.color + '20' }]}>
-                <Ionicons name={item.icon as any} size={18} color={item.color} />
-              </View>
-              <Text style={[styles.menuLabel, { color: theme.text }]}>{item.label}</Text>
-              <Ionicons name="chevron-forward" size={18} color={theme.textTertiary} />
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <TouchableOpacity 
-          style={[styles.logoutButton, { borderColor: '#ef4444' }]}
-          onPress={handleLogout}
-        >
-          <Ionicons name="log-out-outline" size={20} color="#ef4444" />
-          <Text style={[styles.logoutText, { color: '#ef4444' }]}>Logout</Text>
-        </TouchableOpacity>
-
-        <Text style={[styles.version, { color: theme.textTertiary }]}>
-          Krios v1.0.0
-        </Text>
-      </ScrollView>
+    <View style={[{ borderRadius: 22, overflow: 'hidden' }, style]}>
+      <SkCanvas style={[StyleSheet.absoluteFill, { borderRadius: 22 }]}>
+        {/* Base */}
+        <SkRoundedRect x={0} y={0} width={w} height={h} r={22}>
+          <SkLinearGradient start={skVec(0, 0)} end={skVec(w, h)}
+            colors={dark ? ['#0f0f20', '#12122e', '#0e0e1e'] : ['#f8f8ff', '#f0f0fe', '#f5f3ff']} />
+        </SkRoundedRect>
+        {/* Top-left indigo blob */}
+        <SkRect x={0} y={0} width={w * 0.6} height={h * 0.6}>
+          <SkRadialGradient c={skVec(w * 0.15, h * 0.15)} r={w * 0.45}
+            colors={dark ? ['rgba(99,102,241,0.22)', 'transparent'] : ['rgba(99,102,241,0.08)', 'transparent']} />
+          <SkBlurMask blur={25} style="normal" />
+        </SkRect>
+        {/* Bottom-right violet blob */}
+        <SkRect x={w * 0.4} y={h * 0.4} width={w * 0.6} height={h * 0.6}>
+          <SkRadialGradient c={skVec(w * 0.85, h * 0.85)} r={w * 0.4}
+            colors={dark ? ['rgba(139,92,246,0.20)', 'transparent'] : ['rgba(167,139,250,0.06)', 'transparent']} />
+          <SkBlurMask blur={30} style="normal" />
+        </SkRect>
+        {/* Center subtle pink */}
+        <SkRect x={w * 0.2} y={h * 0.3} width={w * 0.6} height={h * 0.4}>
+          <SkRadialGradient c={skVec(w * 0.5, h * 0.5)} r={w * 0.3}
+            colors={dark ? ['rgba(236,72,153,0.06)', 'transparent'] : ['rgba(236,72,153,0.03)', 'transparent']} />
+          <SkBlurMask blur={20} style="normal" />
+        </SkRect>
+      </SkCanvas>
+      {/* Shimmer sweep */}
+      <Animated.View style={[{ position: 'absolute', top: 0, width: w * 0.5, height: '100%' }, shimStyle]}>
+        <LinearGradient
+          colors={dark
+            ? ['transparent', 'rgba(255,255,255,0.03)', 'rgba(255,255,255,0.06)', 'rgba(255,255,255,0.03)', 'transparent'] as any
+            : ['transparent', 'rgba(99,102,241,0.02)', 'rgba(99,102,241,0.05)', 'rgba(99,102,241,0.02)', 'transparent'] as any}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+      <View style={{ ...StyleSheet.absoluteFillObject, borderRadius: 22, borderWidth: 1, borderColor: borderClr }} />
+      {children}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+/* ═══════════════════════════════════════════════════════════
+   Animated Stat Card
+   ═══════════════════════════════════════════════════════════ */
+function StatCard({ icon, label, value, color, index, dark }: {
+  icon: string; label: string; value: string | number; color: string; index: number; dark: boolean;
+}) {
+  const sc = useSharedValue(0.7);
+  const op = useSharedValue(0);
+  useEffect(() => {
+    sc.value = withDelay(200 + index * 100, withSpring(1, { damping: 14, stiffness: 120 }));
+    op.value = withDelay(200 + index * 100, withTiming(1, { duration: 350 }));
+  }, []);
+  const as = useAnimatedStyle(() => ({ transform: [{ scale: sc.value }], opacity: op.value }));
+
+  return (
+    <Animated.View style={[st.statCard, {
+      backgroundColor: dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.025)',
+      borderColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+    }, as]}>
+      <View style={[st.statIconCircle, { backgroundColor: color + '18' }]}>
+        <Ionicons name={icon as any} size={20} color={color} />
+      </View>
+      <Text style={[st.statValue, { color: dark ? '#fff' : '#111' }]}>{value}</Text>
+      <Text style={[st.statLabel, { color: dark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)' }]}>{label}</Text>
+    </Animated.View>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Profile Screen
+   ═══════════════════════════════════════════════════════════ */
+export default function ProfileScreen() {
+  const router = useRouter();
+  const { user, logout, updateProfile } = useAuth();
+  const { isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+
+  const [activeTab, setActiveTab] = useState<TabKey>('about');
+  const [bioExpanded, setBioExpanded] = useState(false);
+  const [editingBio, setEditingBio] = useState(false);
+  const [bioDraft, setBioDraft] = useState(user?.bio || '');
+  const [saving, setSaving] = useState(false);
+  const [localBio, setLocalBio] = useState('');
+
+  // Load locally cached bio on mount
+  useEffect(() => {
+    AsyncStorage.getItem('krios_user_bio').then(val => {
+      if (val != null) setLocalBio(val);
+    });
+  }, []);
+
+  // Sync bio from user object or local cache
+  useEffect(() => {
+    if (user?.bio != null && !editingBio) {
+      setBioDraft(user.bio);
+      setLocalBio(user.bio);
+    }
+  }, [user?.bio]);
+
+  // Theme tokens
+  const C = {
+    bg: isDark ? '#080810' : '#f8f9ff',
+    surface: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.035)',
+    border: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)',
+    text: isDark ? '#ffffff' : '#111118',
+    sec: isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.48)',
+    pri: '#6366f1',
+    headerBg: isDark ? 'rgba(8,8,16,0.94)' : 'rgba(248,249,255,0.94)',
+  };
+  const cardW = SW - 40;
+
+  /* ── Samsung-style scroll collapse ── */
+  const scrollY = useSharedValue(0);
+  const onScroll = useAnimatedScrollHandler({ onScroll: e => { scrollY.value = e.contentOffset.y; } });
+
+  // Hero avatar: fade + shrink
+  const heroAvStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [0, COLLAPSE_AT * 0.55, COLLAPSE_AT], [1, 0.3, 0], Extrapolation.CLAMP),
+    transform: [{ scale: interpolate(scrollY.value, [0, COLLAPSE_AT], [1, 0.55], Extrapolation.CLAMP) }],
+  }));
+  // Hero text: fade
+  const heroTxtStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [0, COLLAPSE_AT * 0.45], [1, 0], Extrapolation.CLAMP),
+    transform: [{ translateY: interpolate(scrollY.value, [0, COLLAPSE_AT], [0, -8], Extrapolation.CLAMP) }],
+  }));
+  // Header mini avatar + name: fade IN
+  const miniStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [COLLAPSE_AT * 0.55, COLLAPSE_AT], [0, 1], Extrapolation.CLAMP),
+    transform: [{ translateY: interpolate(scrollY.value, [COLLAPSE_AT * 0.55, COLLAPSE_AT], [6, 0], Extrapolation.CLAMP) }],
+  }));
+  // Header bg opacity
+  const headerBgStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [0, COLLAPSE_AT * 0.65], [0, 1], Extrapolation.CLAMP),
+  }));
+
+  /* ── Entrance ── */
+  const fadeIn = useSharedValue(0);
+  const slideUp = useSharedValue(18);
+  useEffect(() => {
+    fadeIn.value = withTiming(1, { duration: 220 });
+    slideUp.value = withSpring(0, { damping: 18, stiffness: 200 });
+  }, []);
+  const entStyle = useAnimatedStyle(() => ({
+    flex: 1 as number, opacity: fadeIn.value, transform: [{ translateY: slideUp.value }],
+  }));
+
+  /* ── Tab switch ── */
+  const tOp = useSharedValue(1);
+  const tSl = useSharedValue(0);
+  const switchTab = useCallback((tab: TabKey) => {
+    if (tab === activeTab) return;
+    tOp.value = withTiming(0, { duration: 100 });
+    tSl.value = withTiming(6, { duration: 100 });
+    setTimeout(() => {
+      setActiveTab(tab);
+      tOp.value = withTiming(1, { duration: 180 });
+      tSl.value = withSpring(0, { damping: 20, stiffness: 300 });
+    }, 110);
+  }, [activeTab]);
+  const tabCS = useAnimatedStyle(() => ({ opacity: tOp.value, transform: [{ translateY: tSl.value }] }));
+
+  /* ── Bio save ── */
+  const saveBio = async () => {
+    Keyboard.dismiss();
+    const trimmed = bioDraft.trim();
+    setSaving(true);
+    // Save locally first so it persists across reloads
+    await AsyncStorage.setItem('krios_user_bio', trimmed);
+    setLocalBio(trimmed);
+    const r = await updateProfile({ bio: trimmed });
+    setSaving(false);
+    if (r.success) setEditingBio(false);
+    else Alert.alert('Error', r.message || 'Failed to save bio');
+  };
+
+  /* ── Data ── */
+  const total = user?.totalTasksCompleted || 0;
+  const streak = user?.streak || 0;
+  const longest = user?.longestStreak || 0;
+  const rate = total > 0 ? Math.min(Math.round((total / (total + 8)) * 100), 99) : 0;
+  const initial = user?.username?.charAt(0).toUpperCase() || 'U';
+  const displayBio = user?.bio || localBio || '';
+
+  const stats = [
+    { icon: 'checkmark-done', label: 'Tasks Done', value: total, color: '#10B981' },
+    { icon: 'flame', label: 'Streak', value: `${streak}d`, color: '#F59E0B' },
+    { icon: 'trending-up', label: 'Rate', value: `${rate}%`, color: '#6366f1' },
+    { icon: 'trophy', label: 'Best Streak', value: `${longest}d`, color: '#8B5CF6' },
+  ];
+
+  const achievements = [
+    { icon: 'checkmark-circle', title: 'First Task', description: 'Complete your first task', unlocked: total >= 1, rarity: 'common' as const },
+    { icon: 'flame', title: '7-Day Streak', description: 'Maintain a 7-day streak', unlocked: longest >= 7, rarity: 'rare' as const },
+    { icon: 'home', title: 'Room Creator', description: 'Create your first room', unlocked: true, rarity: 'common' as const },
+    { icon: 'rocket', title: '50 Tasks', description: 'Complete 50 tasks total', unlocked: total >= 50, rarity: 'epic' as const },
+    { icon: 'moon', title: 'Night Owl', description: 'Complete a task past midnight', unlocked: false, rarity: 'rare' as const },
+    { icon: 'star', title: '30-Day Streak', description: 'Keep a 30-day streak', unlocked: longest >= 30, rarity: 'legendary' as const },
+  ];
+  const unlocked = achievements.filter(a => a.unlocked).length;
+
+  const menuItems = [
+    { icon: 'notifications-outline', label: 'Notifications', color: '#f59e0b', onPress: () => Alert.alert('Notifications', 'Coming soon!') },
+    { icon: 'settings-outline', label: 'Settings', color: '#8b5cf6', onPress: () => router.push('/(home)/settings') },
+    { icon: 'lock-closed-outline', label: 'Privacy', color: '#10b981', onPress: () => Alert.alert('Privacy', 'Coming soon!') },
+    { icon: 'help-circle-outline', label: 'Help & Support', color: '#ec4899', onPress: () => Alert.alert('Help', 'Coming soon!') },
+  ];
+
+  const handleLogout = () => {
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Logout', style: 'destructive', onPress: async () => { await logout(); } },
+    ]);
+  };
+
+  /* ── Tab renderers ── */
+  const renderAbout = () => (
+    <LiquidCard w={cardW} h={editingBio ? 340 : 270} dark={isDark} style={{ marginBottom: 16 }}>
+      <View style={st.cardInner}>
+        <View style={st.aboutHdr}>
+          <Text style={[st.secTitle, { color: C.text }]}>About</Text>
+          {!editingBio ? (
+            <TouchableOpacity onPress={() => { setEditingBio(true); setBioDraft(displayBio); }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Ionicons name="create-outline" size={18} color={C.pri} />
+            </TouchableOpacity>
+          ) : (
+            <View style={{ flexDirection: 'row', gap: 14 }}>
+              <TouchableOpacity onPress={() => { setEditingBio(false); setBioDraft(displayBio); }}>
+                <Text style={{ color: C.sec, fontSize: 14, fontWeight: '600' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={saveBio} disabled={saving}>
+                <Text style={{ color: C.pri, fontSize: 14, fontWeight: '700' }}>
+                  {saving ? 'Saving...' : 'Save'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {editingBio ? (
+          <TextInput
+            style={[st.bioInput, {
+              color: C.text,
+              backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.025)',
+              borderColor: C.pri + '40',
+            }]}
+            value={bioDraft}
+            onChangeText={setBioDraft}
+            multiline maxLength={250}
+            placeholder="Tell the world about yourself..."
+            placeholderTextColor={C.sec}
+            autoFocus
+          />
+        ) : (
+          <>
+            <Text style={[st.bioTxt, { color: C.text }]} numberOfLines={bioExpanded ? undefined : 3}>
+              {displayBio || 'No bio yet. Tap the edit icon to add one.'}
+            </Text>
+            {displayBio.length > 80 && (
+              <TouchableOpacity onPress={() => setBioExpanded(!bioExpanded)}>
+                <Text style={[st.readMore, { color: C.pri }]}>{bioExpanded ? 'Show less' : 'Read more'}</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        )}
+
+        <View style={[st.divider, { backgroundColor: C.border }]} />
+
+        {[
+          { label: 'Member Since', value: user?.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 'N/A', icon: 'calendar-outline' },
+          { label: 'Timezone', value: user?.timezone || 'UTC', icon: 'globe-outline' },
+          { label: 'Email', value: user?.email || '---', icon: 'mail-outline' },
+        ].map((it, i) => (
+          <View key={i} style={[st.infoRow, i > 0 && { borderTopWidth: 1, borderTopColor: C.border }]}>
+            <View style={st.infoLeft}>
+              <Ionicons name={it.icon as any} size={16} color={C.sec} />
+              <Text style={[st.infoLabel, { color: C.sec }]}>{it.label}</Text>
+            </View>
+            <Text style={[st.infoVal, { color: C.text }]} numberOfLines={1}>{it.value}</Text>
+          </View>
+        ))}
+      </View>
+    </LiquidCard>
+  );
+
+  const renderActivity = () => (
+    <LiquidCard w={cardW} h={210} dark={isDark} style={{ marginBottom: 16 }}>
+      <View style={st.cardInner}><ActivityHeatmap isDark={isDark} /></View>
+    </LiquidCard>
+  );
+
+  const renderAchievements = () => (
+    <View style={{ marginBottom: 16 }}>
+      <View style={st.achHdr}>
+        <Text style={[st.secTitle, { color: C.text }]}>Achievements</Text>
+        <View style={[st.achPill, { backgroundColor: C.pri + '20' }]}>
+          <Text style={[st.achCount, { color: C.pri }]}>{unlocked}/{achievements.length}</Text>
+        </View>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingVertical: 8, paddingHorizontal: 4 }}>
+        {achievements.map((b, i) => (
+          <AchievementBadge key={i} icon={b.icon} title={b.title} description={b.description}
+            unlocked={b.unlocked} rarity={b.rarity} delay={i * 120} isDark={isDark} />
+        ))}
+      </ScrollView>
+    </View>
+  );
+
+  /* ════════════════════════════════════════ RENDER ════════════════════════════════════════ */
+  return (
+    <Animated.View style={entStyle}>
+      <View style={[st.root, { backgroundColor: C.bg }]}>
+        {/* Background */}
+        <LinearGradient
+          colors={isDark ? ['#080810', '#0d0d1a', '#080810'] as any : ['#f8f9ff', '#f0f0fe', '#f8f9ff'] as any}
+          start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+
+        {/* ── Fixed header ── */}
+        <View style={[st.header, { paddingTop: Math.max(insets.top + 4, 48) }]}>
+          <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: C.headerBg }, headerBgStyle]} />
+          <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 1, backgroundColor: C.border }, headerBgStyle]} />
+
+          <View style={st.headerRow}>
+            <TouchableOpacity onPress={() => router.back()}
+              style={[st.hdrBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderColor: C.border }]}>
+              <Ionicons name="chevron-back" size={22} color={C.text} />
+            </TouchableOpacity>
+
+            <View style={st.hdrCenter}>
+              {/* "Profile" label — fades out */}
+              <Animated.Text style={[st.hdrTitle, { color: C.text }, heroTxtStyle]}>Profile</Animated.Text>
+              {/* Mini avatar + name — fades in */}
+              <Animated.View style={[st.hdrMini, miniStyle]}>
+                <LinearGradient colors={['#6366f1', '#8b5cf6', '#a855f7'] as any}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={st.miniAv}>
+                  <Text style={st.miniAvTxt}>{initial}</Text>
+                </LinearGradient>
+                <Text style={[st.miniName, { color: C.text }]} numberOfLines={1}>{user?.username || 'User'}</Text>
+              </Animated.View>
+            </View>
+
+            <TouchableOpacity
+              style={[st.hdrBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderColor: C.border }]}
+              onPress={() => router.push('/(home)/settings')}>
+              <Ionicons name="settings-outline" size={18} color={C.text} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* ── Scroll content ── */}
+        <AnimatedScrollView style={st.scroll} showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 40, paddingHorizontal: 20 }}
+          onScroll={onScroll} scrollEventThrottle={16} keyboardShouldPersistTaps="handled">
+
+          {/* Hero */}
+          <View style={st.hero}>
+            <Animated.View style={heroAvStyle}>
+              <LinearGradient colors={['#6366f1', '#8b5cf6', '#a855f7'] as any}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={st.heroAv}>
+                <Text style={st.heroAvTxt}>{initial}</Text>
+              </LinearGradient>
+            </Animated.View>
+            <Animated.View style={[st.heroInfo, heroTxtStyle]}>
+              <Text style={[st.username, { color: C.text }]}>{user?.username || 'User'}</Text>
+              <Text style={[st.email, { color: C.sec }]}>{user?.email || 'user@example.com'}</Text>
+            </Animated.View>
+          </View>
+
+          {/* Stats 2x2 */}
+          <View style={st.statsGrid}>
+            <View style={st.statsRow}>
+              {stats.slice(0, 2).map((s, i) => <StatCard key={i} {...s} index={i} dark={isDark} />)}
+            </View>
+            <View style={st.statsRow}>
+              {stats.slice(2).map((s, i) => <StatCard key={i + 2} {...s} index={i + 2} dark={isDark} />)}
+            </View>
+          </View>
+
+          {/* Tab bar */}
+          <View style={[st.tabBar, {
+            backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.025)',
+            borderColor: C.border,
+          }]}>
+            {(['about', 'activity', 'achievements'] as TabKey[]).map(tab => {
+              const on = activeTab === tab;
+              return (
+                <TouchableOpacity key={tab} onPress={() => switchTab(tab)} activeOpacity={0.7}
+                  style={[st.tab, on && [st.tabOn, { backgroundColor: C.pri }]]}>
+                  <Text style={[st.tabTxt, { color: on ? '#fff' : C.sec }, on && st.tabTxtOn]}>
+                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Tab content */}
+          <Animated.View style={tabCS}>
+            {activeTab === 'about' && renderAbout()}
+            {activeTab === 'activity' && renderActivity()}
+            {activeTab === 'achievements' && renderAchievements()}
+          </Animated.View>
+
+          {/* Menu */}
+          <LiquidCard w={cardW} h={menuItems.length * 60 + 4} dark={isDark} style={{ marginBottom: 16 }}>
+            {menuItems.map((it, i) => (
+              <TouchableOpacity key={i} style={[st.menuItem,
+                i < menuItems.length - 1 && { borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderBottomWidth: 1 }]}
+                onPress={it.onPress} activeOpacity={0.7}>
+                <View style={[st.menuIc, { backgroundColor: it.color + '18' }]}>
+                  <Ionicons name={it.icon as any} size={17} color={it.color} />
+                </View>
+                <Text style={[st.menuLbl, { color: C.text }]}>{it.label}</Text>
+                <Ionicons name="chevron-forward" size={16} color={C.sec} />
+              </TouchableOpacity>
+            ))}
+          </LiquidCard>
+
+          {/* Logout */}
+          <TouchableOpacity style={[st.logout, {
+            borderColor: isDark ? 'rgba(239,68,68,0.25)' : 'rgba(239,68,68,0.18)',
+            backgroundColor: isDark ? 'rgba(239,68,68,0.06)' : 'rgba(239,68,68,0.04)',
+          }]} onPress={handleLogout} activeOpacity={0.7}>
+            <Ionicons name="log-out-outline" size={18} color="#ef4444" />
+            <Text style={st.logoutTxt}>Sign Out</Text>
+          </TouchableOpacity>
+
+          <Text style={[st.ver, { color: C.sec }]}>Krios v1.0.0</Text>
+        </AnimatedScrollView>
+      </View>
+    </Animated.View>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════ */
+const st = StyleSheet.create({
+  root: { flex: 1 },
+  scroll: { flex: 1 },
+
+  // Header
+  header: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100, paddingBottom: 10 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20 },
+  hdrBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  hdrCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', height: 36 },
+  hdrTitle: { fontSize: 17, fontWeight: '700', letterSpacing: -0.3, position: 'absolute' },
+  hdrMini: { flexDirection: 'row', alignItems: 'center', position: 'absolute', gap: 8 },
+  miniAv: { width: MINI_SIZE, height: MINI_SIZE, borderRadius: MINI_SIZE / 2, justifyContent: 'center', alignItems: 'center' },
+  miniAvTxt: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  miniName: { fontSize: 15, fontWeight: '700', letterSpacing: -0.3, maxWidth: 140 },
+
+  // Hero
+  hero: { alignItems: 'center', paddingTop: 100, marginBottom: 24 },
+  heroAv: {
+    width: HERO_SIZE, height: HERO_SIZE, borderRadius: HERO_SIZE / 2,
+    justifyContent: 'center', alignItems: 'center',
+    shadowColor: '#6366f1', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 16, elevation: 8,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 16,
-  },
-  backButton: {
-    padding: 4,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  settingsButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  profileSection: {
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  avatarWrapper: {
-    position: 'relative',
-    marginBottom: 16,
-  },
-  avatarGradient: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarText: {
-    fontSize: 36,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  editAvatarButton: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#6366f1',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#0a0a12',
-  },
-  username: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  email: {
-    fontSize: 14,
-    marginBottom: 16,
-  },
-  quickActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  quickActionButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    marginBottom: 20,
-    gap: 10,
-  },
-  statCard: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 8,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  statIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 11,
-  },
-  menuSection: {
-    borderRadius: 20,
-    borderWidth: 1,
-    marginBottom: 20,
-    overflow: 'hidden',
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-  },
-  menuIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  menuLabel: {
-    flex: 1,
-    marginLeft: 12,
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    marginBottom: 20,
-  },
-  logoutText: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  version: {
-    textAlign: 'center',
-    fontSize: 12,
-    marginBottom: 40,
-  },
+  heroAvTxt: { fontSize: 36, fontWeight: '800', color: '#fff', textShadowColor: 'rgba(0,0,0,0.2)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
+  heroInfo: { alignItems: 'center', marginTop: 14 },
+  username: { fontSize: 24, fontWeight: '800', letterSpacing: -0.5, marginBottom: 4 },
+  email: { fontSize: 13, fontWeight: '500' },
+
+  // Stats
+  statsGrid: { marginBottom: 20, gap: 10 },
+  statsRow: { flexDirection: 'row', gap: 10 },
+  statCard: { flex: 1, alignItems: 'center', paddingVertical: 16, paddingHorizontal: 8, borderRadius: 18, borderWidth: 1 },
+  statIconCircle: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
+  statValue: { fontSize: 22, fontWeight: '800', marginBottom: 2, letterSpacing: -0.3 },
+  statLabel: { fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.3 },
+
+  // Tabs
+  tabBar: { flexDirection: 'row', borderRadius: 16, borderWidth: 1, padding: 4, marginBottom: 16 },
+  tab: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center' },
+  tabOn: { shadowColor: '#6366f1', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.4, shadowRadius: 8, elevation: 4 },
+  tabTxt: { fontSize: 13, fontWeight: '600' },
+  tabTxtOn: { fontWeight: '700' },
+
+  // Card inner
+  cardInner: { padding: 20 },
+
+  // About
+  aboutHdr: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  secTitle: { fontSize: 16, fontWeight: '700', letterSpacing: -0.3 },
+  bioTxt: { fontSize: 14, lineHeight: 21 },
+  bioInput: { fontSize: 14, lineHeight: 21, borderWidth: 1, borderRadius: 12, padding: 12, minHeight: 80, textAlignVertical: 'top' },
+  readMore: { fontSize: 13, fontWeight: '600', marginTop: 6 },
+  divider: { height: 1, marginVertical: 16 },
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10 },
+  infoLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  infoLabel: { fontSize: 13, fontWeight: '500' },
+  infoVal: { fontSize: 13, fontWeight: '600', maxWidth: '50%' },
+
+  // Achievements
+  achHdr: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  achPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
+  achCount: { fontSize: 12, fontWeight: '700' },
+
+  // Menu
+  menuItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: 14 },
+  menuIc: { width: 34, height: 34, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  menuLbl: { flex: 1, marginLeft: 12, fontSize: 14, fontWeight: '500' },
+
+  // Logout
+  logout: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 13, borderRadius: 14, borderWidth: 1, marginBottom: 16, gap: 8 },
+  logoutTxt: { fontSize: 15, fontWeight: '600', color: '#ef4444' },
+
+  // Footer
+  ver: { textAlign: 'center', fontSize: 11, marginBottom: 20 },
 });

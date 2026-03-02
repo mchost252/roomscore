@@ -244,7 +244,6 @@ export default function LandingScreen() {
           styles.slide,
           { 
             opacity,
-            transform: [{ scale }],
           }
         ]}
       >

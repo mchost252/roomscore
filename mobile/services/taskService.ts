@@ -12,10 +12,11 @@ export interface PersonalTask {
   dueDate?: string;
   createdAt: string;
   updatedAt: string;
-  priority?: 'high' | 'medium' | 'low';
+  priority?: 'urgent' | 'high' | 'medium' | 'low';
+  bucket?: string; // flexible: 'today' | 'week' | 'someday' | 'inbox' | any custom label
   // Client-side only fields
-  localOnly?: boolean; // Not yet synced to server
-  pendingDelete?: boolean; // Marked for deletion
+  localOnly?: boolean;
+  pendingDelete?: boolean;
 }
 
 const TASKS_STORAGE_KEY = 'personal_tasks';
@@ -88,7 +89,8 @@ class TaskService {
     description?: string;
     taskType?: 'daily' | 'weekly' | 'one-time';
     dueDate?: string;
-    priority?: 'high' | 'medium' | 'low';
+    priority?: 'urgent' | 'high' | 'medium' | 'low';
+    bucket?: string;
   }): Promise<PersonalTask> {
     // Create task locally first
     const newTask: PersonalTask = {
@@ -102,6 +104,7 @@ class TaskService {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       priority: taskData.priority || 'medium',
+      bucket: taskData.bucket || 'today',
       localOnly: true,
     };
 
@@ -359,12 +362,12 @@ class TaskService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const priorityWeight = { high: 3, medium: 2, low: 1 };
+    const priorityWeight: Record<string, number> = { urgent: 4, high: 3, medium: 2, low: 1 };
     
     const scoredTasks = tasks
       .filter(task => !task.isCompleted)
       .map(task => {
-        let score = priorityWeight[task.priority || 'medium'];
+        let score = priorityWeight[task.priority || 'medium'] ?? 2;
         
         // Boost score if due today or overdue
         if (task.dueDate) {

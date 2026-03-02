@@ -23,6 +23,7 @@ const nudgeRoutes = require('./routes/nudges');
 const appreciationRoutes = require('./routes/appreciations');
 const orbitSummaryRoutes = require('./routes/orbitSummary');
 const personalTaskRoutes = require('./routes/personalTasks');
+const aiRoutes = require('./routes/ai');
 
 // Import socket handler
 const socketHandler = require('./socket/socketHandler');
@@ -159,6 +160,7 @@ app.use('/api/nudges', nudgeRoutes);
 app.use('/api/appreciations', appreciationRoutes);
 app.use('/api/orbit-summary', orbitSummaryRoutes);
 app.use('/api/personal-tasks', personalTaskRoutes);
+app.use('/api/ai', aiRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

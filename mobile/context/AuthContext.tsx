@@ -4,6 +4,9 @@ import api from '../services/api';
 import { secureStorage } from '../services/storage';
 import { TOKEN_KEY, REFRESH_TOKEN_KEY, API_BASE_URL } from '../constants/config';
 import { User, AuthResponse } from '../types';
+import syncEngine from '../services/syncEngine';
+import messageService from '../services/messageService';
+import sqliteService from '../services/sqliteService';
 
 interface AuthContextType {
   user: User | null;
@@ -49,7 +52,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.log('🔍 Checking auth status...');
       const token = await secureStorage.getItem(TOKEN_KEY);
       if (token) {
-        console.log('✅ Token found, loading user...');
+        console.log('✅ Token found');
+        
+        // PHASE 1 OPTIMISTIC: Load cached user immediately for instant UI
+        const cachedUser = await secureStorage.getItem('cached_user');
+        if (cachedUser) {
+          console.log('⚡ Using cached user for instant load');
+          const parsed = JSON.parse(cachedUser);
+          setUser(parsed);
+          setLoading(false);
+
+          // Initialize messaging services in background
+          await sqliteService.initialize();
+          await syncEngine.initialize(parsed.id.toString(), token);
+          await messageService.initialize(parsed.id);
+        }
+        
+        // Then fetch fresh data in background
         await loadUser();
       } else {
         console.log('ℹ️ No token found, user not authenticated');
@@ -74,8 +93,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const loadUser = async (retryCount = 0) => {
     try {
       console.log('🔄 Loading user profile...');
-      const response = await api.get('/auth/profile');
+      const response = await api.get('/auth/profile', { timeout: 5000 });
       console.log('✅ User profile loaded');
+      
+      // PHASE 1: Cache user data for next instant load
+      await secureStorage.setItem('cached_user', JSON.stringify(response.data.user));
+      
       setUser(response.data.user);
       setLoading(false);
     } catch (error: any) {
@@ -84,15 +107,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Only logout on explicit auth errors (401)
       if (error.response?.status === 401) {
         console.log('🔒 Authentication failed - logging out');
+        await secureStorage.removeItem('cached_user');
         setLoading(false);
         await logout();
-      } else if (retryCount < 2) {
-        // Retry on network errors or timeouts (up to 2 retries)
-        console.log(`🔄 Retrying user profile load (attempt ${retryCount + 2}/3)...`);
-        setTimeout(() => loadUser(retryCount + 1), 1000 * (retryCount + 1));
       } else {
-        // After retries exhausted, just set loading false
-        console.warn('⚠️ Could not load user profile after retries');
+        // Don't retry - just set loading false to avoid delays
+        console.warn('⚠️ Could not load user profile');
         setLoading(false);
       }
     }
@@ -159,8 +179,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       await secureStorage.setItem(TOKEN_KEY, token);
       await secureStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+      // PHASE 1: Cache user for instant load next time
+      await secureStorage.setItem('cached_user', JSON.stringify(newUser));
       
       setUser(newUser);
+      
+      // PHASE 3: Initialize real-time sync engine
+      await syncEngine.initialize(newUser.id.toString(), token);
+      
+      // PHASE 4: Initialize messaging (SQLite + socket listeners)
+      await sqliteService.initialize();
+      await messageService.initialize(newUser.id);
+      
       console.log('✅ Login successful');
       
       return { success: true };
@@ -199,6 +229,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } finally {
       await secureStorage.removeItem(TOKEN_KEY);
       await secureStorage.removeItem(REFRESH_TOKEN_KEY);
+      await secureStorage.removeItem('cached_user');
+      
+      // PHASE 3: Disconnect sync engine
+      syncEngine.disconnect();
+      
+      // PHASE 4: Disconnect messaging
+      messageService.disconnect();
+      
       setUser(null);
     }
   };

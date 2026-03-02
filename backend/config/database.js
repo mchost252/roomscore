@@ -1,7 +1,7 @@
-// Prisma Database Client for PostgreSQL (Neon)
+// Prisma Database Client for PostgreSQL (Supabase/Neon compatible)
 const { PrismaClient } = require('@prisma/client');
 
-// Build optimized DATABASE_URL with connection pool settings for Neon serverless
+// Build optimized DATABASE_URL with connection pool settings for PostgreSQL serverless (Supabase/Neon)
 function getOptimizedDatabaseUrl() {
   let url = process.env.DATABASE_URL;
   if (!url) return url;
@@ -24,7 +24,7 @@ function getOptimizedDatabaseUrl() {
 }
 
 // Create Prisma client instance with logging and connection pool settings
-// Optimized for Neon serverless PostgreSQL
+// Optimized for serverless PostgreSQL (Supabase/Neon)
 const prisma = new PrismaClient({
   log: process.env.NODE_ENV === 'development' 
     ? ['query', 'info', 'warn', 'error'] 
@@ -41,7 +41,7 @@ prisma.$use(async (params, next) => {
   const before = Date.now();
   let lastError;
   
-  // Retry up to 2 times for connection errors (Neon cold start)
+  // Retry up to 2 times for connection errors (serverless cold start)
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const result = await next(params);
@@ -99,7 +99,7 @@ async function connectDatabase(retries = 3, delay = 2000) {
       
       // Run a simple query to ensure tables are accessible
       const userCount = await prisma.user.count();
-      console.log(`✅ Connected to PostgreSQL database (Neon) - ${userCount} users found`);
+      console.log(`✅ Connected to PostgreSQL database (Supabase) - ${userCount} users found`);
       
       return true;
     } catch (error) {
@@ -117,12 +117,12 @@ async function connectDatabase(retries = 3, delay = 2000) {
   }
 }
 
-// Keep connection alive with periodic pings (helps prevent Neon cold starts)
+// Keep connection alive with periodic pings (helps prevent serverless cold starts)
 let keepAliveInterval = null;
 function startKeepAlive() {
   if (keepAliveInterval) return;
   
-  // Ping every 2 minutes to keep Neon database warm (more aggressive to prevent cold starts)
+  // Ping every 2 minutes to keep database warm (more aggressive to prevent cold starts)
   keepAliveInterval = setInterval(async () => {
     try {
       const start = Date.now();

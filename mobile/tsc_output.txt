@@ -1,0 +1,46 @@
+app/(home)/index.tsx(714,23): error TS7053: Element implicitly has an 'any' type because expression of type '"medium" | "urgent" | "high" | "low"' can't be used to index type '{ high: { color: string; label: string; icon: "flame"; }; medium: { color: string; label: string; icon: "alert-circle"; }; low: { color: string; label: string; icon: "remove-circle"; }; }'.
+  Property 'urgent' does not exist on type '{ high: { color: string; label: string; icon: "flame"; }; medium: { color: string; label: string; icon: "alert-circle"; }; low: { color: string; label: string; icon: "remove-circle"; }; }'.
+app/_(tabs)/index.tsx(21,32): error TS2339: Property 'primary' does not exist on type '"#ffffff"'.
+app/_(tabs)/index.tsx(28,32): error TS2339: Property 'secondary' does not exist on type '"#ffffff"'.
+app/_(tabs)/index.tsx(50,36): error TS2339: Property 'secondary' does not exist on type '"#ffffff"'.
+app/_(tabs)/index.tsx(71,36): error TS2339: Property 'secondary' does not exist on type '"#ffffff"'.
+app/_(tabs)/index.tsx(86,34): error TS2339: Property 'secondary' does not exist on type '"#ffffff"'.
+app/_(tabs)/rooms.tsx(31,30): error TS2339: Property 'secondary' does not exist on type '"#ffffff"'.
+components/AIClarificationSheet.tsx(123,29): error TS2339: Property '_value' does not exist on type 'Value'.
+components/ConfettiCelebration.tsx(54,30): error TS2339: Property '_value' does not exist on type 'Value'.
+components/ConfettiCelebration.tsx(55,30): error TS2339: Property '_value' does not exist on type 'Value'.
+components/messaging/TypingIndicator.tsx(52,38): error TS2694: Namespace '"C:/Users/obinn/Desktop/KRIOS/roomscore/mobile/node_modules/react-native-reanimated/lib/typescript/Animated"' has no exported member 'SharedValue'.
+components/profile/CosmicAvatar.tsx(14,5): error TS7034: Variable 'Canvas' implicitly has type 'any' in some locations where its type cannot be determined.
+components/profile/CosmicAvatar.tsx(14,13): error TS7034: Variable 'Circle' implicitly has type 'any' in some locations where its type cannot be determined.
+components/profile/CosmicAvatar.tsx(14,21): error TS7034: Variable 'Group' implicitly has type 'any' in some locations where its type cannot be determined.
+components/profile/CosmicAvatar.tsx(83,33): error TS7005: Variable 'Canvas' implicitly has an 'any' type.
+components/profile/CosmicAvatar.tsx(86,14): error TS7005: Variable 'Group' implicitly has an 'any' type.
+components/profile/CosmicAvatar.tsx(88,18): error TS7005: Variable 'Circle' implicitly has an 'any' type.
+components/profile/CosmicAvatar.tsx(97,15): error TS7005: Variable 'Group' implicitly has an 'any' type.
+components/TaskDetailSheet.tsx(99,32): error TS7053: Element implicitly has an 'any' type because expression of type '"medium" | "urgent" | "high" | "low"' can't be used to index type '{ low: string; medium: string; high: string; }'.
+  Property 'urgent' does not exist on type '{ low: string; medium: string; high: string; }'.
+components/TaskDetailSheet.tsx(102,14): error TS7053: Element implicitly has an 'any' type because expression of type '"medium" | "urgent" | "high" | "low"' can't be used to index type '{ low: string; medium: string; high: string; }'.
+  Property 'urgent' does not exist on type '{ low: string; medium: string; high: string; }'.
+components/TaskDetailSheet.tsx(426,41): error TS7053: Element implicitly has an 'any' type because expression of type '"medium" | "urgent" | "high" | "low"' can't be used to index type '{ low: string; medium: string; high: string; }'.
+  Property 'urgent' does not exist on type '{ low: string; medium: string; high: string; }'.
+components/TaskDetailSheet.tsx(463,84): error TS7053: Element implicitly has an 'any' type because expression of type '"medium" | "urgent" | "high" | "low"' can't be used to index type '{ low: string; medium: string; high: string; }'.
+  Property 'urgent' does not exist on type '{ low: string; medium: string; high: string; }'.
+services/notificationService.ts(19,35): error TS2322: Type 'Promise<{ shouldShowAlert: true; shouldPlaySound: true; shouldSetBadge: true; }>' is not assignable to type 'Promise<NotificationBehavior>'.
+  Type '{ shouldShowAlert: true; shouldPlaySound: true; shouldSetBadge: true; }' is missing the following properties from type 'NotificationBehavior': shouldShowBanner, shouldShowList
+services/notificationService.ts(114,7): error TS2322: Type 'Date' is not assignable to type 'NotificationTriggerInput'.
+services/notificationService.ts(151,7): error TS2322: Type 'Date' is not assignable to type 'NotificationTriggerInput'.
+services/notificationService.ts(174,25): error TS2551: Property 'cancelScheduledNotificationsAsync' does not exist on type 'typeof import("C:/Users/obinn/Desktop/KRIOS/roomscore/mobile/node_modules/expo-notifications/build/index")'. Did you mean 'cancelScheduledNotificationAsync'?
+services/notificationService.ts(184,9): error TS2322: Type '{ seconds: number; repeats: true; }' is not assignable to type 'NotificationTriggerInput'.
+  Property 'type' is missing in type '{ seconds: number; repeats: true; }' but required in type 'TimeIntervalTriggerInput'.
+services/sqliteService.ts(176,26): error TS2347: Untyped function calls may not accept type arguments.
+services/sqliteService.ts(232,24): error TS2347: Untyped function calls may not accept type arguments.
+services/sqliteService.ts(238,12): error TS2347: Untyped function calls may not accept type arguments.
+services/sqliteService.ts(300,12): error TS2347: Untyped function calls may not accept type arguments.
+services/sqliteService.ts(336,21): error TS2347: Untyped function calls may not accept type arguments.
+services/sqliteService.ts(356,12): error TS2347: Untyped function calls may not accept type arguments.
+services/sqliteService.ts(391,7): error TS2347: Untyped function calls may not accept type arguments.
+services/sqliteService.ts(392,7): error TS2347: Untyped function calls may not accept type arguments.
+services/sqliteService.ts(393,7): error TS2347: Untyped function calls may not accept type arguments.
+services/sqliteService.ts(394,7): error TS2347: Untyped function calls may not accept type arguments.
+services/sqliteService.ts(395,7): error TS2347: Untyped function calls may not accept type arguments.
+services/threadService.ts(23,31): error TS2449: Class 'ThreadService' used before its declaration.

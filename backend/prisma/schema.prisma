@@ -1,5 +1,5 @@
-// Prisma Schema for Krios - PostgreSQL (Neon)
-// Migration from MongoDB/Mongoose
+// Prisma Schema for Krios - PostgreSQL (Supabase)
+// Migrated from MongoDB/Mongoose, then from Neon to Supabase
 
 generator client {
   provider = "prisma-client-js"
@@ -23,6 +23,7 @@ model User {
   timezone              String    @default("UTC")
   onboardingCompleted   Boolean   @default(false)
   pushSubscription      Json?
+  aiProfile             String?   // JSON string — learned AI preferences
   lastActive            DateTime  @default(now())
   streak                Int       @default(0)
   longestStreak         Int       @default(0)
@@ -267,9 +268,12 @@ model PersonalTask {
   title       String
   description String?
   taskType    String    @default("daily") // daily, weekly, one-time
+  priority    String    @default("medium") // low, medium, high
+  bucket      String?   // optional grouping label
   isCompleted Boolean   @default(false)
   completedAt DateTime?
   dueDate     DateTime?
+  aiNote      String?   // JSON string — AI generated task note
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

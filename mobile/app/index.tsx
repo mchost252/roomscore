@@ -13,43 +13,45 @@ export default function Index() {
   const segments = useSegments();
   const [checkingOnboarding, setCheckingOnboarding] = useState(true);
 
+  // Single unified effect for all routing logic
   useEffect(() => {
-    checkOnboardingStatus();
-  }, []);
-
-  const checkOnboardingStatus = async () => {
-    try {
-      const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
-      
-      if (!hasCompletedOnboarding) {
-        // First time user - show onboarding
+    const handleRouting = async () => {
+      try {
+        const hasCompletedOnboarding = await AsyncStorage.getItem('hasCompletedOnboarding');
+        
+        if (!hasCompletedOnboarding) {
+          // First time user - show onboarding
+          router.replace('/(onboarding)/name-input');
+          return;
+        }
+        
+        // Wait for auth to finish loading
+        if (loading) {
+          return;
+        }
+        
+        const inAuthGroup = segments[0] === '(auth)';
+        const inOnboardingGroup = segments[0] === '(onboarding)';
+        const segmentLen = (segments as string[]).length;
+        const atRoot = segmentLen === 0 || (segmentLen === 1 && (segments as string[])[0] === 'index');
+        
+        if (user && (inAuthGroup || inOnboardingGroup || atRoot)) {
+          // User is logged in but not in home - redirect
+          router.replace('/(home)');
+        } else if (!user && !inAuthGroup && !inOnboardingGroup) {
+          // Not logged in and not in auth/onboarding - go to login
+          router.replace('/(auth)/login');
+        }
+      } catch (error) {
+        console.error('Error in routing:', error);
         router.replace('/(onboarding)/name-input');
-      } else if (!user && !loading) {
-        // Returning user, not logged in
-        router.replace('/(auth)/login');
-      } else if (user) {
-        // Logged in user
-        router.replace('/(home)');
+      } finally {
+        setCheckingOnboarding(false);
       }
-    } catch (error) {
-      console.error('Error checking onboarding status:', error);
-      router.replace('/(onboarding)/name-input');
-    } finally {
-      setCheckingOnboarding(false);
-    }
-  };
-
-  useEffect(() => {
-    if (loading || checkingOnboarding) return;
-
-    const inAuthGroup = segments[0] === '(auth)';
-    const inOnboardingGroup = segments[0] === '(onboarding)';
-
-    if (user && (inAuthGroup || inOnboardingGroup)) {
-      // User is logged in but still in auth/onboarding, redirect to main app
-      router.replace('/(home)');
-    }
-  }, [user, loading, segments, checkingOnboarding]);
+    };
+    
+    handleRouting();
+  }, [user, loading, segments]);
 
   if (loading || checkingOnboarding) {
     return (

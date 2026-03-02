@@ -1,0 +1,211 @@
+import React, { useRef, useLayoutEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Animated } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+export default function ProfileScreen() {
+  const router = useRouter();
+  const { user, logout } = useAuth();
+  const { colors, gradients } = useTheme();
+  const insets = useSafeAreaInsets();
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+  useLayoutEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim,  { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.spring(slideAnim, { toValue: 0, tension: 220, friction: 18, useNativeDriver: true }),
+    ]).start();
+  }, []);
+  const theme = {
+    background: colors.background.primary,
+    surface: colors.surface,
+    border: colors.border.primary,
+    text: colors.text,
+    textSecondary: colors.textSecondary,
+    gradient: gradients.background.colors,
+  };
+
+  const handleLogout = () => {
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Logout', style: 'destructive', onPress: async () => { await logout(); } },
+    ]);
+  };
+
+  const stats = [
+    { label: 'Streak', value: user?.streak || 0, icon: 'flame', color: '#F59E0B' },
+    { label: 'Tasks Done', value: user?.totalTasksCompleted || 0, icon: 'checkmark-circle', color: '#10B981' },
+    { label: 'Rooms', value: 0, icon: 'people', color: '#8B5CF6' },
+  ];
+
+  const menuItems = [
+    { icon: 'create-outline', label: 'Edit Profile', color: '#6366f1', onPress: () => Alert.alert('Edit Profile', 'Coming soon!') },
+    { icon: 'notifications-outline', label: 'Notifications', color: '#f59e0b', onPress: () => Alert.alert('Notifications', 'Coming soon!') },
+    { icon: 'settings-outline', label: 'Settings', color: '#8b5cf6', onPress: () => router.push('/(home)/settings') },
+    { icon: 'lock-closed-outline', label: 'Privacy', color: '#10b981', onPress: () => Alert.alert('Privacy', 'Coming soon!') },
+    { icon: 'help-circle-outline', label: 'Help & Support', color: '#ec4899', onPress: () => Alert.alert('Help', 'Coming soon!') },
+  ];
+
+  return (
+    <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+    <View style={[styles.container, { backgroundColor: colors.background.primary }]}>
+      <LinearGradient
+        colors={gradients.background.colors as any}
+        start={{ x: 0.2, y: 0 }}
+        end={{ x: 0.8, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+
+      <View style={[styles.header, { paddingTop: Math.max(insets.top + 8, 52) }]}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={[styles.backButton, { backgroundColor: colors.surface, borderColor: colors.border.primary }]}
+        >
+          <Ionicons name="chevron-back" size={22} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={[styles.title, { color: theme.text }]}>Profile</Text>
+        <TouchableOpacity
+          style={[styles.settingsButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
+          onPress={() => router.push('/(home)/settings')}
+        >
+          <Ionicons name="settings-outline" size={18} color={theme.text} />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+        <View style={styles.profileSection}>
+          <View style={styles.avatarWrapper}>
+            <LinearGradient
+              colors={['#6366f1', '#8b5cf6', '#a855f7']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.avatarGradient}
+            >
+              <Text style={styles.avatarText}>
+                {user?.username?.charAt(0).toUpperCase() || 'U'}
+              </Text>
+            </LinearGradient>
+            <TouchableOpacity style={[styles.editAvatarButton, { borderColor: theme.background }]}>
+              <Ionicons name="camera" size={13} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          <Text style={[styles.username, { color: theme.text }]}>
+            {user?.username || 'User'}
+          </Text>
+          <Text style={[styles.email, { color: theme.textSecondary }]}>
+            {user?.email || 'user@example.com'}
+          </Text>
+        </View>
+
+        <View style={styles.statsContainer}>
+          {stats.map((stat, index) => (
+            <View key={index} style={[styles.statCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <View style={[styles.statIcon, { backgroundColor: stat.color + '18' }]}>
+                <Ionicons name={stat.icon as any} size={18} color={stat.color} />
+              </View>
+              <Text style={[styles.statValue, { color: theme.text }]}>{stat.value}</Text>
+              <Text style={[styles.statLabel, { color: theme.textSecondary }]}>{stat.label}</Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={[styles.menuSection, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          {menuItems.map((item, index) => (
+            <TouchableOpacity
+              key={index}
+              style={[styles.menuItem, index < menuItems.length - 1 && { borderBottomColor: theme.border, borderBottomWidth: 1 }]}
+              onPress={item.onPress}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.menuIcon, { backgroundColor: item.color + '18' }]}>
+                <Ionicons name={item.icon as any} size={17} color={item.color} />
+              </View>
+              <Text style={[styles.menuLabel, { color: theme.text }]}>{item.label}</Text>
+              <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <TouchableOpacity
+          style={[styles.logoutButton, { borderColor: '#ef444440' }]}
+          onPress={handleLogout}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="log-out-outline" size={18} color="#ef4444" />
+          <Text style={styles.logoutText}>Sign Out</Text>
+        </TouchableOpacity>
+
+        <Text style={[styles.version, { color: theme.textSecondary }]}>Krios v1.0.0</Text>
+      </ScrollView>
+    </View>
+    </Animated.View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+  },
+  backButton: {
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1,
+  },
+  title: { fontSize: 17, fontWeight: '700', letterSpacing: -0.3 },
+  settingsButton: {
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1,
+  },
+  content: { flex: 1, paddingHorizontal: 20 },
+  profileSection: { alignItems: 'center', marginBottom: 24, paddingTop: 8 },
+  avatarWrapper: { position: 'relative', marginBottom: 14 },
+  avatarGradient: {
+    width: 84, height: 84, borderRadius: 42,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  avatarText: { fontSize: 32, fontWeight: '700', color: '#fff' },
+  editAvatarButton: {
+    position: 'absolute', bottom: 0, right: 0,
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: '#6366f1',
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 2,
+  },
+  username: { fontSize: 22, fontWeight: '700', marginBottom: 3, letterSpacing: -0.5 },
+  email: { fontSize: 13 },
+  statsContainer: { flexDirection: 'row', marginBottom: 16, gap: 10 },
+  statCard: {
+    flex: 1, alignItems: 'center', paddingVertical: 14, paddingHorizontal: 8,
+    borderRadius: 16, borderWidth: 1,
+  },
+  statIcon: {
+    width: 38, height: 38, borderRadius: 19,
+    justifyContent: 'center', alignItems: 'center', marginBottom: 8,
+  },
+  statValue: { fontSize: 19, fontWeight: '700', marginBottom: 2 },
+  statLabel: { fontSize: 10, fontWeight: '500' },
+  menuSection: { borderRadius: 18, borderWidth: 1, marginBottom: 16, overflow: 'hidden' },
+  menuItem: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 13, paddingHorizontal: 14,
+  },
+  menuIcon: {
+    width: 34, height: 34, borderRadius: 10,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  menuLabel: { flex: 1, marginLeft: 12, fontSize: 14, fontWeight: '500' },
+  logoutButton: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 13, borderRadius: 14, borderWidth: 1, marginBottom: 16, gap: 8,
+  },
+  logoutText: { fontSize: 15, fontWeight: '600', color: '#ef4444' },
+  version: { textAlign: 'center', fontSize: 11, marginBottom: 20 },
+});

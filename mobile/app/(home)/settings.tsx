@@ -1,43 +1,42 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Alert } from 'react-native';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Alert, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const DarkTheme = {
-  background: '#0a0a12',
-  surface: 'rgba(255,255,255,0.06)',
-  text: '#ffffff',
-  textSecondary: 'rgba(255,255,255,0.7)',
-  textTertiary: 'rgba(255,255,255,0.45)',
-  border: 'rgba(255,255,255,0.1)',
-  primary: '#6366f1',
-  gradient: ['#1e1b4b', '#312e81', '#0a0a12', '#0a0a12'],
-};
-
-const LightTheme = {
-  background: '#fafafa',
-  surface: 'rgba(0,0,0,0.04)',
-  text: '#0f172a',
-  textSecondary: 'rgba(15, 23, 42, 0.7)',
-  textTertiary: 'rgba(15, 23, 42, 0.45)',
-  border: 'rgba(0,0,0,0.08)',
-  primary: '#6366f1',
-  gradient: ['#ede9fe', '#e0e7ff', '#fafafa', '#fafafa'],
-};
+import notificationService from '../../services/notificationService';
 
 export default function SettingsScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
-  const [isDarkMode, setIsDarkMode] = useState(true);
-  const [navStyle, setNavStyle] = useState<'circular' | 'drawer'>('circular');
+  const { colors, gradients, isDark, setTheme } = useTheme();
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+  useLayoutEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim,  { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.spring(slideAnim, { toValue: 0, tension: 220, friction: 18, useNativeDriver: true }),
+    ]).start();
+  }, []);
+  const theme = {
+    background: colors.background.primary,
+    surface: colors.surface,
+    border: colors.border.primary,
+    text: colors.text,
+    textSecondary: colors.textSecondary,
+    textTertiary: colors.textTertiary,
+    primary: colors.primary,
+    gradient: gradients.background.colors,
+  };
+  const insets = useSafeAreaInsets();
+
+  const [navStyle, setNavStyle] = useState<'bottom' | 'sidebar'>('bottom');
   const [notifications, setNotifications] = useState(true);
   const [soundEffects, setSoundEffects] = useState(true);
   const [hapticFeedback, setHapticFeedback] = useState(true);
-  
-  const theme = isDarkMode ? DarkTheme : LightTheme;
 
   useEffect(() => {
     loadSettings();
@@ -45,14 +44,11 @@ export default function SettingsScreen() {
 
   const loadSettings = async () => {
     try {
-      const darkMode = await AsyncStorage.getItem('isDarkMode');
-      const nav = await AsyncStorage.getItem('navStyle');
+      const nav = await AsyncStorage.getItem('krios_nav_style');
       const notif = await AsyncStorage.getItem('notifications');
       const sound = await AsyncStorage.getItem('soundEffects');
       const haptic = await AsyncStorage.getItem('hapticFeedback');
-      
-      if (darkMode !== null) setIsDarkMode(darkMode === 'true');
-      if (nav === 'circular' || nav === 'drawer') setNavStyle(nav);
+      if (nav === 'bottom' || nav === 'sidebar') setNavStyle(nav);
       if (notif !== null) setNotifications(notif === 'true');
       if (sound !== null) setSoundEffects(sound === 'true');
       if (haptic !== null) setHapticFeedback(haptic === 'true');
@@ -60,18 +56,52 @@ export default function SettingsScreen() {
   };
 
   const toggleDarkMode = async (value: boolean) => {
-    setIsDarkMode(value);
-    await AsyncStorage.setItem('isDarkMode', value.toString());
+    setTheme(value ? 'dark' : 'light');
   };
 
-  const toggleNavStyle = async (style: 'circular' | 'drawer') => {
+  const toggleNavStyle = async (style: 'bottom' | 'sidebar') => {
     setNavStyle(style);
-    await AsyncStorage.setItem('navStyle', style);
+    await AsyncStorage.setItem('krios_nav_style', style);
   };
 
   const toggleNotifications = async (value: boolean) => {
     setNotifications(value);
     await AsyncStorage.setItem('notifications', value.toString());
+    
+    // Update notification service
+    await notificationService.updatePreferences({ enabled: value });
+    
+    if (value) {
+      // Re-enable: request permission and schedule
+      const granted = await notificationService.initialize();
+      if (granted) {
+        Alert.alert(
+          'Notifications Enabled ✓',
+          'You\'ll receive smart reminders for your tasks at 8am and 8pm, plus alerts for overdue tasks.',
+          [{ text: 'Got it!' }]
+        );
+      } else {
+        Alert.alert(
+          'Permission Required',
+          'Please enable notifications in your device settings to receive task reminders.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => {
+              // On real device this would open settings
+              Alert.alert('Info', 'Open your device Settings → Krios → Notifications');
+            }},
+          ]
+        );
+      }
+    } else {
+      // Disable: cancel all scheduled notifications
+      await notificationService.cancelAll();
+      Alert.alert(
+        'Notifications Disabled',
+        'You won\'t receive any task reminders. You can re-enable them anytime.',
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   const toggleSoundEffects = async (value: boolean) => {
@@ -85,215 +115,109 @@ export default function SettingsScreen() {
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Logout', 
-          style: 'destructive',
-          onPress: async () => {
-            await logout();
-          }
-        },
-      ]
-    );
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Logout', style: 'destructive', onPress: async () => { await logout(); } },
+    ]);
   };
 
-  const settingsSections = [
+  const accentColor = '#6366f1';
+
+  const sections = [
     {
       title: 'Navigation',
       items: [
-        {
-          icon: 'radio-button-on',
-          label: 'Circular Navigation',
-          description: 'Icons pop up around the K button',
-          type: 'select',
-          value: navStyle === 'circular',
-          onPress: () => toggleNavStyle('circular'),
-        },
-        {
-          icon: 'menu',
-          label: 'Drawer Navigation',
-          description: 'Slide up menu from bottom',
-          type: 'select',
-          value: navStyle === 'drawer',
-          onPress: () => toggleNavStyle('drawer'),
-        },
+        { icon: 'apps-outline', label: 'Bottom Tab Bar', desc: 'Classic tab bar at the bottom', type: 'select', value: navStyle === 'bottom', onPress: () => toggleNavStyle('bottom') },
+        { icon: 'reorder-three-outline', label: 'Sidebar Panel', desc: 'Discord-style right side panel', type: 'select', value: navStyle === 'sidebar', onPress: () => toggleNavStyle('sidebar') },
       ],
     },
     {
       title: 'Appearance',
       items: [
-        {
-          icon: 'moon',
-          label: 'Dark Mode',
-          description: 'Use dark theme throughout the app',
-          type: 'switch',
-          value: isDarkMode,
-          onToggle: toggleDarkMode,
-        },
+        { icon: 'moon', label: 'Dark Mode', desc: 'Use dark theme throughout', type: 'switch', value: isDark, onToggle: toggleDarkMode },
       ],
     },
     {
       title: 'Notifications',
       items: [
-        {
-          icon: 'notifications',
-          label: 'Push Notifications',
-          description: 'Receive task reminders and updates',
-          type: 'switch',
-          value: notifications,
-          onToggle: toggleNotifications,
-        },
-        {
-          icon: 'volume-high',
-          label: 'Sound Effects',
-          description: 'Play sounds for actions',
-          type: 'switch',
-          value: soundEffects,
-          onToggle: toggleSoundEffects,
-        },
-        {
-          icon: 'phone-portrait',
-          label: 'Haptic Feedback',
-          description: 'Vibration for interactions',
-          type: 'switch',
-          value: hapticFeedback,
-          onToggle: toggleHapticFeedback,
-        },
+        { icon: 'notifications', label: 'Smart Reminders', desc: 'Morning digest (8am), evening preview (8pm), and due task alerts', type: 'switch', value: notifications, onToggle: toggleNotifications },
+        { icon: 'volume-high', label: 'Sound Effects', desc: 'Play sounds for actions', type: 'switch', value: soundEffects, onToggle: toggleSoundEffects },
+        { icon: 'phone-portrait', label: 'Haptic Feedback', desc: 'Vibration for interactions', type: 'switch', value: hapticFeedback, onToggle: toggleHapticFeedback },
       ],
     },
     {
       title: 'Account',
       items: [
-        {
-          icon: 'person',
-          label: 'Edit Profile',
-          description: 'Change your name and avatar',
-          type: 'navigate',
-          onPress: () => router.push('/(home)/profile'),
-        },
-        {
-          icon: 'lock-closed',
-          label: 'Privacy',
-          description: 'Manage your privacy settings',
-          type: 'navigate',
-          onPress: () => {},
-        },
-        {
-          icon: 'shield-checkmark',
-          label: 'Security',
-          description: 'Password and authentication',
-          type: 'navigate',
-          onPress: () => {},
-        },
+        { icon: 'person', label: 'Edit Profile', desc: 'Change your name and avatar', type: 'navigate', onPress: () => router.push('/(home)/profile') },
+        { icon: 'lock-closed', label: 'Privacy', desc: 'Manage your privacy settings', type: 'navigate', onPress: () => Alert.alert('Privacy', 'Coming soon!') },
+        { icon: 'shield-checkmark', label: 'Security', desc: 'Password and authentication', type: 'navigate', onPress: () => Alert.alert('Security', 'Coming soon!') },
       ],
     },
     {
       title: 'Support',
       items: [
-        {
-          icon: 'help-circle',
-          label: 'Help & FAQ',
-          description: 'Get help and find answers',
-          type: 'navigate',
-          onPress: () => {},
-        },
-        {
-          icon: 'chatbubble',
-          label: 'Contact Support',
-          description: 'Reach out to our team',
-          type: 'navigate',
-          onPress: () => {},
-        },
-        {
-          icon: 'document-text',
-          label: 'Terms of Service',
-          description: 'Read our terms',
-          type: 'navigate',
-          onPress: () => {},
-        },
-        {
-          icon: 'shield',
-          label: 'Privacy Policy',
-          description: 'Read our privacy policy',
-          type: 'navigate',
-          onPress: () => {},
-        },
+        { icon: 'help-circle', label: 'Help & FAQ', desc: 'Get help and find answers', type: 'navigate', onPress: () => Alert.alert('Help', 'Coming soon!') },
+        { icon: 'chatbubble', label: 'Contact Support', desc: 'Reach out to our team', type: 'navigate', onPress: () => Alert.alert('Support', 'Coming soon!') },
+        { icon: 'document-text', label: 'Terms of Service', desc: 'Read our terms', type: 'navigate', onPress: () => Alert.alert('Terms', 'Coming soon!') },
       ],
     },
   ];
 
   return (
+    <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <LinearGradient
         colors={theme.gradient as any}
-        locations={[0, 0.15, 0.5, 1]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
+        start={{ x: 0.2, y: 0 }}
+        end={{ x: 0.8, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
-      
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="chevron-back" size={28} color={theme.text} />
+
+      <View style={[styles.header, { paddingTop: Math.max(insets.top + 8, 52) }]}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={[styles.backButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
+        >
+          <Ionicons name="chevron-back" size={22} color={theme.text} />
         </TouchableOpacity>
         <Text style={[styles.title, { color: theme.text }]}>Settings</Text>
         <View style={styles.placeholder} />
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {settingsSections.map((section, sectionIndex) => (
-          <View key={sectionIndex} style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: theme.textTertiary }]}>
-              {section.title}
-            </Text>
-            <View style={[styles.sectionContent, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              {section.items.map((item, itemIndex) => (
-                <TouchableOpacity 
-                  key={itemIndex}
-                  style={[
-                    styles.settingItem,
-                    itemIndex < section.items.length - 1 && { borderBottomColor: theme.border }
-                  ]}
-                  onPress={item.type === 'switch' ? undefined : (item as any).onPress}
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+        {sections.map((section, si) => (
+          <View key={si} style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>{section.title}</Text>
+            <View style={[styles.sectionCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              {section.items.map((item, ii) => (
+                <TouchableOpacity
+                  key={ii}
+                  style={[styles.settingItem, ii < section.items.length - 1 && { borderBottomColor: theme.border, borderBottomWidth: 1 }]}
+                  onPress={item.type !== 'switch' ? (item as any).onPress : undefined}
                   activeOpacity={item.type === 'switch' ? 1 : 0.7}
                 >
-                  <View style={[styles.settingIcon, { backgroundColor: theme.primary + '20' }]}>
-                    <Ionicons name={item.icon as any} size={18} color={theme.primary} />
+                  <View style={[styles.settingIcon, { backgroundColor: accentColor + '18' }]}>
+                    <Ionicons name={item.icon as any} size={17} color={accentColor} />
                   </View>
                   <View style={styles.settingContent}>
-                    <Text style={[styles.settingLabel, { color: theme.text }]}>
-                      {item.label}
-                    </Text>
-                    <Text style={[styles.settingDescription, { color: theme.textTertiary }]}>
-                      {item.description}
-                    </Text>
+                    <Text style={[styles.settingLabel, { color: theme.text }]}>{item.label}</Text>
+                    <Text style={[styles.settingDesc, { color: theme.textSecondary }]}>{item.desc}</Text>
                   </View>
                   {item.type === 'switch' && (
                     <Switch
                       value={(item as any).value}
                       onValueChange={(item as any).onToggle}
-                      trackColor={{ false: theme.border, true: theme.primary + '80' }}
-                      thumbColor={(item as any).value ? theme.primary : '#f4f3f4'}
+                      trackColor={{ false: theme.border, true: accentColor + '80' }}
+                      thumbColor={(item as any).value ? accentColor : '#f4f3f4'}
                     />
                   )}
                   {item.type === 'select' && (
-                    <View style={[
-                      styles.selectIndicator,
-                      { backgroundColor: (item as any).value ? theme.primary + '30' : 'transparent' }
-                    ]}>
-                      <Ionicons 
-                        name={(item as any).value ? 'checkmark' : 'add'} 
-                        size={18} 
-                        color={(item as any).value ? theme.primary : theme.textTertiary} 
-                      />
+                    <View style={[styles.selectDot, { backgroundColor: (item as any).value ? accentColor : 'transparent', borderColor: (item as any).value ? accentColor : theme.border }]}>
+                      {(item as any).value && <Ionicons name="checkmark" size={14} color="#fff" />}
                     </View>
                   )}
                   {item.type === 'navigate' && (
-                    <Ionicons name="chevron-forward" size={18} color={theme.textTertiary} />
+                    <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
                   )}
                 </TouchableOpacity>
               ))}
@@ -301,114 +225,62 @@ export default function SettingsScreen() {
           </View>
         ))}
 
-        <TouchableOpacity 
-          style={[styles.logoutButton, { borderColor: '#ef4444' }]}
+        <TouchableOpacity
+          style={[styles.logoutButton, { borderColor: '#ef444440' }]}
           onPress={handleLogout}
+          activeOpacity={0.7}
         >
-          <Ionicons name="log-out-outline" size={20} color="#ef4444" />
-          <Text style={[styles.logoutText, { color: '#ef4444' }]}>Logout</Text>
+          <Ionicons name="log-out-outline" size={18} color="#ef4444" />
+          <Text style={styles.logoutText}>Sign Out</Text>
         </TouchableOpacity>
 
-        <Text style={[styles.version, { color: theme.textTertiary }]}>
-          Krios v1.0.0 • Made with ❤️
+        <Text style={[styles.version, { color: theme.textSecondary }]}>
+          Krios v1.0.0 · Made with love
         </Text>
       </ScrollView>
     </View>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 20,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingBottom: 12,
   },
   backButton: {
-    padding: 4,
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1,
   },
-  title: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  placeholder: {
-    width: 36,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  section: {
-    marginBottom: 24,
-  },
+  title: { fontSize: 17, fontWeight: '700', letterSpacing: -0.3 },
+  placeholder: { width: 36 },
+  content: { flex: 1, paddingHorizontal: 20 },
+  section: { marginBottom: 20 },
   sectionTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 8,
-    marginLeft: 4,
+    fontSize: 11, fontWeight: '600', textTransform: 'uppercase',
+    letterSpacing: 0.8, marginBottom: 6, marginLeft: 4,
   },
-  sectionContent: {
-    borderRadius: 16,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
+  sectionCard: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
   settingItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 14,
-    borderBottomWidth: 1,
+    flexDirection: 'row', alignItems: 'center', padding: 13,
   },
   settingIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 34, height: 34, borderRadius: 10,
+    justifyContent: 'center', alignItems: 'center',
   },
-  settingContent: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  settingLabel: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  settingDescription: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  selectIndicator: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
+  settingContent: { flex: 1, marginLeft: 11 },
+  settingLabel: { fontSize: 14, fontWeight: '500' },
+  settingDesc: { fontSize: 11, marginTop: 1 },
+  selectDot: {
+    width: 24, height: 24, borderRadius: 12, borderWidth: 1.5,
+    alignItems: 'center', justifyContent: 'center',
   },
   logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    marginTop: 10,
-    marginBottom: 20,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 13, borderRadius: 14, borderWidth: 1,
+    marginTop: 4, marginBottom: 16, gap: 8,
   },
-  logoutText: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  version: {
-    textAlign: 'center',
-    fontSize: 12,
-    marginBottom: 40,
-  },
+  logoutText: { fontSize: 15, fontWeight: '600', color: '#ef4444' },
+  version: { textAlign: 'center', fontSize: 11, marginBottom: 20 },
 });

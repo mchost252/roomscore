@@ -1,0 +1,340 @@
+🧠 Morning / Afternoon / Evening Flow
+
+(How Krios decides what to show when the user opens the app)
+
+The Daily Flow System in Krios is NOT time-triggered in the background.
+
+It is a Session-Based UI Experience that runs only when the user opens the app.
+
+Meaning:
+
+> Krios does not wake up by itself to show Morning Flow.
+Krios waits for the user to open the app → then decides what kind of “session” this is.
+
+
+
+
+---
+
+🔵 STEP 1 — App Opens (Bootstrap Phase)
+
+When the user launches the app:
+
+Krios must first run a Session Bootstrap Check before rendering the Main Screen UI.
+
+During this check, the app quietly reads from Local SQLite:
+
+Last time user opened the app
+
+Last day Morning Flow was shown
+
+Last day Evening Flow was shown
+
+Any tasks created or completed today
+
+Current device time
+
+
+So before anything appears on screen, the system already knows:
+
+> “Has this user started today yet?”
+“Have they already checked in today?”
+“Are they returning after a long gap?”
+“Is this likely the first session or a closing session?”
+
+
+
+
+---
+
+🔵 STEP 2 — Time Window Classification
+
+The app checks the device’s current local time and groups it into:
+
+Morning Session Window
+
+Midday / Execution Window
+
+Evening Reflection Window
+
+
+These windows are just context helpers.
+
+They do NOT automatically show any flow.
+
+Instead, they assist the Session Classifier.
+
+
+---
+
+🔵 STEP 3 — Session Classification (Core Logic)
+
+Now Krios determines what this app launch means.
+
+Example outcomes:
+
+🟡 Case A — First Open of the Day
+
+If:
+
+User has not opened the app today
+AND
+
+Morning Flow has not been shown today
+
+
+Then:
+
+→ This is treated as a Planning Session
+
+Krios should inject the:
+
+> Morning Planning AI Card
+
+
+
+Into the Main Screen.
+
+
+---
+
+🟡 Case B — Already Used App Earlier Today
+
+If:
+
+User already had a session earlier today
+AND
+
+Tasks exist for today
+
+
+Then:
+
+→ This is treated as an Execution Session
+
+Krios should:
+
+Collapse AI greeting automatically
+
+Focus the Main Screen on:
+
+Task progress
+
+Upcoming tasks
+
+Focus timer
+
+
+
+No Morning Flow is shown again.
+
+
+---
+
+🟡 Case C — Returning After Long Gap
+
+If:
+
+User opened the app earlier today
+AND
+
+Several hours have passed
+AND
+
+Evening Flow has not yet been shown
+
+
+Then:
+
+→ This becomes a Reflection Session
+
+Krios injects the:
+
+> Evening Reflection AI Card
+
+
+
+Into the Main Screen UI.
+
+
+---
+
+🔵 STEP 4 — Flow Injection (UI Behavior)
+
+Important:
+
+Morning / Afternoon / Evening flows are NOT separate pages.
+
+They must appear as:
+
+> AI Interactive Cards inside the Main Screen
+
+
+
+So the experience feels like:
+
+“I entered the app and Krios is checking in on me”
+
+Instead of:
+
+“I entered the app and was forced into another onboarding screen”
+
+Once the user interacts with the card:
+
+Accept
+
+Skip
+
+Modify
+
+Answer mood check
+
+
+Then:
+
+Krios writes a local record:
+
+> FlowTypeShownToday = true
+
+
+
+So that flow will not appear again on reload or re-entry.
+
+
+---
+
+🔔 Notifications Behavior
+
+Notifications are used only as soft invitations.
+
+Examples:
+
+“Want to quickly plan your day?”
+
+“How did today go?”
+
+
+When tapped:
+
+The app opens → Bootstrap runs → Session Classification runs again →
+Correct flow card is injected if it hasn't been shown today.
+
+
+---
+
+🧪 Testing on Dev APK (Expo Dev Build)
+
+Because Expo Dev reloads often, you must not depend on clearing app data or changing device time.
+
+Instead:
+
+Your dev build should allow:
+
+Resetting local flow flags
+
+Simulating a fresh day
+
+Forcing a Morning / Afternoon / Evening session manually (for testing)
+
+
+
+---
+
+✔ To Test Morning Flow:
+
+Reset today’s flow flags locally
+
+Open app
+
+Bootstrap runs
+
+App sees:
+
+No session today
+
+Morning flow not shown
+
+
+Inject Morning Planning Card
+
+
+Interact with it → confirm it never appears again today after reload.
+
+
+---
+
+✔ To Test Midday Session:
+
+Mark that user already had morning session today
+
+Add tasks for today
+
+Reopen app
+
+
+App should:
+
+Skip planning
+
+Show task execution UI immediately
+
+
+
+---
+
+✔ To Test Evening Reflection:
+
+Mark morning already shown today
+
+Simulate several hours since last open
+
+Reopen app
+
+
+App should:
+
+Inject Evening Reflection Card
+
+
+
+---
+
+✔ Reload Test:
+
+After completing a flow:
+
+Reload Expo Dev build
+
+
+App must:
+
+Rehydrate local state
+
+Skip previously shown flows
+
+Go straight to Main Screen
+
+
+No blank screen should appear if Bootstrap waits for local DB before navigation renders.
+
+
+---
+
+✅ Summary
+
+Morning / Afternoon / Evening in Krios are:
+
+Session-based
+
+Local-state driven
+
+Injected into Main Screen
+
+Shown once per day
+
+Triggered on app open
+
+Invited via notifications
+
+
+Not time-triggered pages.

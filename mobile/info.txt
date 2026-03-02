@@ -1,0 +1,437 @@
+🧠 BIG PICTURE FIRST (Krios Philosophy Check)
+
+Krios is not:
+
+A social media app
+
+A chat app
+
+A gamified task tracker
+
+A dashboard-based planner
+
+
+Krios is:
+
+> A local-first AI companion that manages your day with minimal friction.
+
+
+
+So any architecture decision must pass this test:
+
+✅ Does this make the app feel:
+
+instant
+
+private
+
+intelligent
+
+offline-capable
+
+non-interrogative
+
+
+❌ Or does it make it feel:
+
+cloud dependent
+
+laggy
+
+form-based
+
+data-heavy
+
+expensive to maintain
+
+
+Now let’s examine your two ideas properly.
+
+
+---
+
+✅ IDEA 1 – Image-Only Rooms Architecture
+
+This is very good — but for Krios specifically, it must be treated as a separate subsystem from the AI-Task brain.
+
+✔ What You Got Right
+
+Never storing base64 in Postgres → critical
+
+URL-only message rows → keeps DB compute low
+
+C++ pre-upload compression → huge performance win
+
+Realtime subscription → avoids polling
+
+Local caching → prevents re-downloads
+
+
+This architecture makes Rooms:
+
+network-light
+
+compute-cheap
+
+fast to reopen
+
+scalable without database bloat
+
+
+So technically:
+
+Cloud DB = metadata layer
+Storage = file layer
+SQLite = experience layer
+
+That’s the correct separation.
+
+
+---
+
+🚨 But Here’s What Must Change for Krios
+
+Rooms must NOT:
+
+wake the entire backend
+
+sync continuously
+
+initialize on app launch
+
+
+Why?
+
+Because Krios' primary mode is Personal AI Mode, not Social Mode.
+
+So:
+
+🟣 Rooms should behave like a “Cloud-Mounted Feature”
+
+Meaning:
+
+Rooms tab click = Cloud initialization trigger
+
+Not App Open = Cloud initialization
+
+
+Rooms must feel like:
+
+> “An extra feature I opened”
+
+
+
+Not:
+
+> “A system running in the background”
+
+
+
+
+---
+
+✅ IDEA 2 – Hybrid Local-First Architecture
+
+This one is the most important decision you’ve made so far for Krios.
+
+Because it aligns perfectly with:
+
+removing point systems
+
+AI behavioural adaptation
+
+offline usability
+
+avoiding interrogation-like prompts
+
+
+
+---
+
+🔥 This Changes Everything About Krios UI Behaviour
+
+Now:
+
+Feature	Storage Location	Why
+
+Tasks	Local SQLite	instant + private
+AI Chat History	Local SQLite	adaptive learning
+Focus Sessions	Local SQLite	real-time usage
+User Preferences	Local SQLite	no latency
+Notification Behaviour	Local SQLite	smart timing
+Rooms	Cloud	shared data
+Friend Requests	Cloud	shared data
+
+
+
+---
+
+🧠 What This Means for the UI You Already Designed
+
+Now the screen you showed earlier with:
+
+AI center panel
+
+Calendar dropdown
+
+Task filter
+
+Focus timer
+
+button
+
+
+
+Must behave like a:
+
+> Local Intelligence Console
+
+
+
+Not a cloud dashboard.
+
+
+---
+
+📱 PROFESSIONAL FLOW AFTER USER OPENS KRIOS
+
+🟢 1. App Launch
+
+Load:
+
+Today’s Tasks
+
+Behaviour Score
+
+Notification History
+
+Last AI Interaction
+
+Focus Pattern
+
+
+
+From LOCAL SQLITE ONLY
+
+No internet request.
+
+App should become usable in:
+
+> < 300ms
+
+
+
+
+---
+
+🟣 2. AI Panel Functionality (Already On Your UI)
+
+AI panel must NOT ask questions by default.
+
+Instead:
+
+Observe:
+
+task completion time
+
+missed tasks
+
+focus timer usage
+
+notification dismissals
+
+task editing frequency
+
+
+
+AI then generates:
+
+Passive suggestion cards:
+
+
+Examples:
+
+“You usually start work after 10am. Shift tasks?”
+
+“Focus session yesterday improved completion by 40%”
+
+“2 tasks missed last night — reschedule?”
+
+
+So the AI becomes:
+
+> Contextual feedback
+Not
+Question generator
+
+
+
+
+---
+
+🟠 3. Calendar Dropdown Behaviour
+
+When user taps calendar: Dropdown shows:
+
+Pending Tasks
+
+Active Tasks
+
+AI-Suggested Tasks
+
+Deferred Tasks
+
+
+Now here’s the important part:
+
+AI-Suggested Tasks should appear slightly separated (e.g., faint glow or icon)
+
+This visually tells the user:
+
+> “This wasn’t manually added”
+
+
+
+Without needing interrogation.
+
+
+---
+
+🔵 4. + Button Behaviour Change
+
+Instead of:
+
+> Create Task → Save Task
+
+
+
+It becomes:
+
+Tap + → Mini Input → AI Suggests:
+
+Time?
+
+Break into steps?
+
+Link to existing goal?
+
+
+User can ignore everything and hit save.
+
+AI suggestions must be:
+
+dismissible
+
+non-modal
+
+non-blocking
+
+
+
+---
+
+🟡 5. Notification Permission Strategy
+
+Do NOT request notification permission on launch.
+
+Instead:
+
+Wait until:
+
+user misses first task OR
+
+starts first focus session
+
+
+Then AI card:
+
+> “Want me to remind you at the right time next time?”
+
+
+
+Tap = permission request.
+
+This avoids interrogation-like onboarding.
+
+
+---
+
+🟤 6. Rooms Tab Click (Cloud Wake Event)
+
+Only now:
+
+Wake DB
+
+Subscribe to room
+
+Fetch message URLs
+
+
+Show:
+
+> “Connecting…”
+
+
+
+For max 2 seconds if cold.
+
+
+---
+
+🧩 RESULTING USER EXPERIENCE
+
+Mode	Works Offline?
+
+Task Management	✅
+AI Behaviour Adaptation	✅
+Focus Timer	✅
+Notifications	✅
+Daily Planning	✅
+Rooms	❌
+
+
+So even if Supabase compute dies again while you're outside:
+
+Krios still works as:
+
+> A complete personal productivity system.
+
+
+
+
+---
+
+🧠 FINAL PROFESSIONAL VERDICT
+
+Idea	Verdict
+
+Image-Only Rooms	✅ Keep (Cloud-Mounted)
+Hybrid Local-First	✅ Core Architecture
+Keep-Alive Railway Ping	❌ Remove
+AI Logs in Cloud	❌ Move Local
+Task System Cloud-Sync	❌ Avoid
+
+
+
+---
+
+This direction:
+
+reduces compute cost
+
+increases perceived intelligence
+
+improves UX
+
+avoids interrogation fatigue
+
+prepares you for your future C++ now → Rust later performance layer
+
+
+And most importantly:
+
+It makes Krios feel like:
+
+> An assistant living inside your phone
+Not
+A service connecting to a server
