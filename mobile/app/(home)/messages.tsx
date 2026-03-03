@@ -324,14 +324,25 @@ export default function MessagesScreen() {
           </Animated.Text>
         </View>
 
-        {/* ── Online shelf with top curve ── */}
+        {/* ── Online shelf with top curve (sticky, won't scroll into header) ── */}
         {!search && (
-          <View style={[s.shelf, { backgroundColor: shelfBg, borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: 'hidden', marginTop: 8 }]}>
+          <View style={[s.shelf, { 
+            backgroundColor: isDark ? 'rgba(25,25,40,0.95)' : 'rgba(252,252,255,0.95)', 
+            borderTopLeftRadius: 28, 
+            borderTopRightRadius: 28, 
+            overflow: 'hidden', 
+            marginTop: 8,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: isDark ? 0.3 : 0.08,
+            shadowRadius: 8,
+            elevation: 4,
+          }]}>
             {/* Top curve SVG */}
             <Svg width={W} height={28} viewBox={`0 0 ${W} 28`} style={{ position: 'absolute', top: 0, left: 0 }}>
               <Path
                 d={`M0,10 Q${W/2},0 ${W},10 L${W},0 L0,0 Z`}
-                fill={shelfBg}
+                fill={isDark ? 'rgba(25,25,40,0.95)' : 'rgba(252,252,255,0.95)'}
               />
             </Svg>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.shelfRow}>
@@ -386,15 +397,22 @@ export default function MessagesScreen() {
         {/* ── Free middle space (background shows through) ── */}
         {!search && <View style={{ height: 24 }} />}
 
-        {/* ── Chat list container (its own curved surface) ── */}
-        <View style={[s.chatContainer, { backgroundColor: shelfBg, borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: 'hidden' }]}
+        {/* ── Chat list container (its own curved surface with distinct color) ── */}
+        <View style={[s.chatContainer, { 
+          backgroundColor: isDark ? 'rgba(20,20,32,0.85)' : 'rgba(248,249,255,0.9)', 
+          borderTopLeftRadius: 28, 
+          borderTopRightRadius: 28, 
+          overflow: 'hidden',
+          borderWidth: 1,
+          borderColor: isDark ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.08)',
+        }]}
         >
           {!search && (
             <Svg width={W} height={28} viewBox={`0 0 ${W} 28`} style={{ position: 'absolute', top: 0, left: 0 }}>
               {/* Top curve only */}
               <Path
                 d={`M0,10 Q${W/2},0 ${W},10 L${W},0 L0,0 Z`}
-                fill={shelfBg}
+                fill={isDark ? 'rgba(20,20,32,0.85)' : 'rgba(248,249,255,0.9)'}
               />
             </Svg>
           )}
