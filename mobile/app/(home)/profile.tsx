@@ -3,7 +3,15 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Alert, Dimensions, TextInput, Keyboard, Platform, Image,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
+// Optional dependency (so bundling doesn't fail if not installed yet)
+let ImagePicker: any = null;
+if (Platform.OS !== 'web') {
+  try {
+    ImagePicker = require('expo-image-picker');
+  } catch (e) {
+    ImagePicker = null;
+  }
+}
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -291,6 +299,14 @@ export default function ProfileScreen() {
     try {
       if (Platform.OS === 'web') {
         Alert.alert('Not supported', 'Changing your profile photo from web is not supported yet.');
+        return;
+      }
+
+      if (!ImagePicker) {
+        Alert.alert(
+          'Missing dependency',
+          'expo-image-picker is not installed yet. Run: npx expo install expo-image-picker'
+        );
         return;
       }
 
