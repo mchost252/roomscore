@@ -370,10 +370,18 @@ export default function MessagesScreen() {
                       start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
                       style={s.onlineRing}
                     >
-                      <View style={[s.avatarInner, { backgroundColor: avatarColor(f.friend_id) }]}>
-                        <Text style={s.avatarTxt}>
-                          {(f.username || '?').slice(0, 1).toUpperCase()}
-                        </Text>
+                      <View style={[s.avatarInner, { backgroundColor: avatarColor(f.friend_id), overflow: 'hidden' }]}>
+                        {f.avatar ? (
+                          <Image 
+                            source={{ uri: f.avatar }} 
+                            style={{ width: '100%', height: '100%' }} 
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <Text style={s.avatarTxt}>
+                            {(f.username || '?').slice(0, 1).toUpperCase()}
+                          </Text>
+                        )}
                       </View>
                     </LinearGradient>
                     <View style={[s.onlineDot, { borderColor: isDark ? '#080810' : '#f8f9ff' }]} />
