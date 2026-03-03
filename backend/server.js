@@ -60,7 +60,9 @@ const allowedOrigins = [
   'capacitor://localhost',
   'ionic://localhost',
   'http://localhost:5173', // Vite dev server
-  'http://localhost:3000'
+  'http://localhost:3000',
+  'http://localhost:8081', // Expo web dev server
+  'http://localhost:19006' // Expo web alternative port
 ];
 
 app.use(cors({

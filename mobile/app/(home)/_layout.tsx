@@ -78,14 +78,18 @@ export default function HomeLayout() {
           <Stack.Screen name="chat" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
         </Stack>
 
-        {navStyle === 'sidebar' && (
+        {/* Sidebar nav: show on home and messages only, hide on modals */}
+        {navStyle === 'sidebar' && [
+          '/(home)',
+          '/(home)/messages',
+        ].includes(pathname) && (
           <SidebarNav onAIPress={aiChatFn} onAddTask={addTaskFn} />
         )}
 
-        {navStyle === 'bottom' && ![
-          '/(home)/chat',
-          '/(home)/ai-chat',
-          '/(home)/task-thread',
+        {/* Bottom tab bar: show on home and messages only */}
+        {navStyle === 'bottom' && [
+          '/(home)',
+          '/(home)/messages',
         ].includes(pathname) && (
           <BottomTabBar onAddTask={addTaskFn} />
         )}

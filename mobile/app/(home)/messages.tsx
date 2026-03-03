@@ -324,9 +324,16 @@ export default function MessagesScreen() {
           </Animated.Text>
         </View>
 
-        {/* ── Online shelf ── */}
+        {/* ── Online shelf with top curve ── */}
         {!search && (
-          <View style={[s.shelf, { backgroundColor: shelfBg }]}>
+          <View style={[s.shelf, { backgroundColor: shelfBg, borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: 'hidden', marginTop: 8 }]}>
+            {/* Top curve SVG */}
+            <Svg width={W} height={28} viewBox={`0 0 ${W} 28`} style={{ position: 'absolute', top: 0, left: 0 }}>
+              <Path
+                d={`M0,10 Q${W/2},0 ${W},10 L${W},0 L0,0 Z`}
+                fill={shelfBg}
+              />
+            </Svg>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.shelfRow}>
               {/* Add friend button */}
               <View style={s.shelfItem}>
@@ -377,16 +384,16 @@ export default function MessagesScreen() {
         )}
 
         {/* ── Free middle space (background shows through) ── */}
-        {!search && <View style={{ height: 18 }} />}
+        {!search && <View style={{ height: 24 }} />}
 
         {/* ── Chat list container (its own curved surface) ── */}
-        <View style={[s.chatContainer, { backgroundColor: shelfBg }]}
+        <View style={[s.chatContainer, { backgroundColor: shelfBg, borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: 'hidden' }]}
         >
           {!search && (
-            <Svg width={W} height={26} viewBox={`0 0 ${W} 26`}>
-              {/* Solid curve only (no gradient line) */}
+            <Svg width={W} height={28} viewBox={`0 0 ${W} 28`} style={{ position: 'absolute', top: 0, left: 0 }}>
+              {/* Top curve only */}
               <Path
-                d={`M0,18 Q${W/2},0 ${W},18 L${W},26 L0,26 Z`}
+                d={`M0,10 Q${W/2},0 ${W},10 L${W},0 L0,0 Z`}
                 fill={shelfBg}
               />
             </Svg>
@@ -585,7 +592,7 @@ const s = StyleSheet.create({
   onlineDot: { width: 13, height: 13, borderRadius: 7, backgroundColor: '#22c55e', borderWidth: 2.5, position: 'absolute', bottom: 2, right: 2 },
   shelfName: { fontSize: 11, fontWeight: '500', textAlign: 'center' },
   // Chat container
-  chatContainer: { borderTopLeftRadius: 26, borderTopRightRadius: 26, overflow: 'hidden', paddingTop: 0, marginTop: 2 },
+  chatContainer: { paddingTop: 12 },
   // Section
   sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6 },
   sectionLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
