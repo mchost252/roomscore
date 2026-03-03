@@ -125,14 +125,22 @@ export default function MessagesScreen() {
   useEffect(() => {
     const refresh = () => loadData(true);
     const handleOnlineStatus = (data: { userId: string; isOnline: boolean }) => {
-      setConversations(prev => prev.map(c => 
-        c.friend_id === data.userId ? { ...c, is_online: data.isOnline ? 1 : 0 } : c
-      ));
-      setOnlineFriends(prev => {
-        const updated = prev.map(c => 
+      setConversations(prev => {
+        const next = prev.map(c =>
           c.friend_id === data.userId ? { ...c, is_online: data.isOnline ? 1 : 0 } : c
         );
-        return updated.filter(c => c.is_online === 1);
+        // Keep shelf in sync with latest conversations
+        setOnlineFriends(next.filter(c => c.is_online === 1).slice(0, 12));
+        return next;
+      });
+    };
+
+    const handleOnlineUsers = (userIds: string[]) => {
+      setConversations(prev => {
+        const setIds = new Set(userIds);
+        const next = prev.map(c => ({ ...c, is_online: setIds.has(c.friend_id) ? 1 : 0 }));
+        setOnlineFriends(next.filter(c => c.is_online === 1).slice(0, 12));
+        return next;
       });
     };
 
@@ -140,12 +148,14 @@ export default function MessagesScreen() {
     (messageService as any).on?.('message_received', refresh);
     (messageService as any).on?.('message_sent', refresh);
     (messageService as any).on?.('online_status', handleOnlineStatus);
+    (messageService as any).on?.('online_users', handleOnlineUsers);
     
     return () => {
       (messageService as any).off?.('conversations_updated', refresh);
       (messageService as any).off?.('message_received', refresh);
       (messageService as any).off?.('message_sent', refresh);
       (messageService as any).off?.('online_status', handleOnlineStatus);
+      (messageService as any).off?.('online_users', handleOnlineUsers);
     };
   }, [loadData]);
 
@@ -259,11 +269,6 @@ export default function MessagesScreen() {
 
         {/* Small title row — slides in from left when scrolled */}
         <View style={s.smallTitleRow}>
-          {navStyle === 'sidebar' && (
-            <Animated.View style={[{ marginRight: 8 }, smallTitleStyle]}>
-              <Image source={require('../../assets/krios-logo.png')} style={{ width: 20, height: 20 }} resizeMode="contain" />
-            </Animated.View>
-          )}
           <Animated.Text style={[s.titleSmall, { color: text }, smallTitleStyle]}>
             Messages
           </Animated.Text>
@@ -371,39 +376,24 @@ export default function MessagesScreen() {
           </View>
         )}
 
-        {/* ── Curved separator ── */}
-        {!search && (
-          <View style={[s.curveWrap, { backgroundColor: shelfBg }]}>
-            <Svg width={W} height={30} viewBox={`0 0 ${W} 30`}>
-              <Defs>
-                <SvgGrad id="g" x1="0" y1="0" x2="1" y2="0">
-                  <Stop offset="0" stopColor={primary} stopOpacity="0.2" />
-                  <Stop offset="0.5" stopColor={accent} stopOpacity="0.3" />
-                  <Stop offset="1" stopColor={primary} stopOpacity="0.2" />
-                </SvgGrad>
-              </Defs>
-              {/* Glowing arc */}
-              <Path d={`M0,2 Q${W/2},26 ${W},2`} stroke="url(#g)" strokeWidth="2" fill="none" />
-              {/* Fill below */}
-              <Path d={`M0,2 Q${W/2},26 ${W},2 L${W},30 L0,30 Z`}
-                fill={isDark ? '#080810' : '#ffffff'} />
+        {/* ── Free middle space (background shows through) ── */}
+        {!search && <View style={{ height: 18 }} />}
+
+        {/* ── Chat list container (its own curved surface) ── */}
+        <View style={[s.chatContainer, { backgroundColor: shelfBg }]}
+        >
+          {!search && (
+            <Svg width={W} height={26} viewBox={`0 0 ${W} 26`}>
+              {/* Solid curve only (no gradient line) */}
+              <Path
+                d={`M0,18 Q${W/2},0 ${W},18 L${W},26 L0,26 Z`}
+                fill={shelfBg}
+              />
             </Svg>
-          </View>
-        )}
+          )}
 
-        {/* ── Liquid Gradient Glow (complementary colors) ── */}
-        {!search && (
-          <View style={s.glowWrap}>
-            <LinearGradient
-              colors={['transparent', `${primary}80`, `${accent}80`, `${cyan}80`, 'transparent']}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-              style={s.glowGradient}
-            />
-          </View>
-        )}
-
-        {/* ── Section label ── */}
-        <View style={s.sectionRow}>
+          {/* ── Section label ── */}
+          <View style={s.sectionRow}>
           <Text style={[s.sectionLabel, { color: textTert }]}>
             {search ? (searchResults.length > 0 ? `${searchResults.length} found` : 'No results') : 'Recent'}
           </Text>
@@ -412,8 +402,8 @@ export default function MessagesScreen() {
           )}
         </View>
 
-        {/* ── Conversation list ── */}
-        {loading ? (
+          {/* ── Conversation list ── */}
+          {loading ? (
           // Skeleton
           [1,2,3,4,5].map(i => (
             <View key={i} style={[s.skeleton, {
@@ -463,7 +453,8 @@ export default function MessagesScreen() {
               </TouchableOpacity>
             )}
           </View>
-        )}
+          )}
+        </View>
       </Animated.ScrollView>
 
       {/* ── AddFriendModal Bottom Sheet ── */}
@@ -556,16 +547,6 @@ export default function MessagesScreen() {
       </Modal>
 
       {/* ── Nav bars ── */}
-      {navStyle === 'bottom' && (
-        <CircularKMenu
-          menuItems={[
-            { icon: 'home-outline', label: 'Home', onPress: () => router.push('/(home)'), color: primary },
-            { icon: 'sparkles-outline', label: 'AI Chat', onPress: () => router.push('/(home)/ai-chat'), color: accent },
-            { icon: 'person-outline', label: 'Profile', onPress: () => router.push('/(home)/profile'), color: '#06b6d4' },
-            { icon: 'grid-outline', label: 'Rooms', onPress: () => router.push('/(home)/rooms'), color: '#f59e0b' },
-          ]}
-        />
-      )}
       {navStyle === 'sidebar' && (
         <SidebarNav
           onAIPress={() => router.push('/(home)/ai-chat')}
@@ -603,11 +584,8 @@ const s = StyleSheet.create({
   avatarTxt: { color: '#fff', fontSize: 18, fontWeight: '700' },
   onlineDot: { width: 13, height: 13, borderRadius: 7, backgroundColor: '#22c55e', borderWidth: 2.5, position: 'absolute', bottom: 2, right: 2 },
   shelfName: { fontSize: 11, fontWeight: '500', textAlign: 'center' },
-  // Curve
-  curveWrap: { marginTop: -1 },
-  // Glow
-  glowWrap: { height: 32, overflow: 'hidden', backgroundColor: 'transparent' },
-  glowGradient: { flex: 1, opacity: 0.6 },
+  // Chat container
+  chatContainer: { borderTopLeftRadius: 26, borderTopRightRadius: 26, overflow: 'hidden', paddingTop: 0, marginTop: 2 },
   // Section
   sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6 },
   sectionLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },

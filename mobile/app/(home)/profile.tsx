@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Alert, Dimensions, TextInput, Keyboard, Platform,
+  Alert, Dimensions, TextInput, Keyboard, Platform, Image,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -185,6 +186,7 @@ export default function ProfileScreen() {
   const [bioDraft, setBioDraft] = useState(user?.bio || '');
   const [saving, setSaving] = useState(false);
   const [localBio, setLocalBio] = useState('');
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   // Load locally cached bio on mount
   useEffect(() => {
@@ -284,6 +286,51 @@ export default function ProfileScreen() {
   const rate = total > 0 ? Math.min(Math.round((total / (total + 8)) * 100), 99) : 0;
   const initial = user?.username?.charAt(0).toUpperCase() || 'U';
   const displayBio = user?.bio || localBio || '';
+
+  const pickAvatar = useCallback(async () => {
+    try {
+      if (Platform.OS === 'web') {
+        Alert.alert('Not supported', 'Changing your profile photo from web is not supported yet.');
+        return;
+      }
+
+      setUploadingAvatar(true);
+
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission needed', 'Please allow photo access to change your profile picture.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.75,
+        base64: true,
+      });
+
+      if (result.canceled) return;
+
+      const asset = result.assets?.[0];
+      if (!asset?.base64) {
+        Alert.alert('Error', 'Could not read image data. Try another image.');
+        return;
+      }
+
+      const mime = (asset as any).mimeType || 'image/jpeg';
+      const dataUri = `data:${mime};base64,${asset.base64}`;
+
+      const r = await updateProfile({ avatar: dataUri } as any);
+      if (!r.success) {
+        Alert.alert('Upload failed', r.message || 'Could not update profile photo');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not pick image');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  }, [updateProfile]);
 
   const stats = [
     { icon: 'checkmark-done', label: 'Tasks Done', value: total, color: '#10B981' },
@@ -438,10 +485,16 @@ export default function ProfileScreen() {
               <Animated.Text style={[st.hdrTitle, { color: C.text }, heroTxtStyle]}>Profile</Animated.Text>
               {/* Mini avatar + name — fades in */}
               <Animated.View style={[st.hdrMini, miniStyle]}>
-                <LinearGradient colors={['#6366f1', '#8b5cf6', '#a855f7'] as any}
-                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={st.miniAv}>
-                  <Text style={st.miniAvTxt}>{initial}</Text>
-                </LinearGradient>
+                <View style={[st.miniAv, { overflow: 'hidden' }]}>
+                  {user?.avatar ? (
+                    <Image source={{ uri: user.avatar }} style={{ width: '100%', height: '100%' }} />
+                  ) : (
+                    <LinearGradient colors={['#6366f1', '#8b5cf6', '#a855f7'] as any}
+                      start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill}>
+                      <Text style={st.miniAvTxt}>{initial}</Text>
+                    </LinearGradient>
+                  )}
+                </View>
                 <Text style={[st.miniName, { color: C.text }]} numberOfLines={1}>{user?.username || 'User'}</Text>
               </Animated.View>
             </View>
@@ -462,14 +515,27 @@ export default function ProfileScreen() {
           {/* Hero */}
           <View style={st.hero}>
             <Animated.View style={heroAvStyle}>
-              <LinearGradient colors={['#6366f1', '#8b5cf6', '#a855f7'] as any}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={st.heroAv}>
-                <Text style={st.heroAvTxt}>{initial}</Text>
-              </LinearGradient>
+              <TouchableOpacity activeOpacity={0.85} onPress={pickAvatar} disabled={uploadingAvatar}>
+                <View style={[st.heroAv, { overflow: 'hidden' }]}>
+                  {user?.avatar ? (
+                    <Image source={{ uri: user.avatar }} style={{ width: '100%', height: '100%' }} />
+                  ) : (
+                    <LinearGradient colors={['#6366f1', '#8b5cf6', '#a855f7'] as any}
+                      start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill}>
+                      <Text style={st.heroAvTxt}>{initial}</Text>
+                    </LinearGradient>
+                  )}
+
+                  <View style={st.camBadge}>
+                    <Ionicons name={uploadingAvatar ? 'cloud-upload-outline' : 'camera-outline'} size={14} color="#fff" />
+                  </View>
+                </View>
+              </TouchableOpacity>
             </Animated.View>
             <Animated.View style={[st.heroInfo, heroTxtStyle]}>
               <Text style={[st.username, { color: C.text }]}>{user?.username || 'User'}</Text>
               <Text style={[st.email, { color: C.sec }]}>{user?.email || 'user@example.com'}</Text>
+              <Text style={[st.tapHint, { color: C.sec }]}>{uploadingAvatar ? 'Updating photo…' : 'Tap photo to change'}</Text>
             </Animated.View>
           </View>
 
@@ -563,7 +629,9 @@ const st = StyleSheet.create({
     shadowColor: '#6366f1', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 16, elevation: 8,
   },
   heroAvTxt: { fontSize: 36, fontWeight: '800', color: '#fff', textShadowColor: 'rgba(0,0,0,0.2)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
+  camBadge: { position: 'absolute', right: 6, bottom: 6, width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(99,102,241,0.95)', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'rgba(255,255,255,0.9)' },
   heroInfo: { alignItems: 'center', marginTop: 14 },
+  tapHint: { marginTop: 6, fontSize: 12, fontWeight: '500' },
   username: { fontSize: 24, fontWeight: '800', letterSpacing: -0.5, marginBottom: 4 },
   email: { fontSize: 13, fontWeight: '500' },
 

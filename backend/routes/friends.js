@@ -257,6 +257,50 @@ router.delete('/:friendId', protect, async (req, res, next) => {
   }
 });
 
+// @route   GET /api/friends/status/:friendId
+// @desc    Check if a friend is online (best-effort)
+// @access  Private
+router.get('/status/:friendId', protect, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const friendId = req.params.friendId;
+
+    // Ensure users are friends
+    const friendship = await prisma.friend.findFirst({
+      where: {
+        status: 'accepted',
+        OR: [
+          { fromUserId: userId, toUserId: friendId },
+          { fromUserId: friendId, toUserId: userId },
+        ],
+      },
+      select: { id: true },
+    });
+
+    if (!friendship) {
+      return res.status(404).json({ success: false, message: 'Friendship not found' });
+    }
+
+    const io = req.app.get('io');
+    // We don't expose raw onlineUsers map here; use socket room presence heuristic.
+    // If the friend has at least one socket joined to their personal room, they're likely online.
+    let isOnline = false;
+
+    try {
+      if (io) {
+        const roomName = `user:${friendId}`;
+        const room = io.sockets.adapter.rooms.get(roomName);
+        isOnline = !!room && room.size > 0;
+      }
+    } catch (_) {}
+
+    return res.json({ success: true, isOnline });
+  } catch (err) {
+    logger.error('Friend status error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to get friend status' });
+  }
+});
+
 // @route   GET /api/friends
 // @desc    Get user's friends list
 // @access  Private

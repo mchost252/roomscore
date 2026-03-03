@@ -121,7 +121,16 @@ router.post('/task-assist', protect, async (req, res) => {
   } catch (err) {
     console.error('[AI] task-assist error:', err.message);
 
-    // Check if it's an API key issue
+    // Missing key / provider not configured
+    // aiService throws err.code = 'NO_API_KEY'
+    if (err.code === 'NO_API_KEY' || err.message?.includes('Missing GEMINI_API_KEY')) {
+      return res.status(503).json({
+        error: 'AI service not configured. Please add GEMINI_API_KEY on the server.',
+        code: 'NO_API_KEY',
+      });
+    }
+
+    // Gemini/OpenAI auth issues
     if (err.message?.includes('API key') || err.message?.includes('401') || err.message?.includes('403')) {
       return res.status(503).json({
         error: 'AI service not configured. Please add your API key.',
@@ -362,7 +371,16 @@ IMPORTANT: Only return valid JSON. No markdown. No extra text.`;
       const data = await resp.json();
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!text) throw new Error('Gemini returned empty response');
-      aiResponse = JSON.parse(text);
+      
+      // Safe parse (Gemini sometimes wraps JSON in markdown)
+      const raw = text.trim();
+      const trimmed = raw.startsWith('```')
+        ? raw.replace(/^```(json)?/i, '').replace(/```$/i, '').trim()
+        : raw;
+      const first = trimmed.indexOf('{');
+      const last = trimmed.lastIndexOf('}');
+      const jsonStr = (first !== -1 && last !== -1 && last > first) ? trimmed.slice(first, last + 1) : trimmed;
+      aiResponse = JSON.parse(jsonStr);
     }
 
     // Validate response shape
@@ -374,6 +392,13 @@ IMPORTANT: Only return valid JSON. No markdown. No extra text.`;
   } catch (err) {
     console.error('[AI] chat error:', err.message);
 
+    if (err.code === 'NO_API_KEY' || err.message?.includes('Missing GEMINI_API_KEY')) {
+      return res.status(503).json({
+        error: 'AI not configured. Add GEMINI_API_KEY on the server.',
+        code: 'NO_API_KEY',
+      });
+    }
+
     if (err.message?.includes('API key') || err.message?.includes('401') || err.message?.includes('403')) {
       return res.status(503).json({
         error: 'AI not configured. Add your API key.',
@@ -381,7 +406,7 @@ IMPORTANT: Only return valid JSON. No markdown. No extra text.`;
       });
     }
 
-    // Graceful fallback — don't break the chat
+    // Graceful fallback — don't break the chat UI (still return 200)
     return res.json({
       success: true,
       reply: "I'm having a moment — try again in a second?",

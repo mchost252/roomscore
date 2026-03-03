@@ -1,8 +1,9 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Stack, usePathname } from 'expo-router';
+import { Stack, usePathname, useRouter } from 'expo-router';
 import { View, StyleSheet, Animated } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import SidebarNav from '../../components/SidebarNav';
+import { CircularKMenu } from '../../components/CircularKMenu';
 
 // Context so index.tsx can register its openAIChat / openAddTask handlers
 export const HomeNavContext = React.createContext<{
@@ -37,6 +38,8 @@ function ScreenEntry({ children }: { children: React.ReactNode }) {
 }
 
 export default function HomeLayout() {
+  const router = useRouter();
+  const pathname = usePathname();
   const [navStyle, setNavStyle] = useState<'bottom' | 'sidebar'>('bottom');
   const [aiChatFn, setAiChatFn] = useState<() => void>(() => () => {});
   const [addTaskFn, setAddTaskFn] = useState<() => void>(() => () => {});
@@ -57,6 +60,13 @@ export default function HomeLayout() {
     setOpenAIChat: (fn: () => void) => setAiChatFn(() => fn),
     setOpenAddTask: (fn: () => void) => setAddTaskFn(() => fn),
   };
+
+  const hideBottomNav = pathname === '/(home)/chat'
+    || pathname === '/chat'
+    || pathname === '/(home)/ai-chat'
+    || pathname === '/ai-chat'
+    || pathname === '/(home)/task-thread'
+    || pathname === '/task-thread';
 
   return (
     <HomeNavContext.Provider value={ctxValue}>
@@ -79,6 +89,17 @@ export default function HomeLayout() {
 
         {navStyle === 'sidebar' && (
           <SidebarNav onAIPress={aiChatFn} onAddTask={addTaskFn} />
+        )}
+
+        {navStyle === 'bottom' && !hideBottomNav && (
+          <CircularKMenu
+            menuItems={[
+              { icon: 'home-outline', label: 'Home', onPress: () => router.push('/(home)'), color: '#6366f1' },
+              { icon: 'chatbubbles-outline', label: 'Messages', onPress: () => router.push('/(home)/messages'), color: '#8b5cf6' },
+              { icon: 'sparkles-outline', label: 'AI Chat', onPress: aiChatFn, color: '#06b6d4' },
+              { icon: 'person-outline', label: 'Profile', onPress: () => router.push('/(home)/profile'), color: '#f59e0b' },
+            ]}
+          />
         )}
       </View>
     </HomeNavContext.Provider>

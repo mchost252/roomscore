@@ -86,6 +86,12 @@ Rules:
 // ---------------------------------------------------------------------------
 
 async function callGemini({ systemPrompt, userPrompt }) {
+  if (!GEMINI_API_KEY) {
+    const err = new Error('Missing GEMINI_API_KEY');
+    // @ts-ignore
+    err.code = 'NO_API_KEY';
+    throw err;
+  }
   const model = 'gemini-1.5-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
 
@@ -114,14 +120,40 @@ async function callGemini({ systemPrompt, userPrompt }) {
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) throw new Error('Gemini returned empty response');
 
-  return JSON.parse(text);
+  try {
+    return safeJsonParse(text);
+  } catch (e) {
+    throw new Error(`Gemini returned invalid JSON: ${text.slice(0, 200)}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
 // OpenAI Provider
 // ---------------------------------------------------------------------------
 
+function safeJsonParse(text) {
+  if (!text || typeof text !== 'string') throw new Error('AI returned empty response');
+  let t = text.trim();
+  // Remove markdown fences
+  if (t.startsWith('```')) {
+    t = t.replace(/^```(json)?/i, '').replace(/```$/i, '').trim();
+  }
+  // Best-effort extract first JSON object
+  const first = t.indexOf('{');
+  const last = t.lastIndexOf('}');
+  if (first !== -1 && last !== -1 && last > first) {
+    t = t.slice(first, last + 1);
+  }
+  return JSON.parse(t);
+}
+
 async function callOpenAI({ systemPrompt, userPrompt }) {
+  if (!OPENAI_API_KEY) {
+    const err = new Error('Missing OPENAI_API_KEY');
+    // @ts-ignore
+    err.code = 'NO_API_KEY';
+    throw err;
+  }
   const url = 'https://api.openai.com/v1/chat/completions';
 
   const body = {
@@ -153,7 +185,11 @@ async function callOpenAI({ systemPrompt, userPrompt }) {
   const text = data?.choices?.[0]?.message?.content;
   if (!text) throw new Error('OpenAI returned empty response');
 
-  return JSON.parse(text);
+  try {
+    return safeJsonParse(text);
+  } catch (e) {
+    throw new Error(`OpenAI returned invalid JSON: ${text.slice(0, 200)}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
