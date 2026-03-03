@@ -339,49 +339,72 @@ IMPORTANT: Only return valid JSON. No markdown. No extra text.`;
 
     } else {
       // Gemini path (default)
-      const model = 'gemini-1.5-flash';
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
+      const preferredModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash-latest';
+      const modelFallbacks = [
+        preferredModel,
+        'gemini-2.0-flash',
+        'gemini-1.5-flash-latest',
+        'gemini-1.5-pro-latest',
+      ].filter((v, i, a) => !!v && a.indexOf(v) === i);
 
-      const contents = [
-        ...historyMessages,
-        { role: 'user', parts: [{ text: message }] },
-      ];
+      const callModel = async (model) => {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
 
-      const body = {
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents,
-        generationConfig: {
-          temperature: 0.8,
-          maxOutputTokens: 512,
-          responseMimeType: 'application/json',
-        },
+        const contents = [
+          ...historyMessages,
+          { role: 'user', parts: [{ text: message }] },
+        ];
+
+        const body = {
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents,
+          generationConfig: {
+            temperature: 0.8,
+            maxOutputTokens: 512,
+            responseMimeType: 'application/json',
+          },
+        };
+
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+        if (!resp.ok) {
+          const errText = await resp.text();
+          const err = new Error(`Gemini error ${resp.status}: ${errText}`);
+          // @ts-ignore
+          err.httpStatus = resp.status;
+          throw err;
+        }
+
+        const data = await resp.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) throw new Error('Gemini returned empty response');
+
+        // Safe parse (Gemini sometimes wraps JSON in markdown)
+        const raw = text.trim();
+        const trimmed = raw.startsWith('```')
+          ? raw.replace(/^```(json)?/i, '').replace(/```$/i, '').trim()
+          : raw;
+        const first = trimmed.indexOf('{');
+        const last = trimmed.lastIndexOf('}');
+        const jsonStr = (first !== -1 && last !== -1 && last > first) ? trimmed.slice(first, last + 1) : trimmed;
+        return JSON.parse(jsonStr);
       };
 
-      const resp = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
-      if (!resp.ok) {
-        const errText = await resp.text();
-        throw new Error(`Gemini error ${resp.status}: ${errText}`);
+      let lastErr;
+      for (const m of modelFallbacks) {
+        try {
+          aiResponse = await callModel(m);
+          break;
+        } catch (e) {
+          lastErr = e;
+          if (e.httpStatus && e.httpStatus !== 404) throw e;
+        }
       }
-
-      const data = await resp.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) throw new Error('Gemini returned empty response');
-      
-      // Safe parse (Gemini sometimes wraps JSON in markdown)
-      const raw = text.trim();
-      const trimmed = raw.startsWith('```')
-        ? raw.replace(/^```(json)?/i, '').replace(/```$/i, '').trim()
-        : raw;
-      const first = trimmed.indexOf('{');
-      const last = trimmed.lastIndexOf('}');
-      const jsonStr = (first !== -1 && last !== -1 && last > first) ? trimmed.slice(first, last + 1) : trimmed;
-      aiResponse = JSON.parse(jsonStr);
-    }
+      if (!aiResponse && lastErr) throw lastErr;
 
     // Validate response shape
     const reply = aiResponse?.reply || "I'm here! What would you like to do?";

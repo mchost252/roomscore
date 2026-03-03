@@ -159,6 +159,10 @@ class MessageService {
     this.unsubscribers.push(
       syncEngine.on('user:status', (data: { userId: string; isOnline: boolean }) => {
         sqliteService.updateConversationOnline(data.userId, data.isOnline).catch(() => {});
+        // Web fallback: keep memory cache in sync
+        this.memoryConversationCache = this.memoryConversationCache.map(c =>
+          c.friend_id === data.userId ? { ...c, is_online: data.isOnline ? 1 : 0 } : c
+        );
         this.emit('online_status', data);
       })
     );
@@ -166,6 +170,11 @@ class MessageService {
     // Bulk online users
     this.unsubscribers.push(
       syncEngine.on('users:online', (userIds: string[]) => {
+        const setIds = new Set(userIds);
+        this.memoryConversationCache = this.memoryConversationCache.map(c => ({
+          ...c,
+          is_online: setIds.has(c.friend_id) ? 1 : 0,
+        }));
         this.emit('online_users', userIds);
       })
     );

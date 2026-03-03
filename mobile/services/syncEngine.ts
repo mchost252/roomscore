@@ -61,11 +61,14 @@ class SyncEngine {
   private connect(): void {
     if (this.socket?.connected) return;
 
-    const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    // Use configured socket URL (falls back to Railway in production)
+    const { SOCKET_URL } = require('../constants/config');
+    const API_URL = SOCKET_URL || process.env.EXPO_PUBLIC_SOCKET_URL || process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
     
     this.socket = io(API_URL, {
       auth: { token: this.token },
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
+      upgrade: true,
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
@@ -77,6 +80,8 @@ class SyncEngine {
     this.socket.on('connect', () => {
       console.log('🔌 WebSocket connected');
       this.reconnectAttempts = 0;
+      // Request fresh online list (helps after reconnects)
+      try { this.socket?.emit('users:getOnline'); } catch {}
       this.processSyncQueue(); // Sync any offline changes
     });
 

@@ -308,7 +308,7 @@ export default function MessagesScreen() {
         onScroll={onScroll}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 110, paddingTop: insets.top + 110 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 140, paddingTop: insets.top + 110, minHeight: H + insets.top + 240 }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing} onRefresh={onRefresh}

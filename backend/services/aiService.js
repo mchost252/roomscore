@@ -92,39 +92,64 @@ async function callGemini({ systemPrompt, userPrompt }) {
     err.code = 'NO_API_KEY';
     throw err;
   }
-  const model = 'gemini-1.5-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+  const preferredModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash-latest';
+  const modelFallbacks = [
+    preferredModel,
+    'gemini-2.0-flash',
+    'gemini-1.5-flash-latest',
+    'gemini-1.5-pro-latest',
+  ].filter((v, i, a) => !!v && a.indexOf(v) === i);
 
-  const body = {
-    systemInstruction: { parts: [{ text: systemPrompt }] },
-    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 1024,
-      responseMimeType: 'application/json',
-    },
+  const callModel = async (model) => {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+
+    const body = {
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 1024,
+        responseMimeType: 'application/json',
+      },
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      const err = new Error(`Gemini API error ${response.status}: ${errText}`);
+      // @ts-ignore
+      err.httpStatus = response.status;
+      throw err;
+    }
+
+    const data = await response.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) throw new Error('Gemini returned empty response');
+
+    try {
+      return safeJsonParse(text);
+    } catch (e) {
+      throw new Error(`Gemini returned invalid JSON: ${text.slice(0, 200)}`);
+    }
   };
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Gemini API error ${response.status}: ${err}`);
+  let lastErr;
+  for (const m of modelFallbacks) {
+    try {
+      return await callModel(m);
+    } catch (e) {
+      lastErr = e;
+      // Only retry on NOT_FOUND model errors (404)
+      if (e.httpStatus && e.httpStatus !== 404) throw e;
+    }
   }
+  throw lastErr || new Error('Gemini request failed');
 
-  const data = await response.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error('Gemini returned empty response');
-
-  try {
-    return safeJsonParse(text);
-  } catch (e) {
-    throw new Error(`Gemini returned invalid JSON: ${text.slice(0, 200)}`);
-  }
 }
 
 // ---------------------------------------------------------------------------

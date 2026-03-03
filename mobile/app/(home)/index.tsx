@@ -862,12 +862,11 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* ════ BOTTOM TAB BAR — dome bump + raised FAB ════ */}
-      {navStyle==='bottom'&&(
+      {/* Bottom tab bar is now rendered globally in (home)/_layout.tsx */}
+      {false && navStyle==='bottom'&&(
         <>
-        {/* Single tall curved container - light color, extends behind phone nav */}
-        <View style={{position:'absolute',bottom:0,left:0,right:0,height:insets.bottom+64,backgroundColor:t.isDark?'#16162a':'#ffffff',borderTopLeftRadius:28,borderTopRightRadius:28,borderTopWidth:1.5,borderColor:t.isDark?'rgba(99,102,241,0.3)':'rgba(99,102,241,0.2)'}}/>
-        <View style={[s.tabBar,{paddingBottom:Math.max(insets.bottom,8),backgroundColor:'transparent',borderTopColor:'transparent',borderTopLeftRadius:28,borderTopRightRadius:28}]}>
+        <View />
+        <View>
           {/* Home */}
           <TouchableOpacity style={s.tabItem} onPress={()=>{}}>
             <Ionicons name="home" size={22} color={t.primary}/>

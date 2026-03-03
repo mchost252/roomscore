@@ -542,9 +542,14 @@ export default function ProfileScreen() {
                     </LinearGradient>
                   )}
 
-                  <View style={st.camBadge}>
+                  <TouchableOpacity
+                    onPress={pickAvatar}
+                    activeOpacity={0.85}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    style={st.camBadge}
+                  >
                     <Ionicons name={uploadingAvatar ? 'cloud-upload-outline' : 'camera-outline'} size={14} color="#fff" />
-                  </View>
+                  </TouchableOpacity>
                 </View>
               </TouchableOpacity>
             </Animated.View>
