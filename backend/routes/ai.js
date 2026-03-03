@@ -405,6 +405,7 @@ IMPORTANT: Only return valid JSON. No markdown. No extra text.`;
         }
       }
       if (!aiResponse && lastErr) throw lastErr;
+    }
 
     // Validate response shape
     const reply = aiResponse?.reply || "I'm here! What would you like to do?";
