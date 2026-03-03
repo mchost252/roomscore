@@ -70,6 +70,7 @@ class SyncEngine {
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       reconnectionAttempts: this.maxReconnectAttempts,
+      timeout: 30000, // 30 seconds for Railway/Neon cold starts
     });
 
     // Connection events

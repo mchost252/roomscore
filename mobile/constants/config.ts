@@ -26,7 +26,7 @@ const getSocketUrl = (): string => {
 
 export const API_BASE_URL = getApiUrl();
 export const SOCKET_URL = getSocketUrl();
-export const API_TIMEOUT = 20000; // 20 seconds - increased for cold starts
+export const API_TIMEOUT = 30000; // 30 seconds - increased for Railway/Neon cold starts
 
 // Token storage keys
 export const TOKEN_KEY = 'auth_token';

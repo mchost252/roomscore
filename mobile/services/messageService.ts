@@ -377,6 +377,26 @@ class MessageService {
     return true;
   }
 
+  // ── Delete/Unfriend ─────────────────────────────────────
+  async deleteFriend(friendId: string): Promise<boolean> {
+    try {
+      await api.delete(`/friends/${friendId}`);
+    } catch (err) {
+      console.warn('[MessageService] Backend unfriend failed:', err);
+    }
+    await sqliteService.deleteConversation(friendId);
+    if (this.currentUserId) {
+      await sqliteService.deleteConversationMessages(this.currentUserId, friendId);
+    }
+    this.friendshipCache.delete(friendId);
+    this.memoryConversationCache = this.memoryConversationCache.filter(c => c.friend_id !== friendId);
+    const memKey = `${this.currentUserId}:${friendId}`;
+    this.memoryMessageCache.delete(memKey);
+    this.emit('conversations_updated');
+    this.emit('friend_removed', friendId);
+    return true;
+  }
+
   // ─── Send Message (Offline-First + Auto Friend Request) ─
   async sendMessage(
     friendId: string,

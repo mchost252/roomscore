@@ -9,7 +9,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, RefreshControl, Pressable, ScrollView,
-  Dimensions, Platform, StatusBar, Alert, Modal, FlatList,
+  Dimensions, Platform, StatusBar, Alert, Modal, FlatList, Image,
 } from 'react-native';
 import Animated, {
   useSharedValue, useAnimatedStyle, useAnimatedScrollHandler,
@@ -26,6 +26,9 @@ import { useAuth } from '../../context/AuthContext';
 import messageService from '../../services/messageService';
 import { LocalConversation } from '../../services/sqliteService';
 import ConversationCard from '../../components/messaging/ConversationCard';
+import { CircularKMenu } from '../../components/CircularKMenu';
+import SidebarNav from '../../components/SidebarNav';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: W, height: H } = Dimensions.get('window');
 const COLLAPSE_AT = 80;
@@ -61,6 +64,13 @@ export default function MessagesScreen() {
   const [addFriendModalVisible, setAddFriendModalVisible] = useState(false);
   const [addFriendSearch, setAddFriendSearch] = useState('');
   const [addFriendResults, setAddFriendResults] = useState<LocalConversation[]>([]);
+  const [navStyle, setNavStyle] = useState<'bottom' | 'sidebar'>('bottom');
+
+  useEffect(() => {
+    AsyncStorage.getItem('krios_nav_style').then(v => {
+      if (v === 'sidebar' || v === 'bottom') setNavStyle(v as 'bottom' | 'sidebar');
+    });
+  }, []);
 
   // ── Samsung-style scroll (same as profile.tsx) ───────────
   const scrollY = useSharedValue(0);
@@ -85,7 +95,7 @@ export default function MessagesScreen() {
     opacity: interpolate(scrollY.value, [0, COLLAPSE_AT * 0.65], [0, 1], Extrapolation.CLAMP),
   }));
 
-  // ── Load data ────────────────────────────────────────────
+  // ─── Load data ────────────────────────────────────────────
   const loadData = useCallback(async (silent = false) => {
     try {
       if (user?.id) await messageService.initialize(user.id);
@@ -95,7 +105,7 @@ export default function MessagesScreen() {
     } catch (e) {
       console.warn('[Messages]', e);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [user?.id]);
 
@@ -114,13 +124,28 @@ export default function MessagesScreen() {
   // Real-time events
   useEffect(() => {
     const refresh = () => loadData(true);
+    const handleOnlineStatus = (data: { userId: string; isOnline: boolean }) => {
+      setConversations(prev => prev.map(c => 
+        c.friend_id === data.userId ? { ...c, is_online: data.isOnline ? 1 : 0 } : c
+      ));
+      setOnlineFriends(prev => {
+        const updated = prev.map(c => 
+          c.friend_id === data.userId ? { ...c, is_online: data.isOnline ? 1 : 0 } : c
+        );
+        return updated.filter(c => c.is_online === 1);
+      });
+    };
+
     (messageService as any).on?.('conversations_updated', refresh);
     (messageService as any).on?.('message_received', refresh);
     (messageService as any).on?.('message_sent', refresh);
+    (messageService as any).on?.('online_status', handleOnlineStatus);
+    
     return () => {
       (messageService as any).off?.('conversations_updated', refresh);
       (messageService as any).off?.('message_received', refresh);
       (messageService as any).off?.('message_sent', refresh);
+      (messageService as any).off?.('online_status', handleOnlineStatus);
     };
   }, [loadData]);
 
@@ -163,23 +188,32 @@ export default function MessagesScreen() {
     });
   }, [router]);
 
-  // ── Delete with warning ──────────────────────────────────
+  // ── Delete with warning + actual API call ───────────────
   const handleDelete = useCallback((conv: LocalConversation) => {
     Alert.alert(
-      'Delete Conversation',
-      `Delete your conversation with ${conv.username}? This only removes it from your side — they can still message you.`,
+      'Remove Friend',
+      `Remove ${conv.username} from your friends? You'll need to send a new message request to chat again. This only affects your side.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete', style: 'destructive',
-          onPress: () => {
+          text: 'Remove', style: 'destructive',
+          onPress: async () => {
+            // Optimistically remove from UI immediately
             setConversations(prev => prev.filter(c => c.friend_id !== conv.friend_id));
             setOnlineFriends(prev => prev.filter(c => c.friend_id !== conv.friend_id));
+            // Call backend to delete friendship + clear messages
+            try {
+              await messageService.deleteFriend(conv.friend_id);
+            } catch (err) {
+              console.warn('[Messages] Delete friend failed:', err);
+              // Reload conversations if it failed
+              loadData(true);
+            }
           },
         },
       ]
     );
-  }, []);
+  }, [loadData]);
 
   // ── Computed ─────────────────────────────────────────────
   const filtered = search.trim() ? searchResults : conversations;
@@ -212,38 +246,35 @@ export default function MessagesScreen() {
         style={[StyleSheet.absoluteFill, { width: 2 }]}
       />
 
-      {/* ── Fixed header (Samsung-style, same as profile) ── */}
-      <View style={[s.header, { paddingTop: insets.top + 4 }]}>
-        {/* Animated blur bg */}
+      {/* ── Fixed header — only small title + search (fades in on scroll) ── */}
+      <View style={[s.header, { paddingTop: insets.top + 4, zIndex: 20, position: 'absolute', left: 0, right: 0, top: 0 }]}>
+        {/* Blur bg fades in as user scrolls */}
         <Animated.View style={[StyleSheet.absoluteFill, headerBgStyle]}>
           {Platform.OS === 'ios'
             ? <BlurView intensity={75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
             : <View style={[StyleSheet.absoluteFill, { backgroundColor: headerBg }]} />
           }
         </Animated.View>
-        {/* Bottom border fades in on scroll */}
         <Animated.View style={[s.headerBorder, { backgroundColor: border }, headerBgStyle]} />
 
-        {/* Title area — Samsung style */}
-        <View style={s.titleArea}>
-          {/* Large centered title (visible when at top) */}
-          <Animated.Text style={[s.titleLarge, { color: text }, largeTitleStyle]}>
-            Messages{totalUnread > 0 ? ` (${totalUnread})` : ''}
+        {/* Small title row — slides in from left when scrolled */}
+        <View style={s.smallTitleRow}>
+          {navStyle === 'sidebar' && (
+            <Animated.View style={[{ marginRight: 8 }, smallTitleStyle]}>
+              <Image source={require('../../assets/krios-logo.png')} style={{ width: 20, height: 20 }} resizeMode="contain" />
+            </Animated.View>
+          )}
+          <Animated.Text style={[s.titleSmall, { color: text }, smallTitleStyle]}>
+            Messages
           </Animated.Text>
-          {/* Small left-aligned title (visible when scrolled) */}
-          <View style={s.smallTitleRow}>
-            <Animated.Text style={[s.titleSmall, { color: text }, smallTitleStyle]}>
-              Messages
-            </Animated.Text>
-            {totalUnread > 0 && (
-              <Animated.View style={[s.badge, { backgroundColor: primary }, smallTitleStyle]}>
-                <Text style={s.badgeTxt}>{totalUnread > 99 ? '99+' : totalUnread}</Text>
-              </Animated.View>
-            )}
-          </View>
+          {totalUnread > 0 && (
+            <Animated.View style={[s.badge, { backgroundColor: primary }, smallTitleStyle]}>
+              <Text style={s.badgeTxt}>{totalUnread > 99 ? '99+' : totalUnread}</Text>
+            </Animated.View>
+          )}
         </View>
 
-        {/* Search */}
+        {/* Search — always visible */}
         <View style={[s.searchBar, {
           backgroundColor: inputBg,
           borderColor: searchFocused ? primary : border,
@@ -267,16 +298,27 @@ export default function MessagesScreen() {
         </View>
       </View>
 
-      {/* ── Scrollable content ── */}
+      {/* ── Scrollable content (starts below absolute header) ── */}
       <Animated.ScrollView
         onScroll={onScroll}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 110 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 110, paddingTop: insets.top + 110 }}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={primary} colors={[primary]} />
+          <RefreshControl
+            refreshing={refreshing} onRefresh={onRefresh}
+            tintColor={primary} colors={[primary]}
+            progressViewOffset={insets.top + 110}
+          />
         }
       >
+        {/* ── Large title inside scroll (Samsung style) ── */}
+        <View style={{ paddingHorizontal: 20, paddingBottom: 4 }}>
+          <Animated.Text style={[s.titleLarge, { color: text }, largeTitleStyle]}>
+            Messages
+          </Animated.Text>
+        </View>
+
         {/* ── Online shelf ── */}
         {!search && (
           <View style={[s.shelf, { backgroundColor: shelfBg }]}>
@@ -512,6 +554,24 @@ export default function MessagesScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* ── Nav bars ── */}
+      {navStyle === 'bottom' && (
+        <CircularKMenu
+          menuItems={[
+            { icon: 'home-outline', label: 'Home', onPress: () => router.push('/(home)'), color: primary },
+            { icon: 'sparkles-outline', label: 'AI Chat', onPress: () => router.push('/(home)/ai-chat'), color: accent },
+            { icon: 'person-outline', label: 'Profile', onPress: () => router.push('/(home)/profile'), color: '#06b6d4' },
+            { icon: 'grid-outline', label: 'Rooms', onPress: () => router.push('/(home)/rooms'), color: '#f59e0b' },
+          ]}
+        />
+      )}
+      {navStyle === 'sidebar' && (
+        <SidebarNav
+          onAIPress={() => router.push('/(home)/ai-chat')}
+          onAddTask={() => router.push('/(home)/profile')}
+        />
+      )}
     </View>
   );
 }
@@ -525,7 +585,7 @@ const s = StyleSheet.create({
   },
   headerBorder: { position: 'absolute', bottom: 0, left: 0, right: 0, height: StyleSheet.hairlineWidth },
   titleArea: { width: '100%', marginBottom: 12, minHeight: 44, justifyContent: 'center' },
-  titleLarge: { fontSize: 32, fontWeight: '800', letterSpacing: -0.8, textAlign: 'center', position: 'absolute', left: 0, right: 0 },
+  titleLarge: { fontSize: 32, fontWeight: '800', letterSpacing: -0.8, textAlign: 'center' },
   smallTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   titleSmall: { fontSize: 18, fontWeight: '700', letterSpacing: -0.3 },
   badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 },

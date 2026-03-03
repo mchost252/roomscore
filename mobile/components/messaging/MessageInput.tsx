@@ -54,13 +54,29 @@ export default function MessageInput({
     }
   }, [text, onSend, onTyping]);
 
+  // Typing timeout ref — reset each keystroke so indicator stays alive
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleChangeText = useCallback((val: string) => {
     setText(val);
-    if (val.trim().length > 0 && !typingRef.current) {
-      typingRef.current = true;
-      onTyping?.(true);
-    } else if (val.trim().length === 0 && typingRef.current) {
+    if (val.trim().length > 0) {
+      // Always re-emit typing=true on each keystroke to keep indicator alive
+      if (!typingRef.current) {
+        typingRef.current = true;
+        onTyping?.(true);
+      } else {
+        // Re-trigger to reset the server-side timeout
+        onTyping?.(true);
+      }
+      // Auto-stop typing after 4s of no input
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        typingRef.current = false;
+        onTyping?.(false);
+      }, 4000);
+    } else if (typingRef.current) {
       typingRef.current = false;
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       onTyping?.(false);
     }
   }, [onTyping]);

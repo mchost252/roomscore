@@ -83,26 +83,36 @@ export default function ChatScreen() {
     sheetOpacity.value = withTiming(1, { duration: 400 });
     sheetTranslateY.value = withSpring(0, { mass: 0.5, damping: 18, stiffness: 180 });
 
+    let isSubscribed = true;
+
     const init = async () => {
       await messageService.initialize(user.id);
 
-      // Load cached messages first
-      const cached = await messageService.getMessages(friendId);
-      setMessages(cached);
-      setLoading(false);
+      // Load cached messages first (don't refetch if already loaded)
+      if (messages.length === 0) {
+        const cached = await messageService.getMessages(friendId);
+        if (isSubscribed) {
+          setMessages(cached);
+          setLoading(false);
+        }
+      } else {
+        setLoading(false);
+      }
 
       // Mark as read
       await messageService.markAsRead(friendId);
 
       // Check friendship / request status
       const friendship = await messageService.checkFriendship(friendId);
-      setRequestStatus(friendship.requestStatus);
-      if (friendship.requestId) setRequestId(friendship.requestId);
+      if (isSubscribed) {
+        setRequestStatus(friendship.requestStatus);
+        if (friendship.requestId) setRequestId(friendship.requestId);
+      }
 
       // Fetch initial online status for this friend
       try {
         const statusResp = await api.get(`/friends/status/${friendId}`);
-        if (statusResp.data?.isOnline !== undefined) {
+        if (statusResp.data?.isOnline !== undefined && isSubscribed) {
           setIsOnline(statusResp.data.isOnline);
         }
       } catch {}
@@ -110,13 +120,17 @@ export default function ChatScreen() {
       // Also check local conversation
       const convs = await sqliteService.getConversations();
       const conv = convs.find(c => c.friend_id === friendId);
-      if (conv?.request_status && conv.request_status !== 'none') {
+      if (conv?.request_status && conv.request_status !== 'none' && isSubscribed) {
         setRequestStatus(conv.request_status);
         if (conv.request_id) setRequestId(conv.request_id);
       }
     };
 
     init();
+
+    return () => {
+      isSubscribed = false;
+    };
   }, [user, friendId]);
 
   // ─── Real-time Listeners ───────────────────────────────
