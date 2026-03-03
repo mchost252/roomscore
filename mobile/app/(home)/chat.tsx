@@ -109,21 +109,25 @@ export default function ChatScreen() {
         if (friendship.requestId) setRequestId(friendship.requestId);
       }
 
-      // Fetch initial online status for this friend
-      try {
-        const statusResp = await api.get(`/friends/status/${friendId}`);
-        if (statusResp.data?.isOnline !== undefined && isSubscribed) {
-          setIsOnline(statusResp.data.isOnline);
-        }
-      } catch {}
-
-      // Also check local conversation
+      // Check local conversation for cached online status (instant)
       const convs = await sqliteService.getConversations();
       const conv = convs.find(c => c.friend_id === friendId);
-      if (conv?.request_status && conv.request_status !== 'none' && isSubscribed) {
-        setRequestStatus(conv.request_status);
-        if (conv.request_id) setRequestId(conv.request_id);
+      if (conv && isSubscribed) {
+        setIsOnline(conv.is_online === 1);
+        if (conv.request_status && conv.request_status !== 'none') {
+          setRequestStatus(conv.request_status);
+          if (conv.request_id) setRequestId(conv.request_id);
+        }
       }
+
+      // Fetch fresh online status in background (non-blocking)
+      api.get(`/friends/status/${friendId}`)
+        .then(statusResp => {
+          if (statusResp.data?.isOnline !== undefined && isSubscribed) {
+            setIsOnline(statusResp.data.isOnline);
+          }
+        })
+        .catch(() => {});
     };
 
     init();

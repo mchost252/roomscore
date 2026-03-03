@@ -536,22 +536,31 @@ class MessageService {
     }
   }
 
-  // ─── Get Messages (server-first, with cache fallback) ───────
+  // ─── Get Messages (cache-first for instant load, background sync) ───────
   async getMessages(friendId: string, before?: number): Promise<LocalDirectMessage[]> {
     if (!this.currentUserId) return [];
 
-    // Fetch from server and merge into SQLite (or memory cache on web)
+    // Try cache FIRST (SQLite on native, memory on web)
+    const memKey = `${this.currentUserId}:${friendId}`;
+    const cachedSQLite = await sqliteService.getDirectMessages(this.currentUserId, friendId, 50, before);
+    const cachedMemory = this.memoryMessageCache.get(memKey) || [];
+    
+    const cached = cachedSQLite.length > 0 ? cachedSQLite : cachedMemory;
+    
+    // If we have cache, return it immediately and sync in background
+    if (cached.length > 0) {
+      this.fetchAndMergeMessages(friendId).catch(() => {});
+      return cached;
+    }
+
+    // No cache: await server fetch (first load only)
     try {
       await this.fetchAndMergeMessages(friendId);
     } catch {}
 
-    // Try SQLite (native) — returns [] on web
-    const cached = await sqliteService.getDirectMessages(this.currentUserId, friendId, 50, before);
-    if (cached.length > 0) return cached;
-
-    // Web fallback: return in-memory cache built during fetchAndMergeMessages
-    const memKey = `${this.currentUserId}:${friendId}`;
-    return this.memoryMessageCache.get(memKey) || [];
+    // Return whatever we got
+    const freshSQLite = await sqliteService.getDirectMessages(this.currentUserId, friendId, 50, before);
+    return freshSQLite.length > 0 ? freshSQLite : (this.memoryMessageCache.get(memKey) || []);
   }
 
   private async fetchAndMergeMessages(friendId: string): Promise<void> {

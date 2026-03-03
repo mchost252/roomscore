@@ -79,18 +79,22 @@ export default function HomeLayout() {
         </Stack>
 
         {/* Sidebar nav: show on home and messages only, hide on modals */}
-        {navStyle === 'sidebar' && [
-          '/(home)',
-          '/(home)/messages',
-        ].includes(pathname) && (
+        {navStyle === 'sidebar' && (
+          pathname === '/' || 
+          pathname === '/(home)' || 
+          pathname === '/(home)/index' ||
+          pathname === '/(home)/messages'
+        ) && (
           <SidebarNav onAIPress={aiChatFn} onAddTask={addTaskFn} />
         )}
 
         {/* Bottom tab bar: show on home and messages only */}
-        {navStyle === 'bottom' && [
-          '/(home)',
-          '/(home)/messages',
-        ].includes(pathname) && (
+        {navStyle === 'bottom' && (
+          pathname === '/' || 
+          pathname === '/(home)' || 
+          pathname === '/(home)/index' ||
+          pathname === '/(home)/messages'
+        ) && (
           <BottomTabBar onAddTask={addTaskFn} />
         )}
       </View>
