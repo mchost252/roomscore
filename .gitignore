@@ -47,3 +47,4 @@ android/
 ios/
 resources/
 .github/
+.aider*

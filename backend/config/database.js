@@ -1,10 +1,16 @@
-// Prisma Database Client for PostgreSQL (Supabase/Neon compatible)
+// Prisma Database Client for PostgreSQL (Supabase/Neon) or SQLite (Local Dev)
 const { PrismaClient } = require('@prisma/client');
+
+// Check if using SQLite (local development)
+const isSQLite = process.env.DATABASE_URL?.includes('sqlite') || process.env.DATABASE_URL?.includes('.db');
 
 // Build optimized DATABASE_URL with connection pool settings for PostgreSQL serverless (Supabase/Neon)
 function getOptimizedDatabaseUrl() {
   let url = process.env.DATABASE_URL;
   if (!url) return url;
+  
+  // SQLite doesn't need connection pool settings
+  if (isSQLite) return url;
   
   // Add connection pool and timeout settings if not already present
   const params = new URLSearchParams();
@@ -91,19 +97,31 @@ async function connectDatabase(retries = 3, delay = 2000) {
       console.log(`🔌 Database connection attempt ${attempt}/${retries}...`);
       await prisma.$connect();
       
-      // Warmup query to wake up Neon serverless database
+      // Warmup query - different for SQLite vs PostgreSQL
       console.log('🔥 Running warmup query...');
       const warmupStart = Date.now();
-      await prisma.$queryRaw`SELECT 1 as connected`;
+      
+      if (isSQLite) {
+        await prisma.$queryRaw`SELECT 1 as connected`;
+      } else {
+        await prisma.$queryRaw`SELECT 1 as connected`;
+      }
       console.log(`✅ Database warmup completed in ${Date.now() - warmupStart}ms`);
       
       // Run a simple query to ensure tables are accessible
       const userCount = await prisma.user.count();
-      console.log(`✅ Connected to PostgreSQL database (Supabase) - ${userCount} users found`);
+      const dbType = isSQLite ? 'SQLite' : 'PostgreSQL (Supabase)';
+      console.log(`✅ Connected to ${dbType} database - ${userCount} users found`);
       
       return true;
     } catch (error) {
       console.error(`❌ Database connection attempt ${attempt} failed:`, error.message);
+      
+      // Skip retry for SQLite - it's a local file, errors are usually schema issues
+      if (isSQLite) {
+        console.error('❌ SQLite connection failed - check if schema is pushed');
+        throw error;
+      }
       
       if (attempt < retries) {
         console.log(`⏳ Retrying in ${delay}ms...`);
