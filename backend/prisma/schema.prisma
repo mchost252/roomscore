@@ -32,7 +32,7 @@ model User {
   bio                   String?
   timezone              String    @default("UTC")
   onboardingCompleted   Boolean   @default(false)
-  pushSubscription      Json?
+  pushSubscription      String?   // SQLite: stored as JSON string
   aiProfile             String?   // JSON string — learned AI preferences
   lastActive            DateTime  @default(now())
   streak                Int       @default(0)
@@ -131,7 +131,7 @@ model RoomTask {
   title       String
   description String?
   taskType    String   @default("daily") // daily, weekly, custom
-  daysOfWeek  Int[]    @default([]) // For custom frequency: 0=Sun, 1=Mon, ..., 6=Sat
+  daysOfWeek  String?  // SQLite: stored as comma-separated (e.g., "1,2,3")
   points      Int      @default(10)
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
@@ -240,7 +240,7 @@ model Notification {
   type      String   // friend_request, room_invite, nudge, appreciation, system
   title     String
   message   String
-  data      Json?
+  data      String?   // SQLite: stored as JSON string
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
 
@@ -258,7 +258,7 @@ model DirectMessage {
   toUserId     String
   content      String
   read         Boolean  @default(false)
-  deletedFor   String[] @default([]) // Array of userIds who deleted this message
+  deletedFor   String?  // SQLite: stored as comma-separated userIds
   replyToId    String?  // ID of message being replied to
   replyToText  String?  // Cached text of replied message (for display even if original deleted)
   createdAt    DateTime @default(now())
