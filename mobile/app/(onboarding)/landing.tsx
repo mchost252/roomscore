@@ -385,9 +385,12 @@ export default function LandingScreen() {
         </TouchableOpacity>
       </Animated.View>
 
-      {/* Welcome Message */}
+      {/* Welcome Message & Progress */}
       <Animated.View style={[styles.welcomeSection, { opacity: fadeAnim }]}>
         <Text style={styles.welcomeText}>Welcome, {userName}</Text>
+        <View style={styles.stepIndicator}>
+          <Text style={styles.stepText}>Step {currentSlide + 1} of {SLIDES.length}</Text>
+        </View>
       </Animated.View>
 
       {/* Slides */}
@@ -557,6 +560,21 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.4)',
     textTransform: 'uppercase',
     letterSpacing: 2,
+  },
+  stepIndicator: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.3)',
+  },
+  stepText: {
+    fontSize: 12,
+    color: '#6366f1',
+    fontWeight: '600',
   },
   scrollView: {
     flex: 1,

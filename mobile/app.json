@@ -1,30 +1,30 @@
 {
   "expo": {
-    "name": "RoomScore",
-    "slug": "roomscore-mobile",
+    "name": "Krios",
+    "slug": "krios-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "scheme": "roomscore",
+    "scheme": "krios",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#0a0a0f"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.roomscore.mobile"
+      "bundleIdentifier": "com.krios.app"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#0a0a0f"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.roomscore.mobile",
+      "package": "com.krios.app",
       "softInputMode": "adjustResize",
       "softwareKeyboardLayoutMode": "resize"
     },

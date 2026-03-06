@@ -123,7 +123,8 @@ export default function SignupScreen() {
       const result = await signup(name.trim(), email.trim(), password);
       if (result.success) {
         authHaptics.success();
-        router.replace('/(auth)/login');
+        // User is already logged in via AuthContext, go to home
+        router.replace('/(home)');
       } else {
         setErrors({ general: result.message || 'Could not create account' });
         authHaptics.error();
