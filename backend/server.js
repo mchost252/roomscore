@@ -8,7 +8,7 @@ const { Server } = require('socket.io');
 const logger = require('./utils/logger');
 const passport = require('passport');
 const session = require('express-session');
-const { prisma, connectDatabase, startKeepAlive } = require('./config/database');
+const { prisma, connectDatabase } = require('./config/database');
 const { startChatRetentionCleanup } = require('./services/chatRetentionService');
 
 // Import routes
@@ -133,7 +133,8 @@ connectDatabase()
     }
 
     // Start keep-alive pings to prevent Neon database from sleeping
-    startKeepAlive();
+    // DISABLED to reduce egress on Supabase
+    // startKeepAlive();
     // Start chat retention cleanup
     startChatRetentionCleanup();
   })
