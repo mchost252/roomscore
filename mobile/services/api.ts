@@ -149,11 +149,20 @@ api.interceptors.response.use(
     }
 
     // Transform error for better handling
+    let errorMessage = error.response?.data?.message || error.message || 'An error occurred';
+    
+    // Handle rate limiting with friendly message
+    if (error.response?.status === 429) {
+      const retryAfter = error.response.headers['retry-after'];
+      const seconds = retryAfter ? parseInt(retryAfter) : 900; // default 15 min
+      errorMessage = `Too many requests. Please wait ${Math.ceil(seconds / 60)} minute(s) and try again.`;
+    }
+    
     const customError = {
       ...error,
       isOffline: isOffline,
       retryCount: originalRequest._retryCount || 0,
-      message: error.response?.data?.message || error.message || 'An error occurred',
+      message: errorMessage,
       code: error.code || error.response?.status?.toString(),
     };
 

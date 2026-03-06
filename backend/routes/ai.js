@@ -9,8 +9,7 @@ const express = require('express');
 const router = express.Router();
 const { generateTaskNote, detectVagueness } = require('../services/aiService');
 const { protect } = require('../middleware/auth');
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { prisma } = require('../config/database');
 
 // ---------------------------------------------------------------------------
 // Rate limiting (simple in-memory — per user, 20 AI calls per hour)

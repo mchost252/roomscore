@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const http = require('http');
@@ -78,6 +79,7 @@ app.use(cors({
   },
   credentials: true
 }));
+app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -97,21 +99,24 @@ app.use(passport.initialize());
 app.use(passport.session());
 require('./config/passport')(passport);
 
-// Rate limiting - DISABLED for now to fix timeout issues
-// TODO: Re-enable once frontend request optimization is complete
-// const limiter = rateLimit({
-//   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 5 * 60 * 1000,
-//   max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 500,
-//   message: { success: false, message: 'Too many requests. Please wait a moment and try again.' },
-//   standardHeaders: true,
-//   legacyHeaders: false,
-//   skip: (req) => {
-//     if (req.path === '/health') return true;
-//     if (req.path.includes('/socket.io')) return true;
-//     return false;
-//   }
-// });
-// app.use('/api/', limiter);
+// Rate limiting - enabled to prevent abuse and reduce unnecessary API calls
+const limiter = rateLimit({
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 min
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 500,
+  message: { 
+    success: false, 
+    message: 'Too many requests. Please wait a moment and try again.',
+    retryAfter: Math.ceil((parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000) / 1000)
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => {
+    if (req.path === '/health') return true;
+    if (req.path.includes('/socket.io')) return true;
+    return false;
+  }
+});
+app.use('/api/', limiter);
 
 // Database connection (PostgreSQL via Prisma)
 console.log('🔌 Attempting PostgreSQL connection...');

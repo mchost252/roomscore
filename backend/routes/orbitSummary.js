@@ -135,8 +135,21 @@ router.get('/:roomId', protect, isRoomMember, async (req, res) => {
       completionsByUser[completion.userId].push(completion);
     });
     
+    // Batch fetch all user progress for this room (optimization: avoid N+1)
+    const memberIds = room.members.map(m => m.userId);
+    const userProgressList = await prisma.userRoomProgress.findMany({
+      where: {
+        userId: { in: memberIds },
+        roomId
+      }
+    });
+    const userProgressMap = {};
+    userProgressList.forEach(p => {
+      userProgressMap[p.userId] = p;
+    });
+    
     // Calculate member summaries
-    const memberSummaries = await Promise.all(room.members.map(async (member) => {
+    const memberSummaries = room.members.map((member) => {
       const userCompletions = completionsByUser[member.userId] || [];
       const tasksCompleted = userCompletions.length;
       
@@ -151,15 +164,7 @@ router.get('/:roomId', protect, isRoomMember, async (req, res) => {
       }).length;
       
       // Get user's room progress for streak info
-      const userProgress = await prisma.userRoomProgress.findUnique({
-        where: {
-          userId_roomId: {
-            userId: member.userId,
-            roomId
-          }
-        }
-      });
-      
+      const userProgress = userProgressMap[member.userId];
       const currentStreak = userProgress?.currentStreak || 0;
       
       // Determine if streak was maintained yesterday
@@ -185,7 +190,7 @@ router.get('/:roomId', protect, isRoomMember, async (req, res) => {
         isActive: tasksCompleted > 0,
         mvpScore,
       };
-    }));
+    });
     
     // Determine room MVP
     // Rules: Must have at least 1 valid task, highest MVP score wins
