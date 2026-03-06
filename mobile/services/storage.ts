@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import * as Crypto from 'expo-crypto';
 
 // Dynamically import SecureStore only on native platforms
 let SecureStore: any = null;
@@ -11,24 +12,65 @@ if (Platform.OS !== 'web') {
   }
 }
 
+// Simple encryption for web fallback (NOT for production - use httpOnly cookies instead)
+const encrypt = async (text: string): Promise<string> => {
+  if (Platform.OS !== 'web') return text;
+  try {
+    // Generate a device-specific key using expo-crypto
+    const key = await Crypto.digestStringAsync(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      Platform.OS + (navigator?.userAgent || '') + 'krios-salt-v1'
+    );
+    // XOR encryption with key rotation
+    const encrypted = text.split('').map((char, i) => {
+      const keyChar = key[i % key.length];
+      return String.fromCharCode(char.charCodeAt(0) ^ keyChar.charCodeAt(0));
+    }).join('');
+    return btoa(encrypted); // Base64 encode
+  } catch (e) {
+    console.warn('Encryption failed, storing plaintext');
+    return text;
+  }
+};
+
+const decrypt = async (text: string): Promise<string> => {
+  if (Platform.OS !== 'web') return text;
+  try {
+    const decoded = atob(text);
+    const key = await Crypto.digestStringAsync(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      Platform.OS + (navigator?.userAgent || '') + 'krios-salt-v1'
+    );
+    return decoded.split('').map((char, i) => {
+      const keyChar = key[i % key.length];
+      return String.fromCharCode(char.charCodeAt(0) ^ keyChar.charCodeAt(0));
+    }).join('');
+  } catch (e) {
+    return text;
+  }
+};
+
 /**
  * Secure storage for sensitive data (tokens, credentials)
  * Falls back to AsyncStorage on web or if SecureStore fails
+ * Web fallback includes basic obfuscation - consider using httpOnly cookies for production
  */
 export const secureStorage = {
   async setItem(key: string, value: string): Promise<void> {
     try {
+      const encryptedValue = await encrypt(value);
+      
       if (Platform.OS === 'web' || !SecureStore) {
-        // SecureStore not available on web, use AsyncStorage
-        await AsyncStorage.setItem(`secure_${key}`, value);
+        await AsyncStorage.setItem(`secure_${key}`, encryptedValue);
       } else {
         await SecureStore.setItemAsync(key, value);
       }
     } catch (error) {
       console.error(`Error saving ${key} to secure store:`, error);
-      // Fallback to AsyncStorage
+      // Fallback to AsyncStorage with encryption
       try {
-        await AsyncStorage.setItem(`secure_${key}`, value);
+        const encryptedValue = await encrypt(value);
+        await AsyncStorage.setItem(`secure_${key}`, encryptedValue);
       } catch (fallbackError) {
         console.error(`Fallback storage also failed:`, fallbackError);
         throw error;
@@ -38,16 +80,24 @@ export const secureStorage = {
 
   async getItem(key: string): Promise<string | null> {
     try {
+      let value: string | null = null;
+      
       if (Platform.OS === 'web' || !SecureStore) {
-        return await AsyncStorage.getItem(`secure_${key}`);
+        value = await AsyncStorage.getItem(`secure_${key}`);
+        if (value) {
+          value = await decrypt(value);
+        }
       } else {
-        return await SecureStore.getItemAsync(key);
+        value = await SecureStore.getItemAsync(key);
       }
+      
+      return value;
     } catch (error) {
       console.error(`Error reading ${key} from secure store:`, error);
       // Try fallback
       try {
-        return await AsyncStorage.getItem(`secure_${key}`);
+        const value = await AsyncStorage.getItem(`secure_${key}`);
+        return value ? await decrypt(value) : null;
       } catch (fallbackError) {
         return null;
       }
@@ -73,8 +123,10 @@ export const secureStorage = {
   },
 
   async clear(): Promise<void> {
-    // Note: SecureStore doesn't have a clear all method
     console.warn('SecureStore does not support clearing all items');
+    // Clear only known keys
+    const knownKeys = ['token', 'refreshToken', 'userId', 'onboardingComplete'];
+    await Promise.all(knownKeys.map(key => this.removeItem(key)));
   },
 };
 

@@ -1,43 +1,71 @@
-import React, { useState, useEffect, useRef } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  Animated,
-  Image,
-  ActivityIndicator,
-  ScrollView,
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { 
+  View, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
+  StyleSheet, 
+  KeyboardAvoidingView, 
+  Platform, 
+  Animated, 
+  Image, 
+  ActivityIndicator, 
+  ScrollView, 
   Dimensions,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
+import { validateInput, signupSchema } from '../../utils/validation';
+import { authHaptics } from '../../utils/haptics';
 
 const { width: screenWidth } = Dimensions.get('window');
+
+// Password strength checker
+const getPasswordStrength = (password: string): { strength: number; label: string; color: string } => {
+  let strength = 0;
+  if (password.length >= 8) strength += 1;
+  if (/[A-Z]/.test(password)) strength += 1;
+  if (/[a-z]/.test(password)) strength += 1;
+  if (/[0-9]/.test(password)) strength += 1;
+  if (/[^A-Za-z0-9]/.test(password)) strength += 1;
+
+  const labels = ['Very Weak', 'Weak', 'Fair', 'Good', 'Strong', 'Very Strong'];
+  const colors = ['#ef4444', '#f87171', '#fbbf24', '#34d399', '#6366f1', '#8b5cf6'];
+  
+  return {
+    strength,
+    label: labels[strength],
+    color: colors[strength],
+  };
+};
 
 export default function SignupScreen() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  
   const router = useRouter();
   const { signup } = useAuth();
   
+  // Animation refs
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const logoScale = useRef(new Animated.Value(0.8)).current;
+  const shakeAnim = useRef(new Animated.Value(0)).current;
 
-  // Input focus animations
-  const nameFocus = useRef(new Animated.Value(0)).current;
-  const emailFocus = useRef(new Animated.Value(0)).current;
-  const passwordFocus = useRef(new Animated.Value(0)).current;
+  // Input refs
+  const emailInputRef = useRef<TextInput>(null);
+  const passwordInputRef = useRef<TextInput>(null);
+  const confirmPasswordInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     Animated.parallel([
@@ -60,303 +88,326 @@ export default function SignupScreen() {
     ]).start();
   }, []);
 
-  useEffect(() => {
-    Animated.timing(nameFocus, {
-      toValue: name ? 1 : 0,
-      duration: 200,
-      useNativeDriver: false,
-    }).start();
-  }, [name]);
+  const triggerShake = useCallback(() => {
+    Animated.sequence([
+      Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -10, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0, duration: 50, useNativeDriver: true }),
+    ]).start();
+  }, []);
 
-  useEffect(() => {
-    Animated.timing(emailFocus, {
-      toValue: email ? 1 : 0,
-      duration: 200,
-      useNativeDriver: false,
-    }).start();
-  }, [email]);
+  const passwordStrength = getPasswordStrength(password);
 
-  useEffect(() => {
-    Animated.timing(passwordFocus, {
-      toValue: password ? 1 : 0,
-      duration: 200,
-      useNativeDriver: false,
-    }).start();
-  }, [password]);
-
-  const isFormValid = name.trim() && email.trim() && password.length >= 6;
-
-  const getBorderColor = (focusAnim: Animated.Value) => {
-    return focusAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: ['rgba(255,255,255,0.1)', '#8b5cf6'],
-    });
-  };
+  const validateForm = useCallback(() => {
+    const result = validateInput(signupSchema, { name, email, password, confirmPassword });
+    if (!result.success) {
+      setErrors(result.errors);
+      triggerShake();
+      authHaptics.error();
+      return false;
+    }
+    setErrors({});
+    return true;
+  }, [name, email, password, confirmPassword, triggerShake]);
 
   const handleSignup = async () => {
-    if (!name.trim() || !email.trim() || !password) {
-      setError('Please fill in all fields');
-      return;
-    }
-
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
-
-    setError('');
-    setLoading(true);
+    Keyboard.dismiss();
     
+    if (!validateForm()) return;
+
+    setLoading(true);
+    authHaptics.buttonPress();
+
     try {
       const result = await signup(name.trim(), email.trim(), password);
-      
       if (result.success) {
+        authHaptics.success();
         router.replace('/(auth)/login');
       } else {
-        setError(result.message || 'Could not create account');
+        setErrors({ general: result.message || 'Could not create account' });
+        authHaptics.error();
+        triggerShake();
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred');
+      setErrors({ general: err.message || 'An error occurred' });
+      authHaptics.error();
+      triggerShake();
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <View style={styles.container}>
-      {/* Background */}
-      <LinearGradient
-        colors={['#0a0a0f', '#12121a', '#0a0a0f']}
-        style={StyleSheet.absoluteFill}
-      />
-      
-      {/* Glow */}
-      <View style={styles.glowContainer}>
-        <View style={styles.glow} />
-      </View>
+  const getInputStyle = (field: string) => ({
+    ...styles.inputWrapper,
+    borderColor: errors[field] ? '#ef4444' : 'rgba(255,255,255,0.1)',
+    backgroundColor: errors[field] ? 'rgba(239, 68, 68, 0.05)' : 'rgba(255,255,255,0.03)',
+  });
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
-      >
-        <ScrollView 
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
+  return (
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <View style={styles.container}>
+        {/* Background */}
+        <LinearGradient colors={['#0a0a0f', '#12121a', '#0a0a0f']} style={StyleSheet.absoluteFill} />
+        
+        {/* Glow */}
+        <View style={styles.glowContainer}>
+          <View style={styles.glow} />
+        </View>
+
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+          style={styles.keyboardView}
         >
-          <Animated.View 
-            style={[
-              styles.content, 
+          <ScrollView 
+            contentContainerStyle={styles.scrollContent} 
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Animated.View style={[
+              styles.content,
               { 
                 opacity: fadeAnim, 
-                transform: [{ translateY: slideAnim }] 
+                transform: [{ translateY: slideAnim }, { translateX: shakeAnim }] 
               }
-            ]}
-          >
-            {/* Logo */}
-            <Animated.View 
-              style={[
-                styles.logoSection, 
-                { transform: [{ scale: logoScale }] }
-              ]}
-            >
-              <View style={styles.logoWrapper}>
-                <View style={styles.logoGlow} />
-                <Image
-                  source={require('../../assets/krios-logo.png')}
-                  style={styles.logo}
-                  resizeMode="contain"
-                />
-              </View>
-            </Animated.View>
-
-            {/* Header */}
-            <View style={styles.header}>
-              <Text style={styles.title}>Create Account</Text>
-              <Text style={styles.subtitle}>Start your orbit journey</Text>
-            </View>
-
-            {/* Error */}
-            {error ? (
-              <View style={styles.errorContainer}>
-                <Ionicons name="alert-circle" size={18} color="#ef4444" />
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            ) : null}
-
-            {/* Form */}
-            <View style={styles.form}>
-              {/* Name */}
-              <Animated.View 
-                style={[
-                  styles.inputWrapper,
-                  { borderColor: getBorderColor(nameFocus) }
-                ]}
-              >
-                <View style={styles.inputIcon}>
-                  <Ionicons name="person-outline" size={18} color="rgba(255,255,255,0.4)" />
-                </View>
-                <TextInput
-                  style={[styles.input, {
-                    outlineStyle: 'none',
-                    borderWidth: 0,
-                  } as any]}
-                  placeholder="full name"
-                  placeholderTextColor="rgba(255,255,255,0.25)"
-                  value={name}
-                  onChangeText={(text) => {
-                    setName(text);
-                    setError('');
-                  }}
-                  autoCapitalize="words"
-                  returnKeyType="next"
-                />
-                {name ? (
-                  <TouchableOpacity onPress={() => setName('')}>
-                    <Ionicons name="close-circle" size={18} color="rgba(255,255,255,0.4)" />
-                  </TouchableOpacity>
-                ) : null}
-              </Animated.View>
-
-              {/* Email */}
-              <Animated.View 
-                style={[
-                  styles.inputWrapper,
-                  { borderColor: getBorderColor(emailFocus) }
-                ]}
-              >
-                <View style={styles.inputIcon}>
-                  <Ionicons name="mail-outline" size={18} color="rgba(255,255,255,0.4)" />
-                </View>
-                <TextInput
-                  style={[styles.input, {
-                    outlineStyle: 'none',
-                    borderWidth: 0,
-                  } as any]}
-                  placeholder="email"
-                  placeholderTextColor="rgba(255,255,255,0.25)"
-                  value={email}
-                  onChangeText={(text) => {
-                    setEmail(text);
-                    setError('');
-                  }}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  returnKeyType="next"
-                />
-                {email ? (
-                  <TouchableOpacity onPress={() => setEmail('')}>
-                    <Ionicons name="close-circle" size={18} color="rgba(255,255,255,0.4)" />
-                  </TouchableOpacity>
-                ) : null}
-              </Animated.View>
-
-              {/* Password */}
-              <Animated.View 
-                style={[
-                  styles.inputWrapper,
-                  { borderColor: getBorderColor(passwordFocus) }
-                ]}
-              >
-                <View style={styles.inputIcon}>
-                  <Ionicons name="lock-closed-outline" size={18} color="rgba(255,255,255,0.4)" />
-                </View>
-                <TextInput
-                  style={[styles.input, {
-                    outlineStyle: 'none',
-                    borderWidth: 0,
-                  } as any]}
-                  placeholder="password"
-                  placeholderTextColor="rgba(255,255,255,0.25)"
-                  value={password}
-                  onChangeText={(text) => {
-                    setPassword(text);
-                    setError('');
-                  }}
-                  secureTextEntry={!showPassword}
-                  returnKeyType="done"
-                  onSubmitEditing={handleSignup}
-                />
-                <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                  <Ionicons
-                    name={showPassword ? 'eye-outline' : 'eye-off-outline'}
-                    size={18}
-                    color="rgba(255,255,255,0.4)"
+            ]}>
+              {/* Logo */}
+              <Animated.View style={[styles.logoSection, { transform: [{ scale: logoScale }] }]}>
+                <View style={styles.logoWrapper}>
+                  <View style={styles.logoGlow} />
+                  <Image 
+                    source={require('../../assets/krios-logo.png')} 
+                    style={styles.logo} 
+                    resizeMode="contain"
+                    accessibilityLabel="Krios Logo"
                   />
-                </TouchableOpacity>
+                </View>
               </Animated.View>
 
-              {/* Password hint */}
-              <View style={styles.passwordHint}>
-                <Ionicons
-                  name={password.length >= 6 ? 'checkmark-circle' : 'ellipse-outline'}
-                  size={14}
-                  color={password.length >= 6 ? '#10b981' : 'rgba(255,255,255,0.25)'}
-                />
-                <Text style={[
-                  styles.hintText,
-                  password.length >= 6 && styles.hintTextActive
-                ]}>
-                  At least 6 characters
+              {/* Header */}
+              <View style={styles.header}>
+                <Text style={styles.title}>Create Account</Text>
+                <Text style={styles.subtitle}>Start your orbit journey</Text>
+              </View>
+
+              {/* General Error */}
+              {errors.general ? (
+                <View style={styles.errorContainer}>
+                  <Ionicons name="alert-circle" size={18} color="#ef4444" />
+                  <Text style={styles.errorText}>{errors.general}</Text>
+                </View>
+              ) : null}
+
+              {/* Form */}
+              <View style={styles.form}>
+                {/* Name */}
+                <View>
+                  <View style={getInputStyle('name')}>
+                    <View style={styles.inputIcon}>
+                      <Ionicons name="person-outline" size={18} color="rgba(255,255,255,0.4)" />
+                    </View>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Full name"
+                      placeholderTextColor="rgba(255,255,255,0.25)"
+                      value={name}
+                      onChangeText={(text) => {
+                        setName(text);
+                        if (errors.name) setErrors(prev => ({ ...prev, name: '' }));
+                      }}
+                      autoCapitalize="words"
+                      returnKeyType="next"
+                      onSubmitEditing={() => emailInputRef.current?.focus()}
+                      onFocus={() => authHaptics.inputFocus()}
+                      accessibilityLabel="Full name input"
+                    />
+                    {name ? (
+                      <TouchableOpacity onPress={() => setName('')} hitSlop={8}>
+                        <Ionicons name="close-circle" size={18} color="rgba(255,255,255,0.4)" />
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                  {errors.name ? <Text style={styles.fieldError}>{errors.name}</Text> : null}
+                </View>
+
+                {/* Email */}
+                <View>
+                  <View style={getInputStyle('email')}>
+                    <View style={styles.inputIcon}>
+                      <Ionicons name="mail-outline" size={18} color="rgba(255,255,255,0.4)" />
+                    </View>
+                    <TextInput
+                      ref={emailInputRef}
+                      style={styles.input}
+                      placeholder="Email"
+                      placeholderTextColor="rgba(255,255,255,0.25)"
+                      value={email}
+                      onChangeText={(text) => {
+                        setEmail(text);
+                        if (errors.email) setErrors(prev => ({ ...prev, email: '' }));
+                      }}
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                      returnKeyType="next"
+                      onSubmitEditing={() => passwordInputRef.current?.focus()}
+                      onFocus={() => authHaptics.inputFocus()}
+                      accessibilityLabel="Email input"
+                    />
+                    {email ? (
+                      <TouchableOpacity onPress={() => setEmail('')} hitSlop={8}>
+                        <Ionicons name="close-circle" size={18} color="rgba(255,255,255,0.4)" />
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                  {errors.email ? <Text style={styles.fieldError}>{errors.email}</Text> : null}
+                </View>
+
+                {/* Password */}
+                <View>
+                  <View style={getInputStyle('password')}>
+                    <View style={styles.inputIcon}>
+                      <Ionicons name="lock-closed-outline" size={18} color="rgba(255,255,255,0.4)" />
+                    </View>
+                    <TextInput
+                      ref={passwordInputRef}
+                      style={styles.input}
+                      placeholder="Password"
+                      placeholderTextColor="rgba(255,255,255,0.25)"
+                      value={password}
+                      onChangeText={(text) => {
+                        setPassword(text);
+                        if (errors.password) setErrors(prev => ({ ...prev, password: '' }));
+                      }}
+                      secureTextEntry={!showPassword}
+                      returnKeyType="next"
+                      onSubmitEditing={() => confirmPasswordInputRef.current?.focus()}
+                      onFocus={() => authHaptics.inputFocus()}
+                      accessibilityLabel="Password input"
+                    />
+                    <TouchableOpacity 
+                      onPress={() => setShowPassword(!showPassword)} 
+                      hitSlop={8}
+                      accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+                    >
+                      <Ionicons 
+                        name={showPassword ? 'eye-outline' : 'eye-off-outline'} 
+                        size={18} 
+                        color="rgba(255,255,255,0.4)" 
+                      />
+                    </TouchableOpacity>
+                  </View>
+                  {errors.password ? <Text style={styles.fieldError}>{errors.password}</Text> : null}
+                  
+                  {/* Password Strength Indicator */}
+                  {password.length > 0 && (
+                    <View style={styles.strengthContainer}>
+                      <View style={styles.strengthBar}>
+                        <View style={[
+                          styles.strengthFill, 
+                          { 
+                            width: `${(passwordStrength.strength / 5) * 100}%`,
+                            backgroundColor: passwordStrength.color 
+                          }
+                        ]} />
+                      </View>
+                      <Text style={[styles.strengthText, { color: passwordStrength.color }]}>
+                        {passwordStrength.label}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Confirm Password */}
+                <View>
+                  <View style={getInputStyle('confirmPassword')}>
+                    <View style={styles.inputIcon}>
+                      <Ionicons name="shield-checkmark-outline" size={18} color="rgba(255,255,255,0.4)" />
+                    </View>
+                    <TextInput
+                      ref={confirmPasswordInputRef}
+                      style={styles.input}
+                      placeholder="Confirm password"
+                      placeholderTextColor="rgba(255,255,255,0.25)"
+                      value={confirmPassword}
+                      onChangeText={(text) => {
+                        setConfirmPassword(text);
+                        if (errors.confirmPassword) setErrors(prev => ({ ...prev, confirmPassword: '' }));
+                      }}
+                      secureTextEntry={!showConfirmPassword}
+                      returnKeyType="done"
+                      onSubmitEditing={handleSignup}
+                      onFocus={() => authHaptics.inputFocus()}
+                      accessibilityLabel="Confirm password input"
+                    />
+                    <TouchableOpacity 
+                      onPress={() => setShowConfirmPassword(!showConfirmPassword)} 
+                      hitSlop={8}
+                    >
+                      <Ionicons 
+                        name={showConfirmPassword ? 'eye-outline' : 'eye-off-outline'} 
+                        size={18} 
+                        color="rgba(255,255,255,0.4)" 
+                      />
+                    </TouchableOpacity>
+                  </View>
+                  {errors.confirmPassword ? <Text style={styles.fieldError}>{errors.confirmPassword}</Text> : null}
+                </View>
+
+                {/* Signup Button */}
+                <TouchableOpacity
+                  onPress={handleSignup}
+                  disabled={loading}
+                  activeOpacity={0.8}
+                  style={styles.signupButton}
+                  accessibilityLabel="Create account button"
+                  accessibilityRole="button"
+                >
+                  <LinearGradient
+                    colors={!loading ? ['#8b5cf6', '#a855f7'] : ['rgba(139,92,246,0.3)', 'rgba(168,85,247,0.3)']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={[styles.signupGradient, loading && styles.signupDisabled]}
+                  >
+                    {loading ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <>
+                        <Text style={styles.signupText}>Create Account</Text>
+                        <Ionicons name="rocket" size={18} color="#fff" />
+                      </>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+
+                {/* Terms */}
+                <Text style={styles.terms}>
+                  By signing up, you agree to our{' '}
+                  <Text style={styles.link}>Terms</Text> and{' '}
+                  <Text style={styles.link}>Privacy</Text>
                 </Text>
               </View>
 
-              {/* Signup Button */}
-              <TouchableOpacity
-                onPress={handleSignup}
-                disabled={loading || !isFormValid}
-                activeOpacity={0.8}
-                style={styles.signupButton}
+              {/* Login Link */}
+              <View style={styles.footer}>
+                <Text style={styles.footerText}>Already have an account? </Text>
+                <TouchableOpacity onPress={() => router.push('/(auth)/login')}>
+                  <Text style={styles.loginLink}>Sign in</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Back */}
+              <TouchableOpacity 
+                style={styles.backButton} 
+                onPress={() => router.replace('/(onboarding)/auth-choice')}
               >
-                <LinearGradient
-                  colors={
-                    isFormValid
-                      ? ['#8b5cf6', '#a855f7']
-                      : ['rgba(139,92,246,0.3)', 'rgba(168,85,247,0.3)']
-                  }
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[styles.signupGradient, !isFormValid && styles.signupDisabled]}
-                >
-                  {loading ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <>
-                      <Text style={styles.signupText}>Create Account</Text>
-                      <Ionicons name="rocket" size={18} color="#fff" />
-                    </>
-                  )}
-                </LinearGradient>
+                <Ionicons name="arrow-back" size={16} color="rgba(255,255,255,0.3)" />
+                <Text style={styles.backText}>Back</Text>
               </TouchableOpacity>
-
-              {/* Terms */}
-              <Text style={styles.terms}>
-                By signing up, you agree to our{' '}
-                <Text style={styles.link}>Terms</Text> and{' '}
-                <Text style={styles.link}>Privacy</Text>
-              </Text>
-            </View>
-
-            {/* Login Link */}
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>Already have an account? </Text>
-              <TouchableOpacity onPress={() => router.push('/(auth)/login')}>
-                <Text style={styles.loginLink}>Sign in</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Back */}
-            <TouchableOpacity 
-              style={styles.backButton}
-              onPress={() => router.replace('/(onboarding)/auth-choice')}
-            >
-              <Ionicons name="arrow-back" size={16} color="rgba(255,255,255,0.3)" />
-              <Text style={styles.backText}>Back</Text>
-            </TouchableOpacity>
-          </Animated.View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </View>
+            </Animated.View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </View>
+    </TouchableWithoutFeedback>
   );
 }
 
@@ -448,7 +499,6 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.03)',
     borderRadius: 14,
     borderWidth: 1.5,
     paddingHorizontal: 4,
@@ -462,20 +512,33 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     paddingVertical: 16,
     letterSpacing: 0.5,
+    borderWidth: 0,
+    outlineWidth: 0,
   },
-  passwordHint: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
+  fieldError: {
+    color: '#ef4444',
+    fontSize: 12,
+    marginTop: 4,
     marginLeft: 4,
   },
-  hintText: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.3)',
+  strengthContainer: {
+    marginTop: 8,
+    marginLeft: 4,
   },
-  hintTextActive: {
-    color: '#10b981',
+  strengthBar: {
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  strengthFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  strengthText: {
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: '500',
   },
   signupButton: {
     borderRadius: 16,
