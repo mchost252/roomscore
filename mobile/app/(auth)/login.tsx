@@ -27,6 +27,7 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   
@@ -241,13 +242,26 @@ export default function LoginScreen() {
                 {errors.password ? <Text style={styles.fieldError}>{errors.password}</Text> : null}
               </View>
 
-              {/* Forgot */}
-              <TouchableOpacity 
-                style={styles.forgotButton}
-                onPress={() => router.push('/(auth)/forgot-password')}
-              >
-                <Text style={styles.forgotText}>Forgot password?</Text>
-              </TouchableOpacity>
+              {/* Remember Me & Forgot Row */}
+              <View style={styles.rememberRow}>
+                <TouchableOpacity 
+                  style={styles.rememberMe}
+                  onPress={() => setRememberMe(!rememberMe)}
+                  hitSlop={8}
+                >
+                  <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+                    {rememberMe && <Ionicons name="checkmark" size={12} color="#fff" />}
+                  </View>
+                  <Text style={styles.rememberText}>Remember me</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.forgotButton}
+                  onPress={() => router.push('/(auth)/forgot-password')}
+                >
+                  <Text style={styles.forgotText}>Forgot password?</Text>
+                </TouchableOpacity>
+              </View>
 
               {/* Login Button */}
               <TouchableOpacity
@@ -405,6 +419,35 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
     marginLeft: 4,
+  },
+  rememberRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  rememberMe: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#6366f1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+  },
+  checkboxChecked: {
+    backgroundColor: '#6366f1',
+    borderColor: '#6366f1',
+  },
+  rememberText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 14,
   },
   forgotButton: {
     alignSelf: 'flex-end',
