@@ -16,6 +16,7 @@ import {
   TouchableWithoutFeedback,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -54,6 +55,10 @@ export default function SignupScreen() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSuccess, setIsSuccess] = useState(false);
+  const [nameFocused, setNameFocused] = useState(false);
+  const [emailFocused, setEmailFocused] = useState(false);
+  const [passwordFocused, setPasswordFocused] = useState(false);
+  const [confirmFocused, setConfirmFocused] = useState(false);
   
   const router = useRouter();
   const { signup } = useAuth();
@@ -63,12 +68,6 @@ export default function SignupScreen() {
   const slideAnim = useRef(new Animated.Value(30)).current;
   const logoScale = useRef(new Animated.Value(0.8)).current;
   const shakeAnim = useRef(new Animated.Value(0)).current;
-  
-  // Input focus animations
-  const nameFocusAnim = useRef(new Animated.Value(0)).current;
-  const emailFocusAnim = useRef(new Animated.Value(0)).current;
-  const passwordFocusAnim = useRef(new Animated.Value(0)).current;
-  const confirmFocusAnim = useRef(new Animated.Value(0)).current;
   
   // Button press animation
   const buttonScale = useRef(new Animated.Value(1)).current;
@@ -102,6 +101,21 @@ export default function SignupScreen() {
     ]).start();
   }, []);
 
+  // Load user's name from onboarding
+  useEffect(() => {
+    const loadUserName = async () => {
+      try {
+        const savedName = await AsyncStorage.getItem('userName');
+        if (savedName) {
+          setName(savedName);
+        }
+      } catch (error) {
+        console.log('Error loading username:', error);
+      }
+    };
+    loadUserName();
+  }, []);
+
   const triggerShake = useCallback(() => {
     Animated.sequence([
       Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
@@ -111,30 +125,14 @@ export default function SignupScreen() {
     ]).start();
   }, []);
 
-  // Handle input focus
-  const handleFocus = (field: 'name' | 'email' | 'password' | 'confirm') => {
-    const anim = field === 'name' ? nameFocusAnim : 
-                 field === 'email' ? emailFocusAnim : 
-                 field === 'password' ? passwordFocusAnim : confirmFocusAnim;
-    Animated.timing(anim, {
-      toValue: 1,
-      duration: theme.animations.duration.fast,
-      useNativeDriver: false,
-    }).start();
-    authHaptics.inputFocus();
-  };
-
-  // Handle input blur
-  const handleBlur = (field: 'name' | 'email' | 'password' | 'confirm') => {
-    const anim = field === 'name' ? nameFocusAnim : 
-                 field === 'email' ? emailFocusAnim : 
-                 field === 'password' ? passwordFocusAnim : confirmFocusAnim;
-    Animated.timing(anim, {
-      toValue: 0,
-      duration: theme.animations.duration.fast,
-      useNativeDriver: false,
-    }).start();
-  };
+  const triggerShake = useCallback(() => {
+    Animated.sequence([
+      Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -10, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0, duration: 50, useNativeDriver: true }),
+    ]).start();
+  }, []);
 
   // Button press handlers
   const handlePressIn = () => {
@@ -209,19 +207,17 @@ export default function SignupScreen() {
     }
   };
 
-  const getInputStyle = (field: string, focusAnim: Animated.Value) => {
-    const borderColor = focusAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [
-        errors[field] ? theme.colors.error : theme.colors.border,
-        theme.colors.primary,
-      ],
-    });
+  const getInputStyle = (field: string, isFocused: boolean) => {
+    const borderColor = isFocused 
+      ? theme.colors.primary 
+      : (errors[field] ? theme.colors.error : theme.colors.border);
     
     return {
       ...styles.inputWrapper,
       borderColor,
       backgroundColor: errors[field] ? 'rgba(239, 68, 68, 0.05)' : theme.colors.surface,
+    };
+  };
     };
   };
 
@@ -306,7 +302,7 @@ export default function SignupScreen() {
               {/* Form */}
               <View style={styles.form}>
                 {/* Name */}
-                <Animated.View style={getInputStyle('name', nameFocusAnim)}>
+                <Animated.View style={getInputStyle('name', nameFocused)}>
                   <View style={styles.inputIcon}>
                     <Ionicons name="person-outline" size={18} color={theme.colors.textMuted} />
                   </View>
@@ -322,8 +318,11 @@ export default function SignupScreen() {
                     autoCapitalize="words"
                     returnKeyType="next"
                     onSubmitEditing={() => emailInputRef.current?.focus()}
-                    onFocus={() => handleFocus('name')}
-                    onBlur={() => handleBlur('name')}
+                    onFocus={() => {
+                      setNameFocused(true);
+                      authHaptics.inputFocus();
+                    }}
+                    onBlur={() => setNameFocused(false)}
                     accessibilityLabel="Full name input"
                   />
                   {name ? (
@@ -335,7 +334,7 @@ export default function SignupScreen() {
                 {errors.name ? <Text style={styles.fieldError}>{errors.name}</Text> : null}
 
                 {/* Email */}
-                <Animated.View style={getInputStyle('email', emailFocusAnim)}>
+                <Animated.View style={getInputStyle('email', emailFocused)}>
                   <View style={styles.inputIcon}>
                     <Ionicons name="mail-outline" size={18} color={theme.colors.textMuted} />
                   </View>
@@ -353,8 +352,11 @@ export default function SignupScreen() {
                     keyboardType="email-address"
                     returnKeyType="next"
                     onSubmitEditing={() => passwordInputRef.current?.focus()}
-                    onFocus={() => handleFocus('email')}
-                    onBlur={() => handleBlur('email')}
+                    onFocus={() => {
+                      setEmailFocused(true);
+                      authHaptics.inputFocus();
+                    }}
+                    onBlur={() => setEmailFocused(false)}
                     accessibilityLabel="Email input"
                   />
                   {email ? (
@@ -366,7 +368,7 @@ export default function SignupScreen() {
                 {errors.email ? <Text style={styles.fieldError}>{errors.email}</Text> : null}
 
                 {/* Password */}
-                <Animated.View style={getInputStyle('password', passwordFocusAnim)}>
+                <Animated.View style={getInputStyle('password', passwordFocused)}>
                   <View style={styles.inputIcon}>
                     <Ionicons name="lock-closed-outline" size={18} color={theme.colors.textMuted} />
                   </View>
@@ -383,8 +385,11 @@ export default function SignupScreen() {
                     secureTextEntry={!showPassword}
                     returnKeyType="next"
                     onSubmitEditing={() => confirmPasswordInputRef.current?.focus()}
-                    onFocus={() => handleFocus('password')}
-                    onBlur={() => handleBlur('password')}
+                    onFocus={() => {
+                      setPasswordFocused(true);
+                      authHaptics.inputFocus();
+                    }}
+                    onBlur={() => setPasswordFocused(false)}
                     accessibilityLabel="Password input"
                   />
                   <TouchableOpacity 
@@ -420,7 +425,7 @@ export default function SignupScreen() {
                 )}
 
                 {/* Confirm Password */}
-                <Animated.View style={getInputStyle('confirmPassword', confirmFocusAnim)}>
+                <Animated.View style={getInputStyle('confirmPassword', confirmFocused)}>
                   <View style={styles.inputIcon}>
                     <Ionicons name="shield-checkmark-outline" size={18} color={theme.colors.textMuted} />
                   </View>
@@ -437,8 +442,11 @@ export default function SignupScreen() {
                     secureTextEntry={!showConfirmPassword}
                     returnKeyType="done"
                     onSubmitEditing={handleSignup}
-                    onFocus={() => handleFocus('confirm')}
-                    onBlur={() => handleBlur('confirm')}
+                    onFocus={() => {
+                      setConfirmFocused(true);
+                      authHaptics.inputFocus();
+                    }}
+                    onBlur={() => setConfirmFocused(false)}
                     accessibilityLabel="Confirm password input"
                   />
                   <TouchableOpacity 

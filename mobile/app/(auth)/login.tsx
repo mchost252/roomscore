@@ -32,6 +32,8 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSuccess, setIsSuccess] = useState(false);
+  const [emailFocused, setEmailFocused] = useState(false);
+  const [passwordFocused, setPasswordFocused] = useState(false);
   
   const router = useRouter();
   const { login } = useAuth();
@@ -41,10 +43,6 @@ export default function LoginScreen() {
   const slideAnim = useRef(new Animated.Value(30)).current;
   const logoScale = useRef(new Animated.Value(0.8)).current;
   const shakeAnim = useRef(new Animated.Value(0)).current;
-  
-  // Input focus animations
-  const emailFocusAnim = useRef(new Animated.Value(0)).current;
-  const passwordFocusAnim = useRef(new Animated.Value(0)).current;
   
   // Button press animation
   const buttonScale = useRef(new Animated.Value(1)).current;
@@ -86,27 +84,6 @@ export default function LoginScreen() {
       Animated.timing(shakeAnim, { toValue: 0, duration: 50, useNativeDriver: true }),
     ]).start();
   }, []);
-
-  // Handle input focus
-  const handleFocus = (field: 'email' | 'password') => {
-    const anim = field === 'email' ? emailFocusAnim : passwordFocusAnim;
-    Animated.timing(anim, {
-      toValue: 1,
-      duration: theme.animations.duration.fast,
-      useNativeDriver: false,
-    }).start();
-    authHaptics.inputFocus();
-  };
-
-  // Handle input blur
-  const handleBlur = (field: 'email' | 'password') => {
-    const anim = field === 'email' ? emailFocusAnim : passwordFocusAnim;
-    Animated.timing(anim, {
-      toValue: 0,
-      duration: theme.animations.duration.fast,
-      useNativeDriver: false,
-    }).start();
-  };
 
   // Button press handlers
   const handlePressIn = () => {
@@ -186,14 +163,10 @@ export default function LoginScreen() {
     }
   };
 
-  const getInputStyle = (field: string, focusAnim: Animated.Value) => {
-    const borderColor = focusAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [
-        errors[field] ? theme.colors.error : theme.colors.border,
-        theme.colors.primary,
-      ],
-    });
+  const getInputStyle = (field: string, isFocused: boolean) => {
+    const borderColor = isFocused 
+      ? theme.colors.primary 
+      : (errors[field] ? theme.colors.error : theme.colors.border);
     
     return {
       ...styles.inputWrapper,
@@ -286,7 +259,7 @@ export default function LoginScreen() {
             {/* Form */}
             <View style={styles.form}>
               {/* Email */}
-              <Animated.View style={getInputStyle('email', emailFocusAnim)}>
+              <Animated.View style={getInputStyle('email', emailFocused)}>
                 <View style={styles.inputIcon}>
                   <Ionicons name="mail-outline" size={18} color={theme.colors.textMuted} />
                 </View>
@@ -303,8 +276,11 @@ export default function LoginScreen() {
                   keyboardType="email-address"
                   returnKeyType="next"
                   onSubmitEditing={() => passwordInputRef.current?.focus()}
-                  onFocus={() => handleFocus('email')}
-                  onBlur={() => handleBlur('email')}
+                  onFocus={() => {
+                    setEmailFocused(true);
+                    authHaptics.inputFocus();
+                  }}
+                  onBlur={() => setEmailFocused(false)}
                   accessibilityLabel="Email input"
                   accessibilityHint="Enter your email address"
                 />
@@ -317,7 +293,7 @@ export default function LoginScreen() {
               {errors.email ? <Text style={styles.fieldError}>{errors.email}</Text> : null}
 
               {/* Password */}
-              <Animated.View style={getInputStyle('password', passwordFocusAnim)}>
+              <Animated.View style={getInputStyle('password', passwordFocused)}>
                 <View style={styles.inputIcon}>
                   <Ionicons name="lock-closed-outline" size={18} color={theme.colors.textMuted} />
                 </View>
@@ -334,8 +310,11 @@ export default function LoginScreen() {
                   secureTextEntry={!showPassword}
                   returnKeyType="done"
                   onSubmitEditing={handleLogin}
-                  onFocus={() => handleFocus('password')}
-                  onBlur={() => handleBlur('password')}
+                  onFocus={() => {
+                    setPasswordFocused(true);
+                    authHaptics.inputFocus();
+                  }}
+                  onBlur={() => setPasswordFocused(false)}
                   accessibilityLabel="Password input"
                   accessibilityHint="Enter your password"
                 />
