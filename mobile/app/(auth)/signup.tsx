@@ -238,11 +238,11 @@ export default function SignupScreen() {
             <View style={styles.successCircle}>
               <Animated.View>
                 <Ionicons name="checkmark-done" size={48} color={theme.colors.success} />
-              </Animated.View>
+              </View>
             </View>
             <Text style={styles.successText}>Welcome to Krios!</Text>
             <Text style={styles.successSubtext}>Setting up your account...</Text>
-          </Animated.View>
+          </View>
         )}
 
         <KeyboardAvoidingView 
@@ -272,7 +272,7 @@ export default function SignupScreen() {
                     accessibilityLabel="Krios Logo"
                   />
                 </View>
-              </Animated.View>
+              </View>
 
               {/* Header */}
               <View style={styles.header}>
@@ -291,7 +291,7 @@ export default function SignupScreen() {
               {/* Form */}
               <View style={styles.form}>
                 {/* Name */}
-                <Animated.View style={getInputStyle('name', nameFocused)}>
+                <View style={getInputStyle('name', nameFocused)}>
                   <View style={styles.inputIcon}>
                     <Ionicons name="person-outline" size={18} color={theme.colors.textMuted} />
                   </View>
@@ -319,11 +319,11 @@ export default function SignupScreen() {
                       <Ionicons name="close-circle" size={18} color={theme.colors.textMuted} />
                     </TouchableOpacity>
                   ) : null}
-                </Animated.View>
+                </View>
                 {errors.name ? <Text style={styles.fieldError}>{errors.name}</Text> : null}
 
                 {/* Email */}
-                <Animated.View style={getInputStyle('email', emailFocused)}>
+                <View style={getInputStyle('email', emailFocused)}>
                   <View style={styles.inputIcon}>
                     <Ionicons name="mail-outline" size={18} color={theme.colors.textMuted} />
                   </View>
@@ -353,11 +353,11 @@ export default function SignupScreen() {
                       <Ionicons name="close-circle" size={18} color={theme.colors.textMuted} />
                     </TouchableOpacity>
                   ) : null}
-                </Animated.View>
+                </View>
                 {errors.email ? <Text style={styles.fieldError}>{errors.email}</Text> : null}
 
                 {/* Password */}
-                <Animated.View style={getInputStyle('password', passwordFocused)}>
+                <View style={getInputStyle('password', passwordFocused)}>
                   <View style={styles.inputIcon}>
                     <Ionicons name="lock-closed-outline" size={18} color={theme.colors.textMuted} />
                   </View>
@@ -392,7 +392,7 @@ export default function SignupScreen() {
                       color={theme.colors.textMuted} 
                     />
                   </TouchableOpacity>
-                </Animated.View>
+                </View>
                 {errors.password ? <Text style={styles.fieldError}>{errors.password}</Text> : null}
                 
                 {/* Password Strength Indicator */}
@@ -414,7 +414,7 @@ export default function SignupScreen() {
                 )}
 
                 {/* Confirm Password */}
-                <Animated.View style={getInputStyle('confirmPassword', confirmFocused)}>
+                <View style={getInputStyle('confirmPassword', confirmFocused)}>
                   <View style={styles.inputIcon}>
                     <Ionicons name="shield-checkmark-outline" size={18} color={theme.colors.textMuted} />
                   </View>
@@ -448,7 +448,7 @@ export default function SignupScreen() {
                       color={theme.colors.textMuted} 
                     />
                   </TouchableOpacity>
-                </Animated.View>
+                </View>
                 {errors.confirmPassword ? <Text style={styles.fieldError}>{errors.confirmPassword}</Text> : null}
 
                 {/* Signup Button */}
@@ -479,7 +479,7 @@ export default function SignupScreen() {
                       )}
                     </LinearGradient>
                   </TouchableOpacity>
-                </Animated.View>
+                </View>
 
                 {/* Terms */}
                 <Text style={styles.terms}>
@@ -505,7 +505,7 @@ export default function SignupScreen() {
                 <Ionicons name="arrow-back" size={16} color={theme.colors.textMuted} />
                 <Text style={styles.backText}>Back</Text>
               </TouchableOpacity>
-            </Animated.View>
+            </View>
           </ScrollView>
         </KeyboardAvoidingView>
       </View>

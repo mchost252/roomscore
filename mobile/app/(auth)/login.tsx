@@ -259,7 +259,7 @@ export default function LoginScreen() {
             {/* Form */}
             <View style={styles.form}>
               {/* Email */}
-              <Animated.View style={getInputStyle('email', emailFocused)}>
+              <View style={getInputStyle('email', emailFocused)}>
                 <View style={styles.inputIcon}>
                   <Ionicons name="mail-outline" size={18} color={theme.colors.textMuted} />
                 </View>
@@ -289,11 +289,11 @@ export default function LoginScreen() {
                     <Ionicons name="close-circle" size={18} color={theme.colors.textMuted} />
                   </TouchableOpacity>
                 ) : null}
-              </Animated.View>
+              </View>
               {errors.email ? <Text style={styles.fieldError}>{errors.email}</Text> : null}
 
               {/* Password */}
-              <Animated.View style={getInputStyle('password', passwordFocused)}>
+              <View style={getInputStyle('password', passwordFocused)}>
                 <View style={styles.inputIcon}>
                   <Ionicons name="lock-closed-outline" size={18} color={theme.colors.textMuted} />
                 </View>
@@ -323,15 +323,13 @@ export default function LoginScreen() {
                   hitSlop={8}
                   accessibilityLabel={showPassword ? "Hide password" : "Show password"}
                 >
-                  <Animated.View>
                     <Ionicons 
                       name={showPassword ? 'eye-outline' : 'eye-off-outline'} 
                       size={18} 
                       color={theme.colors.textMuted} 
                     />
-                  </Animated.View>
                 </TouchableOpacity>
-              </Animated.View>
+              </View>
               {errors.password ? <Text style={styles.fieldError}>{errors.password}</Text> : null}
 
               {/* Remember Me & Forgot Row */}
