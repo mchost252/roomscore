@@ -1,4 +1,10 @@
-require('dotenv').config();
+const fs = require('fs');
+// Load .env.local for local dev, otherwise .env
+if (fs.existsSync('.env.local')) {
+  require('dotenv').config({ path: '.env.local' });
+} else {
+  require('dotenv').config();
+}
 const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
