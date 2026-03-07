@@ -238,11 +238,11 @@ export default function SignupScreen() {
             <View style={styles.successCircle}>
               <Animated.View>
                 <Ionicons name="checkmark-done" size={48} color={theme.colors.success} />
-              </View>
+              </Animated.View>
             </View>
             <Text style={styles.successText}>Welcome to Krios!</Text>
             <Text style={styles.successSubtext}>Setting up your account...</Text>
-          </View>
+          </Animated.View>
         )}
 
         <KeyboardAvoidingView 
@@ -272,7 +272,7 @@ export default function SignupScreen() {
                     accessibilityLabel="Krios Logo"
                   />
                 </View>
-              </View>
+              </Animated.View>
 
               {/* Header */}
               <View style={styles.header}>
@@ -479,7 +479,7 @@ export default function SignupScreen() {
                       )}
                     </LinearGradient>
                   </TouchableOpacity>
-                </View>
+                </Animated.View>
 
                 {/* Terms */}
                 <Text style={styles.terms}>
@@ -505,7 +505,7 @@ export default function SignupScreen() {
                 <Ionicons name="arrow-back" size={16} color={theme.colors.textMuted} />
                 <Text style={styles.backText}>Back</Text>
               </TouchableOpacity>
-            </View>
+            </Animated.View>
           </ScrollView>
         </KeyboardAvoidingView>
       </View>
