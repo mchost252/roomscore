@@ -1,9 +1,12 @@
 const fs = require('fs');
-// Load .env.local for local dev, otherwise .env
-if (fs.existsSync('.env.local')) {
+// Load .env for production (Railway), .env.local for local development
+const isLocalDev = fs.existsSync('.env.local');
+if (isLocalDev) {
   require('dotenv').config({ path: '.env.local' });
+  console.log('📝 Using .env.local for local development');
 } else {
   require('dotenv').config();
+  console.log('📝 Using .env for production');
 }
 const express = require('express');
 const cors = require('cors');
