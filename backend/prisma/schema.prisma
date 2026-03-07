@@ -1,25 +1,23 @@
-// Prisma Schema for Krios - PostgreSQL (Supabase) / SQLite (Local Dev)
-// Migrated from MongoDB/Mongoose, then from Neon to Supabase
+// Prisma Schema for Krios - PostgreSQL (Supabase)
 // 
-// FOR LOCAL DEVELOPMENT: Uncomment the SQLite datasource below and comment out PostgreSQL
-// Then run: npx prisma db push
+// FOR LOCAL DEVELOPMENT WITH SQLITE: Comment out PostgreSQL and uncomment SQLite below
 
 generator client {
   provider = "prisma-client-js"
 }
 
 // === PostgreSQL (Production/Supabase) ===
-// datasource db {
-//   provider  = "postgresql"
-//   url       = env("DATABASE_URL")
-//   directUrl = env("DIRECT_DATABASE_URL")
-// }
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+}
 
 // === SQLite (Local Development) ===
-datasource db {
-  provider = "sqlite"  
-  url      = "file:./dev.db"
-}
+// datasource db {
+//   provider = "sqlite"  
+//   url      = "file:./dev.db"
+// }
 
 // ==================== USER ====================
 model User {
