@@ -12,7 +12,7 @@ import {
   ActivityIndicator, 
   Dimensions,
   Keyboard,
-  TouchableWithoutFeedback,
+  Pressable,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -176,7 +176,7 @@ export default function LoginScreen() {
   };
 
   return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+    <Pressable onPress={Keyboard.dismiss} style={StyleSheet.absoluteFill}>
       <View style={styles.container}>
         {/* Background */}
         <LinearGradient 
@@ -405,12 +405,12 @@ export default function LoginScreen() {
               onPress={() => router.replace('/(onboarding)/auth-choice')}
             >
               <Ionicons name="arrow-back" size={16} color={theme.colors.textMuted} />
-              <Text style={styles.backText}>Back</Text>
+            <Text style={styles.backText}>Back</Text>
             </TouchableOpacity>
           </Animated.View>
         </KeyboardAvoidingView>
       </View>
-    </TouchableWithoutFeedback>
+    </Pressable>
   );
 }
 

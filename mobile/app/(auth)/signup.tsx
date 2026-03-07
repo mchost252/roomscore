@@ -13,7 +13,7 @@ import {
   ScrollView, 
   Dimensions,
   Keyboard,
-  TouchableWithoutFeedback,
+  Pressable,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -211,7 +211,7 @@ export default function SignupScreen() {
   };
 
   return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+    <Pressable onPress={Keyboard.dismiss} style={StyleSheet.absoluteFill}>
       <View style={styles.container}>
         {/* Background */}
         <LinearGradient 
@@ -509,7 +509,7 @@ export default function SignupScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
       </View>
-    </TouchableWithoutFeedback>
+    </Pressable>
   );
 }
 
