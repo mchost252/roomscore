@@ -12,7 +12,6 @@ import {
   ActivityIndicator, 
   Dimensions,
   Keyboard,
-  Pressable,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -175,9 +174,18 @@ export default function LoginScreen() {
     };
   };
 
+  // Keyboard dismiss on mount
+  useEffect(() => {
+    const showListener = Keyboard.addListener('keyboardDidShow', () => {});
+    const hideListener = Keyboard.addListener('keyboardDidHide', () => {});
+    return () => {
+      showListener.remove();
+      hideListener.remove();
+    };
+  }, []);
+
   return (
-    <Pressable onPress={Keyboard.dismiss} style={StyleSheet.absoluteFill}>
-      <View style={styles.container}>
+    <View style={styles.container}>
         {/* Background */}
         <LinearGradient 
           colors={theme.gradients.background} 
@@ -405,12 +413,11 @@ export default function LoginScreen() {
               onPress={() => router.replace('/(onboarding)/auth-choice')}
             >
               <Ionicons name="arrow-back" size={16} color={theme.colors.textMuted} />
-            <Text style={styles.backText}>Back</Text>
+              <Text style={styles.backText}>Back</Text>
             </TouchableOpacity>
           </Animated.View>
         </KeyboardAvoidingView>
       </View>
-    </Pressable>
   );
 }
 
