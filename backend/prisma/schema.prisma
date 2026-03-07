@@ -1,24 +1,24 @@
-// Prisma Schema for Krios - PostgreSQL (Supabase) or SQLite (Local Dev)
+// Prisma Schema for Krios - PostgreSQL (Supabase)
 // 
-// === FOR LOCAL: Comment out PostgreSQL, uncomment SQLite ===
-// === FOR PRODUCTION: Keep PostgreSQL, comment out SQLite ===
+// === FOR LOCAL TESTING: Comment out PostgreSQL, uncomment SQLite below ===
+// === FOR PRODUCTION: Keep as is ===
 
 generator client {
   provider = "prisma-client-js"
 }
 
-// === PostgreSQL (Production/Supabase) ===
-// datasource db {
-//   provider  = "postgresql"
-//   url       = env("DATABASE_URL")
-//   directUrl = env("DIRECT_DATABASE_URL")
-// }
-
-// === SQLite (Local Development) ===
+// === PostgreSQL (Production - Railway) ===
 datasource db {
-  provider = "sqlite"  
-  url      = "file:./dev.db"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
 }
+
+// === SQLite (Local Development - uncomment to use) ===
+// datasource db {
+//   provider = "sqlite"  
+//   url      = "file:./dev.db"
+// }
 
 // ==================== USER ====================
 model User {
