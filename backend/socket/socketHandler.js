@@ -5,9 +5,19 @@ const logger = require('../utils/logger');
 // Track online users: Map<userId, Set<socketId>>
 const onlineUsers = new Map();
 
+// Track room presence: Map<roomId, Set<userId>>
+// This avoids querying database for online status
+const roomPresence = new Map();
+
 module.exports = (io) => {
   // Helper to get online user IDs
   const getOnlineUserIds = () => Array.from(onlineUsers.keys());
+  
+  // Helper to get users in a specific room (no DB query!)
+  const getRoomOnlineUsers = (roomId) => {
+    const users = roomPresence.get(roomId);
+    return users ? Array.from(users) : [];
+  };
 
   // Authentication middleware for socket connections
   io.use(async (socket, next) => {
@@ -118,6 +128,21 @@ module.exports = (io) => {
       socket.join(roomId);
       logger.info(`User ${socket.username} joined room: ${roomId}`);
       
+      // Track room presence in memory (no DB query!)
+      if (!roomPresence.has(roomId)) {
+        roomPresence.set(roomId, new Set());
+      }
+      roomPresence.get(roomId).add(socket.userId);
+      
+      // Get current online users in room (no DB!)
+      const roomOnlineUsers = getRoomOnlineUsers(roomId);
+      
+      // Send current online users to the joining user
+      socket.emit('room:online_users', {
+        roomId,
+        users: roomOnlineUsers
+      });
+      
       // Notify others in the room
       socket.to(roomId).emit('user:online', {
         userId: socket.userId,
@@ -130,11 +155,29 @@ module.exports = (io) => {
       socket.leave(roomId);
       logger.info(`User ${socket.username} left room: ${roomId}`);
       
+      // Remove from room presence
+      if (roomPresence.has(roomId)) {
+        roomPresence.get(roomId).delete(socket.userId);
+        if (roomPresence.get(roomId).size === 0) {
+          roomPresence.delete(roomId);
+        }
+      }
+      
       // Notify others in the room
       socket.to(roomId).emit('user:offline', {
         userId: socket.userId,
         username: socket.username
       });
+    });
+
+    // Get online users in a room (no DB query!)
+    socket.on('room:getOnlineUsers', (roomId, callback) => {
+      const users = getRoomOnlineUsers(roomId);
+      if (callback) {
+        callback({ roomId, users });
+      } else {
+        socket.emit('room:online_users', { roomId, users });
+      }
     });
 
     // Typing indicator
@@ -172,6 +215,47 @@ module.exports = (io) => {
       });
     });
 
+    // ========================================
+    // WHATSAPP-STYLE ACK SYSTEM (Room Messages)
+    // ========================================
+    
+    // When client receives a message, they send ACK
+    // Status: sent -> delivered -> read
+    socket.on('message:ack', ({ messageId, roomId, status }) => {
+      // status: 'delivered' (message received by app) or 'read' (message displayed)
+      logger.info(`[ACK] ${socket.username}: ${messageId} - ${status}`);
+      
+      // Notify sender in the room
+      socket.to(roomId).emit('message:status', {
+        messageId,
+        userId: socket.userId,
+        status // 'delivered' or 'read'
+      });
+    });
+
+    // Batch ACK for multiple messages (more efficient)
+    socket.on('message:batch_ack', ({ messageIds, roomId, status }) => {
+      logger.info(`[ACK] ${socket.username}: Batch ${messageIds.length} messages - ${status}`);
+      
+      socket.to(roomId).emit('message:batch_status', {
+        messageIds,
+        userId: socket.userId,
+        status
+      });
+    });
+
+    // Room message delivery confirmation (when user joins room or app comes to foreground)
+    socket.on('room:sync', ({ roomId, lastReadMessageId }) => {
+      logger.info(`[Sync] ${socket.username}: Room ${roomId} sync from ${lastReadMessageId || 'beginning'}`);
+      
+      // Send any missed messages since lastReadMessageId
+      // Client should handle fetching from server
+      socket.emit('room:synced', {
+        roomId,
+        acknowledgedAt: new Date().toISOString()
+      });
+    });
+
     // Handle disconnect
     socket.on('disconnect', () => {
       logger.info(`User disconnected: ${socket.username} (${socket.userId})`);
@@ -184,6 +268,22 @@ module.exports = (io) => {
           onlineUsers.delete(socket.userId);
           // Broadcast to all users that this user is offline
           io.emit('user:status', { userId: socket.userId, isOnline: false });
+        }
+      }
+      
+      // Remove from all room presence tracking
+      for (const [roomId, users] of roomPresence.entries()) {
+        if (users.has(socket.userId)) {
+          users.delete(socket.userId);
+          // Notify room members
+          io.to(roomId).emit('user:offline', {
+            userId: socket.userId,
+            username: socket.username
+          });
+          // Clean up empty rooms
+          if (users.size === 0) {
+            roomPresence.delete(roomId);
+          }
         }
       }
     });

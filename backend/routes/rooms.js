@@ -876,11 +876,11 @@ router.post('/:id/chat', protect, isRoomMember, validate(sendMessageSchema), asy
 });
 
 // @route   GET /api/rooms/:id/chat
-// @desc    Get chat messages
+// @desc    Get chat messages - supports Delta Sync (last_id for efficiency)
 // @access  Private (must be member)
 router.get('/:id/chat', protect, isRoomMember, async (req, res, next) => {
   try {
-    const { limit = 50, before } = req.query;
+    const { limit = 50, before, last_id } = req.query;
 
     // Enforce room chat retention (max 5 days)
     const retentionDays = Math.min(5, Math.max(1, req.room.chatRetentionDays || 5));
@@ -892,8 +892,19 @@ router.get('/:id/chat', protect, isRoomMember, async (req, res, next) => {
       createdAt: { gte: cutoff }
     };
 
-    if (before) {
-      // Combine before filter with retention cutoff
+    // DELTA SYNC: If last_id provided, only fetch messages after that
+    if (last_id) {
+      const lastMessage = await prisma.chatMessage.findUnique({
+        where: { id: last_id },
+        select: { createdAt: true }
+      });
+      
+      if (lastMessage) {
+        whereClause.createdAt = { gt: lastMessage.createdAt };
+        logger.info(`[Delta Sync] Room ${req.params.id}: Fetching messages after ${last_id}`);
+      }
+    } else if (before) {
+      // Legacy: Load older messages (pagination)
       whereClause.createdAt = { gte: cutoff, lt: new Date(before) };
     }
 
@@ -912,6 +923,7 @@ router.get('/:id/chat', protect, isRoomMember, async (req, res, next) => {
       _id: m.id,
       message: m.content,
       messageType: m.type,
+      status: m.status || 'sent', // sent, delivered, read
       userId: m.user ? { ...m.user, _id: m.user.id } : null,
       replyTo: m.replyToText ? { _id: m.replyToId, message: m.replyToText } : null
     }));
@@ -920,7 +932,9 @@ router.get('/:id/chat', protect, isRoomMember, async (req, res, next) => {
       success: true,
       count: formattedMessages.length,
       messages: formattedMessages,
-      retentionDays
+      retentionDays,
+      deltaSync: !!last_id, // Tell client this was a delta sync
+      syncFrom: last_id || null
     });
   } catch (error) {
     next(error);
