@@ -125,15 +125,6 @@ export default function SignupScreen() {
     ]).start();
   }, []);
 
-  const triggerShake = useCallback(() => {
-    Animated.sequence([
-      Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: -10, duration: 50, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: 0, duration: 50, useNativeDriver: true }),
-    ]).start();
-  }, []);
-
   // Button press handlers
   const handlePressIn = () => {
     Animated.spring(buttonScale, {
@@ -216,8 +207,6 @@ export default function SignupScreen() {
       ...styles.inputWrapper,
       borderColor,
       backgroundColor: errors[field] ? 'rgba(239, 68, 68, 0.05)' : theme.colors.surface,
-    };
-  };
     };
   };
 

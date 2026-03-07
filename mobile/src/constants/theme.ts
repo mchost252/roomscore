@@ -202,13 +202,22 @@ export const dimensions = {
 };
 
 // ==================== GRADIENTS ====================
-export const gradients = {
-  primary: [colors.primary, colors.secondary],
-  primaryReversed: [colors.secondary, colors.primary],
-  success: [colors.success, '#059669'],
-  error: [colors.error, '#dc2626'],
-  surface: ['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.02)'],
-  background: [colors.background, colors.backgroundSecondary, colors.background],
+type GradientColors = readonly [string, string, ...string[]];
+
+export const gradients: {
+  primary: GradientColors;
+  primaryReversed: GradientColors;
+  success: GradientColors;
+  error: GradientColors;
+  surface: GradientColors;
+  background: GradientColors;
+} = {
+  primary: [colors.primary, colors.secondary] as GradientColors,
+  primaryReversed: [colors.secondary, colors.primary] as GradientColors,
+  success: [colors.success, '#059669'] as GradientColors,
+  error: [colors.error, '#dc2626'] as GradientColors,
+  surface: ['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.02)'] as GradientColors,
+  background: [colors.background, colors.backgroundSecondary, colors.background] as GradientColors,
 };
 
 // ==================== EXPORT DEFAULT ====================
