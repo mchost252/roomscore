@@ -128,19 +128,24 @@ app.use('/api/', limiter);
 console.log('🔌 Attempting PostgreSQL connection...');
 console.log('📋 DATABASE_URL:', process.env.DATABASE_URL ? 'Set (hidden for security)' : 'NOT SET!');
 
+const isSQLite = process.env.DATABASE_URL?.includes('sqlite') || process.env.DATABASE_URL?.includes('.db');
+
 connectDatabase()
   .then(async () => {
-    logger.info('PostgreSQL connected successfully');
+    const dbType = isSQLite ? 'SQLite' : 'PostgreSQL';
+    logger.info(`${dbType} connected successfully`);
 
     // Ensure required columns exist (idempotent) without Prisma Migrate.
     // This avoids Prisma migrate baseline issues (P3005) on existing production DB.
-    try {
-      await prisma.$executeRawUnsafe(
-        'ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "chatRetentionDays" INTEGER NOT NULL DEFAULT 5;'
-      );
-      logger.info('✅ Ensured Room.chatRetentionDays exists');
-    } catch (e) {
-      logger.warn('⚠️ Could not ensure chatRetentionDays column:', e.message);
+    if (!isSQLite) {
+      try {
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "chatRetentionDays" INTEGER NOT NULL DEFAULT 5;'
+        );
+        logger.info('✅ Ensured Room.chatRetentionDays exists');
+      } catch (e) {
+        logger.warn('⚠️ Could not ensure chatRetentionDays column:', e.message);
+      }
     }
 
     // Start keep-alive pings to prevent Neon database from sleeping
