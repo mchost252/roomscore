@@ -109,9 +109,10 @@ app.use(passport.session());
 require('./config/passport')(passport);
 
 // Rate limiting - enabled to prevent abuse and reduce unnecessary API calls
+// Skip rate limiting for auth routes (register/login) to prevent blocking legitimate users
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 min
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 500,
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 1000, // Increased for Railway
   message: { 
     success: false, 
     message: 'Too many requests. Please wait a moment and try again.',
@@ -122,6 +123,8 @@ const limiter = rateLimit({
   skip: (req) => {
     if (req.path === '/health') return true;
     if (req.path.includes('/socket.io')) return true;
+    // Skip rate limiting for auth routes (register/login)
+    if (req.path.includes('/auth/register') || req.path.includes('/auth/login')) return true;
     return false;
   }
 });
