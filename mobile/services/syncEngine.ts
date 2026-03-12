@@ -69,10 +69,7 @@ class SyncEngine {
       auth: { token: this.token },
       transports: ['websocket', 'polling'],
       upgrade: true,
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      reconnectionAttempts: this.maxReconnectAttempts,
+      reconnection: false, // We handle reconnection manually - only reconnect when internet is back
       timeout: 30000, // 30 seconds for Railway/Neon cold starts
     });
 
@@ -91,11 +88,47 @@ class SyncEngine {
 
     this.socket.on('connect_error', (error) => {
       console.error('❌ WebSocket connection error:', error.message);
-      this.reconnectAttempts++;
+      // If authentication error (JWT expired), don't blindly retry — let the auth flow handle it
+      if (error.message === 'Authentication error') {
+        console.log('Token likely expired, waiting for AuthContext to refresh and re-initialize');
+        return;
+      }
+      // Otherwise, schedule reconnect for network drops
+      this.scheduleReconnect();
     });
 
     // Real-time event listeners
     this.setupEventListeners();
+  }
+
+  /**
+   * Schedule reconnection only when internet is available
+   */
+  private scheduleReconnect(): void {
+    if (this.reconnectAttempts > 0) return; // Already scheduled
+    
+    this.reconnectAttempts = 1;
+    let attempts = 0;
+    const maxAttempts = 12; // Stop trying after 1 minute
+    
+    // Use setInterval to check connection periodically (works on web & mobile)
+    const checkInterval = setInterval(async () => {
+      attempts++;
+      
+      if (!this.socket?.connected && attempts < maxAttempts) {
+        const netState = await NetInfo.fetch();
+        if (netState.isConnected) {
+          console.log('🌐 Internet available, reconnecting...');
+          clearInterval(checkInterval);
+          this.reconnectAttempts = 0;
+          this.connect();
+        }
+      } else if (attempts >= maxAttempts) {
+        // Stop trying after 1 minute
+        clearInterval(checkInterval);
+        console.log('⏰ Stopped reconnect attempts');
+      }
+    }, 5000); // Check every 5 seconds
   }
 
   /**
@@ -130,6 +163,7 @@ class SyncEngine {
 
     // Friend events
     this.socket.on('friend:request', (data) => this.handleEvent('friend:request', data));
+    this.socket.on('friend:request_sent', (data) => this.handleEvent('friend:request_sent', data));
     this.socket.on('friend:accepted', (data) => this.handleEvent('friend:accepted', data));
     this.socket.on('friend:removed', (data) => this.handleEvent('friend:removed', data));
   }
@@ -302,6 +336,24 @@ class SyncEngine {
   emit(event: string, data: any): void {
     if (this.socket?.connected) {
       this.socket.emit(event, data);
+    }
+  }
+
+  /**
+   * Subscribe to a user's online status (when opening DM chat)
+   */
+  subscribeToUserStatus(userId: string): void {
+    if (this.socket?.connected) {
+      this.socket.emit('dm:subscribe', userId);
+    }
+  }
+
+  /**
+   * Unsubscribe from a user's online status (when closing DM chat)
+   */
+  unsubscribeFromUserStatus(userId: string): void {
+    if (this.socket?.connected) {
+      this.socket.emit('dm:unsubscribe', userId);
     }
   }
 

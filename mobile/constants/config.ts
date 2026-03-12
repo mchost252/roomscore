@@ -1,20 +1,50 @@
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
 // ==================== CONFIGURATION ====================
 // Set to true for local development, false for production
 const USE_LOCAL_DEV = true; // <-- CHANGE THIS to false when ready for production
 
 // Local server URL (emulator/simulator)
-const LOCAL_API_URL = 'http://10.0.2.2:5000';  // Android emulator
-const LOCAL_SOCKET_URL = 'http://10.0.2.2:5000';
+const LOCAL_API_URL = 'http://10.164.0.150:5000';  // Physical device
+const LOCAL_SOCKET_URL = 'http://10.164.0.150:5000';
+
+const LOCAL_WEB_URL = 'http://localhost:5000';  // Browser testing
+const LOCAL_WEB_SOCKET_URL = 'http://localhost:5000';
 
 // Production URLs
 const PROD_API_URL = 'https://roomscore-production.up.railway.app';
 const PROD_SOCKET_URL = 'https://roomscore-production.up.railway.app';
 
-// Get API URL from environment variables, or use configured value
+// Detect if running on web - check multiple ways
+const isWebPlatform = (): boolean => {
+  // Check Platform.OS first
+  if (Platform.OS === 'web') return true;
+  
+  // Fallback: check for browser-specific globals
+  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    return true;
+  }
+  
+  return false;
+};
+
+// Debug: log the detected platform
+console.log('🔍 Platform detection:', { 
+  PlatformOS: Platform.OS, 
+  isWeb: isWebPlatform(),
+  hasWindow: typeof window !== 'undefined',
+  hasDocument: typeof document !== 'undefined'
+});
+
+// Get API URL - check web first, then env, then default
 const getApiUrl = (): string => {
-  // Check for explicit environment override
+  // Detect if running on web - prioritize web detection over env
+  if (isWebPlatform()) {
+    return USE_LOCAL_DEV ? LOCAL_WEB_URL : PROD_API_URL;
+  }
+  
+  // Check for explicit environment override (for native mobile)
   const envUrl = Constants.expoConfig?.extra?.apiUrl || process.env.EXPO_PUBLIC_API_URL;
   if (envUrl) return envUrl;
   
@@ -23,7 +53,12 @@ const getApiUrl = (): string => {
 };
 
 const getSocketUrl = (): string => {
-  // Check for explicit environment override
+  // Detect if running on web - prioritize web detection over env
+  if (isWebPlatform()) {
+    return USE_LOCAL_DEV ? LOCAL_WEB_SOCKET_URL : PROD_SOCKET_URL;
+  }
+  
+  // Check for explicit environment override (for native mobile)
   const envUrl = Constants.expoConfig?.extra?.socketUrl || process.env.EXPO_PUBLIC_SOCKET_URL;
   if (envUrl) return envUrl;
   

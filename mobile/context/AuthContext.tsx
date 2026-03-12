@@ -36,6 +36,8 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  let lastLoadUserAttempt = 0;
+  const LOAD_USER_COOLDOWN = 30000; // 30 seconds
 
   // Load user on mount
   useEffect(() => {
@@ -89,8 +91,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // Load user profile
-  const loadUser = async (retryCount = 0) => {
+  // Load user profile (debounced to prevent rate limiting)
+  const loadUser = async () => {
+    const now = Date.now();
+    if (now - lastLoadUserAttempt < LOAD_USER_COOLDOWN) {
+      console.log('⏳ loadUser skipped - cooldown period');
+      return;
+    }
+    lastLoadUserAttempt = now;
+
     try {
       console.log('🔄 Loading user profile...');
       const response = await api.get('/auth/profile', { timeout: 5000 });

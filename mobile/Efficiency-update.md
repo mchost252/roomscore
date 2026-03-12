@@ -1,77 +1,85 @@
 
 
-This is the "Level Up" moment for Krios. To move from a standard app to a high-performance, WhatsApp-style architecture without burning through your Supabase credits, you need a Local Sandbox strategy.
-From a developer perspective, you don't just "change code"; you change your environment. Here is the step-by-step roadmap to re-architecting Krios safely.
-Phase 1: Setup the "Local Sandbox" (Zero Cost)
-You need to stop hitting the live Supabase/Railway servers while you experiment.
-* Supabase CLI (Local Development):
-   * Install the Supabase CLI on your machine.
-   * Run supabase init in your project folder, then supabase start.
-   * The Result: You now have a full version of Supabase (Postgres, Auth, and API) running inside Docker on your computer. No egress, no limits, no cost.
-* Local Railway/Node.js:
-   * Run your Node.js server locally (npm run dev).
-   * Point your local server to your local Supabase database instead of the live one using your .env file.
-* Branching: * Create a new Git branch: git checkout -b feature/local-first-architecture.
-   * This ensures your "Home/Profile" screens stay safe on the main branch while you tear apart the messaging logic.
-Phase 2: The "Sync Shield" (IndexedDB)
-Since you are a React/Node dev, the biggest change is how your frontend talks to data. You need to insert a "Local Database" between your UI and your API.
-* The Tool: Use Dexie.js (a wrapper for IndexedDB). It makes working with the browser’s local database feel like writing standard JavaScript.
-* The Logic:
-   * When the user sends a message, you save it to Dexie first.
-   * Your UI listens to Dexie, so the message appears instantly.
-   * In the background, a "Sync Worker" tries to push that message to your local Node.js server.
-Phase 3: The "Delta Sync" Engine
-To make your "Message Screen" work perfectly and fast, implement the Delta Sync.
-* The Handshake: When the Message Screen loads, don't fetch all messages. Check Dexie for the last_id.
-* The Request: Ask your local API: GET /messages?after={last_id}.
-* The Fill: Take the 2 or 3 new messages, save them to Dexie, and your UI will auto-update.
-Phase 4: Fixing the Message Screen & AI Flow
-You mentioned the message screen still has issues. This is usually due to "Race Conditions" (messages arriving out of order).
-* Sequence ID: Ensure every message has a strictly increasing ID or Timestamp.
-* AI Streaming: For your AI in task threads, use Server-Sent Events (SSE) or Socket.io chunks. Don't wait for the AI to finish. Stream the words into Dexie as they arrive so the user sees progress immediately.
-How to "Push" when you're done
-Once everything works perfectly on your local machine:
-* Database Migration: Use the Supabase CLI to push your local database schema changes to your live Supabase project.
-* Deploy Railway: Push your local Node.js changes to Railway.
-* Environment Swap: Update your production .env to point back to the live Supabase URL.
+"Hey Big Pickle, we are doing a major performance and architecture pass on the Krios app. All files are .tsx. Stop what you are doing and address these exact files and issues in this order. We need WhatsApp-level performance, local-first reliability, and to fix our UI overlapping issues on physical devices.
+Phase 1: Critical Bug Fixes (State Loops)
+1. Target File: ChatScreen.tsx or MessageScreen.tsx (Fix Infinite Read Receipt)
+* The Bug: The screen is stuck in an infinite loop calling the markAsRead API, causing UI flickering and rate limits.
+* The Fix: Add a local guard (if (message.status === 'read') return;). Use a useRef to block simultaneous calls. Do not use the messages array as a dependency for the read useEffect. Remove full-screen loaders for background syncs.
+2. Target File: NewTaskModal.tsx or TaskCreationScreen.tsx (Fix DateTimePicker Loop)
+* The Bug: Selecting a time on Android causes the modal to re-open multiple times.
+* The Fix: In the onChange handler, check if (event.type === 'set' || event.type === 'dismissed'). Fire setShow(false) as the absolute first line before updating date state.
+Phase 2: Native UI & Layout Overlaps
+3. Target File: BottomTabNavigator.tsx or AppNavigator.tsx (Fix Nav Icons Too Low)
+* The Bug: Tab bar icons are rendering perfectly on the web but are overlapping with the OS native navigation/gesture area at the very bottom of physical mobile screens.
+* The Fix: Hardcoded padding is failing. You MUST use react-native-safe-area-context.
+   * Import useSafeAreaInsets.
+   * Apply paddingBottom: insets.bottom (plus any extra standard padding you need) directly to the Tab Bar container's style. This dynamically pushes the icons up above the OS gesture bar on all devices.
+4. Target File: AIClarificationModal.tsx & NewTaskScreen.tsx (Fix Modal Hidden Under Tabs)
+* The Bug: The AI Clarification Modal is rendering under the Bottom Tab Bar. z-index fixes are failing due to stacking contexts.
+* The Fix: Stop rendering this as an absolute-positioned <View> inside the screen. You must use React Native's native <Modal transparent={true} visible={...} animationType="slide">. The native <Modal> component breaks out of the React Navigation hierarchy and renders on top of everything, including the tab bar.
+Phase 3: The "Local-First" Logic Fix
+5. Target File: TaskCreationLogic.tsx (Fix AI Modal Not Showing Offline)
+* The Bug: The AI Clarification Modal fails to trigger if the app is not connected to the backend/Metro server.
+* The Fix: The state update setShowAIModal(true) is currently blocked by a network request or DB sync dependency. Move the trigger to immediately follow the Local SQLite save. The app is local-first; the UI should proceed to the AI note-taking step immediately upon local persistence, handling the remote server sync in the background asynchronously.
+Phase 4: The "Dual-Curve" Message Layout & Performance
+6. Target File: MessageListScreen.tsx
+* Redesign to a dual-curve glassmorphic UI.
+   * Top Curve (Zone 1): Header & Active Users (borderBottomRadius: 30).
+   * Middle Gap (Zone 2): Transparent spacer for a "Data Stream" animation.
+   * Bottom Curve (Zone 3): Chat List (borderTopRadius: 30).
+* Performance Mandate: Use @shopify/flash-list exclusively for the message inbox and cluster task lists. Use react-native-reanimated for all layout shifts (no useState animations)."
+Copy and paste that straight to Big Pickle. The native <Modal> tag and the insets.bottom commands are the exact tools needed to defeat those physical device bugs.
+Since Krios needs to operate efficiently without a network connection, would you like me to map out the exact sequence for how the AI Clarification notes should be saved locally in SQLite before attempting to sync with the server?
+To make the Krios message screen stand out, we need to move away from the "generic chat" look and lean into your minimalist, futuristic, and glassmorphic aesthetic. Since you are a software developer and motion graphics artist, the UI should feel like a high-end production, not just a list of texts.
+Here is how to make that screen unique, followed by the master guide for Big Pickle.
+💎 The "Krios Signature" Message UI: Unique Features
+To make it truly yours, we are adding layers that most apps don't have:
+* Dynamic Glassmorphic Backdrop:
+   The background shouldn't be a solid color. Use a mesh gradient (burgundy, deep navy, and violet) that subtly shifts using react-native-reanimated. Overlay this with a high-blur "glass" panel for the message list.
+* The "Data Stream" Pulse:
+   In that gap between your two curves, instead of a static image, have a logic-driven pulse. When the app is syncing with your cluster or database, the pulse glows brighter. This makes the backend "visible" to the user.
+* Message Bubble "Glow" State:
+   Instead of flat colors, outgoing bubbles should have a subtle outer glow that matches the theme color. Incoming messages should have a "constellation" pattern very faintly visible in the background of the bubble.
+* Haptic Feedback Transitions:
+   When scrolling through the "Samsung-style" header, use Haptic Feedback (vibrations) as the header snaps from large to small. It makes the app feel physically high-quality.
+🛠️ The "Big Pickle" Fix & Build Guide
+This guide is designed to treat Big Pickle like a senior engineer. It provides the Context, The Conflict, and The Fix.
+1. The "Invisible" Logic (Back-End & Performance)
+* The Guard Pattern: "Pickle, never call an API inside a useEffect without a useRef guard to prevent loops. In ChatScreen.tsx, if the message is already marked as 'read', abort the function immediately."
+* FlashList Optimization: "Replace all FlatList with FlashList. Set estimatedItemSize to 80. This is the only way to achieve WhatsApp-level scrolling on Android devices."
+* Safe Area Mastery: "On physical mobile devices, hardcoded padding fails. Use useSafeAreaInsets() to push the Bottom Nav icons above the OS gesture area. If the icon looks lower on the phone than on the web, it's because you aren't calculating the insets.bottom properly."
+2. The "Physical" UI (Modal & Navigation)
+* Native Overlays: "Z-index is not enough for the AI Clarification Modal. It must be a native <Modal> component with transparent={true}. This is the only way to ensure it renders over the Top and Bottom Navigation bars."
+* Gesture Handling: "For the Samsung-style scroll header, use Animated.interpolate tied to the onScroll event of the FlashList. If it’s not moving, check if scrollEventThrottle is set to 16."
+3. The "Local-First" Rule
+* Immediate UI Response: "The AI Clarification Modal must trigger the moment the local SQLite save is successful. Do not wait for the Railway DB or Metro server response. Krios is local-first; the UI must never lag behind the network."
+📑 Copy-Paste Prompt for Big Pickle
+> "Big Pickle, we are upgrading Krios to its final production architecture. Follow these rules for all .tsx files:
+>  * Apply Safe Area Insets to the Bottom Navigation Bar using react-native-safe-area-context to fix the icon overlap on physical devices.
+>  * Refactor the Message Screen into a 'Dual-Curve' layout.
+>    * Top Curve: Glassmorphic header with Active Users.
+>    * Gap: Data Stream animation.
+>    * Bottom Curve: FlashList message feed.
+>  * Fix the Read-Receipt Loop in ChatScreen.tsx using a useRef guard and local status checks.
+>  * Force the AI Clarification Modal to use a native <Modal> tag so it appears above the Bottom Tab Bar. Trigger it immediately after local data persistence.
+>  * Animations: Use react-native-reanimated exclusively for layout shifts. No useState for UI 
+movement."
 
-This is the "technical debt" phase every great app goes through. If your Railway logs are screaming while only one user is active, it means your app is currently "chatty"—it's asking the server for permission to breathe every second.
-To turn Krios into a high-performance engine, we need to move from Request-Response logic to Event-Driven logic. Here is your roadmap from where you are now to a "WhatsApp-grade" build.
-1. Stop the "Bleeding" (Rate Limits & Polling)
-The reason you're hitting Railway limits is that your app is likely using useEffect or a timer to ask the server: "Is he online? Is he typing? Any new messages?"
-The Fix: Move Presence to Memory, Not the DB.
-* The Problem: Writing "User is Online" or "User is Typing" to a database (Prisma/Railway) is expensive. Every keystroke is a database write.
-* The WhatsApp Way: Use Socket.io namespaces/rooms. When a user types, emit an event: socket.emit('typing', { roomId }). Railway receives this in RAM and "blasts" it to the other user in the room. Do not save typing status to the database.
-* Debounce: Don't send a "typing" event for every letter. Use a "debounce" function so it only fires once every 2–3 seconds while the user is active.
-2. The "Local-First" Mobile Pivot (Expo Focus)
-Since you are targeting an Expo Dev Build, you have access to real mobile power that a browser doesn't have.
-* Replace Browser Storage with MMKV or SQLite:
-   * MMKV: Use react-native-mmkv. It is the fastest key-value storage for React Native (much faster than AsyncStorage). Use this for user profiles, settings, and small "Read/Unread" states.
-   * Expo-SQLite: For your message history and task threads, use expo-sqlite. This allows you to store thousands of Krios tasks locally on the phone.
-* The Logic: When the app opens, it should display the tasks from SQLite instantly. The "Loading" spinner should only happen in the background while the app syncs new data.
-3. Fixing the Gemini API "Try Again Later" Error
-Gemini's "Try again later" usually means one of three things:
-* Rate Limiting: You're sending too many small requests (like every time a user types).
-* Safety Filters: The AI might be blocking a prompt based on its built-in safety settings.
-* Context Overflow: You might be sending the entire chat history with every message, making the "payload" too big.
-The Fix:
-* Chunking: Only send the last 10 messages of context to Gemini, not the whole thread.
-* Caching: If the AI is answering a common task question, save the answer in your local SQLite DB. If another user asks the same thing in the same room, show the cached answer instead of calling the API again.
-4. Your "Next Big Step" Roadmap
-To get Krios where you want it, follow this sequence:
-Step A: The Centralized "Sync Manager"
-Create a single file in your Expo project (e.g., SyncService.js). Its only job is to watch your Socket.io connection.
-* If a message arrives via Socket, save it to SQLite immediately.
-* Tell the UI: "Hey, there's new data in SQLite, re-render."
-Step B: Optimistic UI for Tasks
-In a task-manager app, the feeling of "completing" a task must be instant.
-* User clicks "Done" → Update the local SQLite status to completed → Update the screen.
-* In the background → Send the update to Railway.
-* If the Railway update fails, then show an "Error: Could not sync" toast.
-Step C: Batching Read Receipts
-Don't send a "Read" request for every message. When a user opens a chat, wait 1 second, then send one request to Railway: mark_all_read(roomId, lastMessageId). This turns 50 requests into 1.
-Questions to refine the next move:
-* Presence Logic: Are you currently using WebSockets (Socket.io) for "Online/Typing" or are you hitting an API endpoint (/api/status)?
-* Database: Since you aren't using Supabase, are you using Railway's PostgreSQL or a different DB with Prisma?
-* The "Message Screen" Issue: Is the issue related to the UI jumping around, or messages being lost?
-Would you like me to write the "Debounced Typing" logic for your Expo frontend so you can stop those excessive Railway requests today?
+
+>EXTRA NOTE
+
+
+​"Pickle, for the 'Gap' between the two curves on the Message Screen, we are moving away from the full data stream animation.
+• ​Create a Conditional Slot in that space.
+• ​If there is an urgent task, show the Priority Carousel.
+• ​If the user is on a streak, show a Minimalist Pulse Line.
+• ​Ensure this section has a fixed height (e.g., 60px) so the bottom curve doesn't 'jump' when the content inside the gap changes. This is vital for the 'Samsung Scroll' feel."
+Hey Big Pickle, we need to completely overhaul the ProfileScreen.tsx . Right now, the JS thread is choking, the scrolling stutters, and the 'Activity' tab takes multiple taps to respond because of the heavy heatmap rendering. Apply these exact architectural fixes:
+​1. Fix the Tab Tap Responsiveness:
+• ​The 'About | Activity | Achievements' buttons are ignoring taps. Upgrade them from standard TouchableOpacity or View to Pressable.
+• ​Add hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }} to each tab button so the user's thumb easily registers the tap without needing pinpoint accuracy.
+​2. Fix the Heatmap Render Lag (Crucial):
+• ​The Activity This Month grid is rendering dozens of nodes at once and blocking the thread. You MUST isolate the individual grid squares into their own component (e.g., <HeatmapSquare />) and wrap it in React.memo().
+• ​Only re-render a square if its specific activityLevel prop changes. Do not re-render the whole board.
+​3. Defer Heavy Rendering:
+• ​When the user taps the 'Activity' tab, use InteractionManager.runAfterInteractions(). Show a lightweight skeleton loader for the grid for a split second, and only mount the heavy heatmap after the tab-switch animation has completely finished.

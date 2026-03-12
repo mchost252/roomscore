@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { useFocusEffect } from 'expo-router';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
+  View, Text, StyleSheet, Alert, TouchableOpacity, ScrollView,
   TextInput, Animated, Dimensions, Platform, StatusBar,
-  KeyboardAvoidingView, Pressable, Image, Switch,
+  KeyboardAvoidingView, Pressable, Image, Switch, Modal
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -120,7 +120,7 @@ export default function HomeScreen() {
 
   // ── Tasks ─────────────────────────────────────────────────────────────────
   const [tasks, setTasks]                   = useState<PersonalTask[]>([]);
-  const [loading, setLoading]               = useState(true);
+  const [loading, setLoading]               = useState(false);
   const [threadMap, setThreadMap]           = useState<Record<string,ThreadEntry[]>>({});
   const taskDates = tasks.filter(t=>t.dueDate).map(t=>new Date(t.dueDate!));
   let tasksForDate = searchQuery.trim()
@@ -347,12 +347,11 @@ export default function HomeScreen() {
 
   useFocusEffect(useCallback(()=>{
     AsyncStorage.getItem('krios_nav_style').then(v=>{ if(v==='sidebar'||v==='bottom') setNavStyle(v); });
-  },[]));
-
-  useEffect(()=>{
+    
+    // Inject shared functions into Layout whenever Home is focused
     setOpenAIChat(openAIChat);
     setOpenAddTask(openAddTask);
-  },[openAIChat,openAddTask]);
+  },[openAIChat,openAddTask,setOpenAIChat,setOpenAddTask]));
 
   const handleToggleComplete = useCallback(async(task:PersonalTask)=>{
     const updated = await taskService.updateTask(task.id,{isCompleted:!task.isCompleted});
@@ -363,7 +362,7 @@ export default function HomeScreen() {
       const priority = (task.priority || 'medium') as 'urgent'|'high'|'medium'|'low';
       setConfettiPriority(priority);
       setShowConfetti(true);
-      setTimeout(() => setShowConfetti(false), 100);
+      setTimeout(() => setShowConfetti(false), 2000);
       showToast('Task completed!');
     }
   },[showToast]);
@@ -725,7 +724,13 @@ export default function HomeScreen() {
               const borderWidth = priority === 'high' ? 1.5 : StyleSheet.hairlineWidth;
               const shadowIntensity = priority === 'high' ? 0.12 : priority === 'low' ? 0.04 : 0.08;
               return(
-                <TouchableOpacity key={task.id} onPress={()=>openTaskSheet(task)} activeOpacity={0.82} style={s.timelineRow}>
+                <TouchableOpacity key={task.id} onPress={()=>openTaskSheet(task)} onLongPress={() => {
+            Alert.alert('Task Options', undefined, [
+              { text: 'Edit', onPress: () => openTaskSheet(task) },
+              { text: 'Delete', onPress: () => handleDeleteTask(task.id), style: 'destructive' },
+              { text: 'Cancel', style: 'cancel' }
+            ]);
+          }} activeOpacity={0.82} style={s.timelineRow}>
                   {/* Time axis */}
                   <View style={s.timelineTime}>
                     <Text style={[s.timelineTimeText,{fontSize:priority==='high'?12:11}]}>{timeStr}</Text>
@@ -962,79 +967,83 @@ export default function HomeScreen() {
       )}
 
       {/* ════ ADD TASK SHEET — dark glass card with enhanced Skia glow ════ */}
-      <Animated.View pointerEvents={showAddTask?'auto':'none'} style={[s.sheet,{transform:[{translateY:addTaskAnim}]}]}>
-        <Pressable style={[StyleSheet.absoluteFillObject,{backgroundColor:'rgba(0,0,0,0.6)'}]} onPress={closeAddTask}/>
-        <View style={[s.addTaskCard,{backgroundColor:t.isDark?'rgba(10,10,22,0.98)':'rgba(248,248,255,0.98)',borderColor:'#6366f133'}]}>
-          {/* Enhanced gradient overlay */}
-          <LinearGradient colors={['#6366f122','#8b5cf615','transparent']} start={{x:0.5,y:0}} end={{x:0.5,y:1}} style={[StyleSheet.absoluteFill,{borderRadius:28}]}/>
-          
-          {/* Multiple glow layers for depth */}
-          <View style={[s.addTaskGlow,{backgroundColor:'rgba(99,102,241,0.35)',filter:'blur(40px)'}]}/>
-          <View style={[s.addTaskGlow,{backgroundColor:'rgba(139,92,246,0.25)',top:-30,left:'60%',width:180,filter:'blur(35px)'}]}/>
-          <View style={[s.addTaskGlow,{backgroundColor:'rgba(236,72,153,0.15)',top:-50,left:'30%',width:150,height:80,filter:'blur(30px)'}]}/>
-          <View style={s.addTaskHandleRow}>
-            <View style={s.addTaskHandle}/>
-          </View>
-          <View style={[s.addTaskHeader,{borderBottomColor:`rgba(${t.surfRgb},0.5)`}]}>
-            <View>
-              <Text style={[s.addTaskBigTitle,{color:t.text}]}>New Task</Text>
-              <Text style={[s.addTaskSubtitle,{color:t.textSub}]}>Add it to your plan</Text>
-            </View>
-            <TouchableOpacity onPress={closeAddTask} style={[s.addTaskClose,{backgroundColor:`rgba(${t.surfRgb},0.6)`,borderColor:t.border}]}>
-              <Ionicons name="close" size={18} color={t.text}/>
-            </TouchableOpacity>
-          </View>
-          <KriosDatePicker
-            visible={showDatePicker}
-            initialDate={newTaskDue}
-            onConfirm={(date)=>{
-              setNewTaskDue(date);
-              setNewTaskTime(`${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`);
-              setShowDatePicker(false);
-            }}
-            onCancel={()=>setShowDatePicker(false)}
-          />
-          <ScrollView contentContainerStyle={{padding:20,gap:16,paddingBottom:40}} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            <TextInput style={[s.addTaskInput,{backgroundColor:`rgba(${t.surfRgb},0.5)`,borderColor:t.border,color:t.text}]} value={newTaskTitle} onChangeText={setNewTaskTitle} placeholder="What needs to be done?" placeholderTextColor={t.textHint} autoFocus={showAddTask} multiline returnKeyType="done"/>
-            <Text style={[s.addTaskLabel,{color:t.textSub}]}>WHEN</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8}}>
-              {getWeekDays(today).map((d,i)=>{
-                const isSel=isSameDay(d,newTaskDue);
-                const isTod=isSameDay(d,today);
-                return(
-                  <TouchableOpacity key={i} onPress={()=>setNewTaskDue(d)} style={[s.dueDatePill,{backgroundColor:isSel?t.primary:`rgba(${t.surfRgb},0.5)`,borderColor:isSel?t.primary:t.border}]}>
-                    <Text style={{fontSize:9,color:isSel?'#fff':t.textHint,fontWeight:'600'}}>{DAY_NAMES[d.getDay()].slice(0,3).toUpperCase()}</Text>
-                    <Text style={{fontSize:18,color:isSel?'#fff':t.text,fontWeight:'800'}}>{d.getDate()}</Text>
-                    {isTod&&<View style={{width:4,height:4,borderRadius:2,backgroundColor:isSel?'#fff':t.primary}}/>}
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-            <Text style={[s.addTaskLabel,{color:t.textSub}]}>DATE & TIME</Text>
-            <TouchableOpacity
-              onPress={()=>setShowDatePicker(true)}
-              style={[s.chip,{borderColor:t.primary,backgroundColor:`rgba(99,102,241,0.12)`,paddingHorizontal:14,paddingVertical:8,flexDirection:'row',alignItems:'center',gap:6}]}>
-              <Ionicons name="calendar-outline" size={16} color={t.primary}/>
-              <Text style={{color:t.primary,fontSize:13,fontWeight:'600'}}>
-                {newTaskDue.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})} · {newTaskTime}
-              </Text>
-            </TouchableOpacity>
-            <Text style={[s.addTaskLabel,{color:t.textSub}]}>PRIORITY</Text>
-            <View style={s.chipRow}>
-              {(['low','medium','high','urgent'] as const).map(p=>(
-                <TouchableOpacity key={p} onPress={()=>setNewTaskPriority(p)} style={[s.chip,{borderColor:newTaskPriority===p?PRIORITY[p].color:t.border,backgroundColor:newTaskPriority===p?`${PRIORITY[p].color}22`:'transparent'}]}>
-                  <View style={[s.priorityDot,{backgroundColor:PRIORITY[p].color}]}/>
-                  <Text style={[s.chipText,{color:newTaskPriority===p?PRIORITY[p].color:t.textSub}]}>{PRIORITY[p].label}</Text>
+      <Modal visible={showAddTask} transparent animationType="fade" onRequestClose={closeAddTask}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <Animated.View pointerEvents="auto" style={[s.sheet,{transform:[{translateY:addTaskAnim}]}]}>
+            <Pressable style={[StyleSheet.absoluteFillObject,{backgroundColor:'rgba(0,0,0,0.6)'}]} onPress={closeAddTask}/>
+            <View style={[s.addTaskCard,{backgroundColor:t.isDark?'rgba(10,10,22,0.98)':'rgba(248,248,255,0.98)',borderColor:'#6366f133'}]}>
+              {/* Enhanced gradient overlay */}
+              <LinearGradient colors={['#6366f122','#8b5cf615','transparent']} start={{x:0.5,y:0}} end={{x:0.5,y:1}} style={[StyleSheet.absoluteFill,{borderRadius:28}]}/>
+              
+              {/* Multiple glow layers for depth */}
+              <View style={[s.addTaskGlow,{backgroundColor:'rgba(99,102,241,0.35)',filter:'blur(40px)'}]}/>
+              <View style={[s.addTaskGlow,{backgroundColor:'rgba(139,92,246,0.25)',top:-30,left:'60%',width:180,filter:'blur(35px)'}]}/>
+              <View style={[s.addTaskGlow,{backgroundColor:'rgba(236,72,153,0.15)',top:-50,left:'30%',width:150,height:80,filter:'blur(30px)'}]}/>
+              <View style={s.addTaskHandleRow}>
+                <View style={s.addTaskHandle}/>
+              </View>
+              <View style={[s.addTaskHeader,{borderBottomColor:`rgba(${t.surfRgb},0.5)`}]}>
+                <View>
+                  <Text style={[s.addTaskBigTitle,{color:t.text}]}>New Task</Text>
+                  <Text style={[s.addTaskSubtitle,{color:t.textSub}]}>Add it to your plan</Text>
+                </View>
+                <TouchableOpacity onPress={closeAddTask} style={[s.addTaskClose,{backgroundColor:`rgba(${t.surfRgb},0.6)`,borderColor:t.border}]}>
+                  <Ionicons name="close" size={18} color={t.text}/>
                 </TouchableOpacity>
-              ))}
+              </View>
+              <KriosDatePicker
+                visible={showDatePicker}
+                initialDate={newTaskDue}
+                onConfirm={(date)=>{
+                  setNewTaskDue(date);
+                  setNewTaskTime(`${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`);
+                  setShowDatePicker(false);
+                }}
+                onCancel={()=>setShowDatePicker(false)}
+              />
+              <ScrollView contentContainerStyle={{padding:20,gap:16,paddingBottom:40}} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                <TextInput style={[s.addTaskInput,{backgroundColor:`rgba(${t.surfRgb},0.5)`,borderColor:t.border,color:t.text}]} value={newTaskTitle} onChangeText={setNewTaskTitle} placeholder="What needs to be done?" placeholderTextColor={t.textHint} autoFocus={showAddTask} multiline returnKeyType="done"/>
+                <Text style={[s.addTaskLabel,{color:t.textSub}]}>WHEN</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8}}>
+                  {getWeekDays(today).map((d,i)=>{
+                    const isSel=isSameDay(d,newTaskDue);
+                    const isTod=isSameDay(d,today);
+                    return(
+                      <TouchableOpacity key={i} onPress={()=>setNewTaskDue(d)} style={[s.dueDatePill,{backgroundColor:isSel?t.primary:`rgba(${t.surfRgb},0.5)`,borderColor:isSel?t.primary:t.border}]}>
+                        <Text style={{fontSize:9,color:isSel?'#fff':t.textHint,fontWeight:'600'}}>{DAY_NAMES[d.getDay()].slice(0,3).toUpperCase()}</Text>
+                        <Text style={{fontSize:18,color:isSel?'#fff':t.text,fontWeight:'800'}}>{d.getDate()}</Text>
+                        {isTod&&<View style={{width:4,height:4,borderRadius:2,backgroundColor:isSel?'#fff':t.primary}}/>}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+                <Text style={[s.addTaskLabel,{color:t.textSub}]}>DATE & TIME</Text>
+                <TouchableOpacity
+                  onPress={()=>setShowDatePicker(true)}
+                  style={[s.chip,{borderColor:t.primary,backgroundColor:`rgba(99,102,241,0.12)`,paddingHorizontal:14,paddingVertical:8,flexDirection:'row',alignItems:'center',gap:6}]}>
+                  <Ionicons name="calendar-outline" size={16} color={t.primary}/>
+                  <Text style={{color:t.primary,fontSize:13,fontWeight:'600'}}>
+                    {newTaskDue.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})} · {newTaskTime}
+                  </Text>
+                </TouchableOpacity>
+                <Text style={[s.addTaskLabel,{color:t.textSub}]}>PRIORITY</Text>
+                <View style={s.chipRow}>
+                  {(['low','medium','high','urgent'] as const).map(p=>(
+                    <TouchableOpacity key={p} onPress={()=>setNewTaskPriority(p)} style={[s.chip,{borderColor:newTaskPriority===p?PRIORITY[p].color:t.border,backgroundColor:newTaskPriority===p?`${PRIORITY[p].color}22`:'transparent'}]}>
+                      <View style={[s.priorityDot,{backgroundColor:PRIORITY[p].color}]}/>
+                      <Text style={[s.chipText,{color:newTaskPriority===p?PRIORITY[p].color:t.textSub}]}>{PRIORITY[p].label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <TouchableOpacity onPress={handleCreateTask} disabled={!newTaskTitle.trim()} style={[s.addTaskSubmit,{backgroundColor:newTaskTitle.trim()?t.primary:'rgba(99,102,241,0.3)',marginBottom:insets.bottom+8}]}>
+                  <Text style={s.addTaskSubmitText}>Add Task</Text>
+                  <Ionicons name="add-circle" size={18} color="#fff"/>
+                </TouchableOpacity>
+              </ScrollView>
             </View>
-            <TouchableOpacity onPress={handleCreateTask} disabled={!newTaskTitle.trim()} style={[s.addTaskSubmit,{backgroundColor:newTaskTitle.trim()?t.primary:'rgba(99,102,241,0.3)',marginBottom:insets.bottom+8}]}>
-              <Text style={s.addTaskSubmitText}>Add Task</Text>
-              <Ionicons name="add-circle" size={18} color="#fff"/>
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
-      </Animated.View>
+          </Animated.View>
+        </KeyboardAvoidingView>
+      </Modal>
 
     </View>
   );

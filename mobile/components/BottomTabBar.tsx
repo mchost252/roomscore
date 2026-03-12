@@ -3,7 +3,7 @@ import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import { useTheme } from '../context/ThemeContext';
 import messageService from '../services/messageService';
 
@@ -17,6 +17,7 @@ export default function BottomTabBar({
   onAddTask: () => void;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
 
@@ -47,11 +48,11 @@ export default function BottomTabBar({
       {/* Background shell */}
       <View
         style={{
-          position: 'absolute',
+          position: 'absolute', zIndex: 1,
           bottom: 0,
           left: 0,
           right: 0,
-          height: insets.bottom + 64,
+          height: insets.bottom + 56,
           backgroundColor: isDark ? '#16162a' : '#ffffff',
           borderTopLeftRadius: 28,
           borderTopRightRadius: 28,
@@ -60,20 +61,33 @@ export default function BottomTabBar({
         }}
       />
 
-      <View style={[s.tabBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+      <View style={[s.tabBar, { paddingTop: 8, paddingBottom: Math.max(insets.bottom, 16) }]}>
         {/* Home */}
         <TouchableOpacity style={s.tabItem} onPress={() => router.push('/(home)')}>
-          <Ionicons name="home" size={22} color={primary} />
-          <View style={[s.tabActiveDot, { backgroundColor: primary }]} />
+          <Ionicons 
+            name={pathname === '/' || pathname === '/(home)' || pathname === '/(home)/index' ? 'home' : 'home-outline'} 
+            size={22} 
+            color={pathname === '/' || pathname === '/(home)' || pathname === '/(home)/index' ? primary : textHint} 
+          />
+          {(pathname === '/' || pathname === '/(home)' || pathname === '/(home)/index') && (
+            <View style={[s.tabActiveDot, { backgroundColor: primary }]} />
+          )}
         </TouchableOpacity>
 
         {/* Rooms */}
         <TouchableOpacity style={s.tabItem} onPress={() => router.push('/(home)/rooms')}>
-          <Ionicons name="planet-outline" size={22} color={textHint} />
+          <Ionicons 
+            name={pathname.includes('/rooms') ? 'planet' : 'planet-outline'} 
+            size={22} 
+            color={pathname.includes('/rooms') ? primary : textHint} 
+          />
+          {pathname.includes('/rooms') && (
+            <View style={[s.tabActiveDot, { backgroundColor: primary }]} />
+          )}
         </TouchableOpacity>
 
         {/* Center FAB */}
-        <View style={{ width: 72, alignItems: 'center', marginTop: -24 }}>
+        <View style={{ width: 72, alignItems: 'center', marginTop: -30 }}>
           <TouchableOpacity
             onPress={onAddTask}
             activeOpacity={0.85}
@@ -93,7 +107,14 @@ export default function BottomTabBar({
         {/* Messages */}
         <TouchableOpacity style={s.tabItem} onPress={() => router.push('/(home)/messages')}>
           <View>
-            <Ionicons name="chatbubbles-outline" size={22} color={textHint} />
+            <Ionicons 
+              name={pathname.includes('/messages') ? 'chatbubbles' : 'chatbubbles-outline'} 
+              size={22} 
+              color={pathname.includes('/messages') ? primary : textHint} 
+            />
+            {pathname.includes('/messages') && (
+              <View style={[s.tabActiveDot, { backgroundColor: primary, position: 'absolute', zIndex: 1, bottom: -12, alignSelf: 'center' }]} />
+            )}
             {unreadCount > 0 && (
               <View style={s.unreadBadge}>
                 <Text style={s.unreadText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
@@ -104,23 +125,30 @@ export default function BottomTabBar({
 
         {/* Profile */}
         <TouchableOpacity style={s.tabItem} onPress={() => router.push('/(home)/profile')}>
-          <Ionicons name="person-outline" size={22} color={textHint} />
+          <Ionicons 
+            name={pathname.includes('/profile') ? 'person' : 'person-outline'} 
+            size={22} 
+            color={pathname.includes('/profile') ? primary : textHint} 
+          />
+          {pathname.includes('/profile') && (
+            <View style={[s.tabActiveDot, { backgroundColor: primary }]} />
+          )}
         </TouchableOpacity>
       </View>
 
       {/* Thin top edge line */}
-      <View style={{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom + 64, height: 1, backgroundColor: border, opacity: 0.7 }} />
+      <View style={{ position: 'absolute', zIndex: 1, left: 0, right: 0, bottom: insets.bottom + 64, height: 1, backgroundColor: border, opacity: 0.7 }} />
     </>
   );
 }
 
 const s = StyleSheet.create({
   tabBar: {
-    position: 'absolute',
+    position: 'absolute', zIndex: 1,
     left: 0,
     right: 0,
     bottom: 0,
-    height: 64,
+    height: 105,
     paddingHorizontal: 22,
     flexDirection: 'row',
     alignItems: 'center',
@@ -139,9 +167,9 @@ const s = StyleSheet.create({
     shadowRadius: 20,
     elevation: 20,
   },
-  fabGrad: { flex: 1, borderRadius: 29, alignItems: 'center', justifyContent: 'center' },
+  fabGrad: { flex: 1, borderRadius: 29, alignItems: 'center', justifyContent: 'center', },
   unreadBadge: {
-    position: 'absolute',
+    position: 'absolute', zIndex: 1,
     top: -4,
     right: -8,
     backgroundColor: '#6366f1',

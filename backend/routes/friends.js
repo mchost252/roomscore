@@ -11,7 +11,7 @@ const logger = require('../utils/logger');
 // @access  Private
 router.post('/request', protect, async (req, res, next) => {
   try {
-    const { recipientId } = req.body;
+    const { recipientId, message: requestMessage } = req.body;
     const requesterId = req.user.id;
 
     if (requesterId === recipientId) {
@@ -59,6 +59,7 @@ router.post('/request', protect, async (req, res, next) => {
     try {
       friendRequest = await prisma.friend.create({
         data: {
+          message: requestMessage || null,
           fromUserId: requesterId,
           toUserId: recipientId,
           status: 'pending'
@@ -81,7 +82,8 @@ router.post('/request', protect, async (req, res, next) => {
       type: 'friend_request',
       title: 'New Friend Request',
       message: `${req.user.username} sent you a friend request`,
-      data: { requesterId }
+      data: {
+          message: requestMessage || null, requesterId }
     });
 
     // Send push notification
@@ -93,6 +95,7 @@ router.post('/request', protect, async (req, res, next) => {
     // Emit socket event for real-time notification
     const io = req.app.get('io');
     if (io) {
+      // Emit to recipient
       io.to(`user:${recipientId}`).emit('notification', {
         type: 'friend_request',
         title: 'New Friend Request',
@@ -106,7 +109,15 @@ router.post('/request', protect, async (req, res, next) => {
         requester: {
           _id: requesterId,
           username: req.user.username
-        }
+        },
+        message: requestMessage || null
+      });
+      
+      // Also emit to SENDER to confirm request was sent (for UI update)
+      io.to(`user:${requesterId}`).emit('friend:request_sent', {
+        request: { ...friendRequest, _id: friendRequest.id },
+        recipientId,
+        recipientUsername: recipient.username
       });
     }
 
@@ -140,8 +151,36 @@ router.put('/accept/:requestId', protect, async (req, res, next) => {
 
     const updated = await prisma.friend.update({
       where: { id: req.params.requestId },
-      data: { status: 'accepted' }
+      data: {
+          message: friendRequest.message || null, status: 'accepted' }
     });
+
+    let initialMessage = null;
+
+    // If there was a message attached to the friend request, create it as a DM now
+    if (friendRequest.message && friendRequest.message.trim().length > 0) {
+      initialMessage = await prisma.directMessage.create({
+        data: {
+          message: friendRequest.message || null,
+          fromUserId: friendRequest.fromUserId,
+          toUserId: friendRequest.toUserId,
+          content: friendRequest.message,
+          read: false
+        },
+        include: {
+          fromUser: { select: { id: true, username: true, avatar: true } },
+          toUser: { select: { id: true, username: true, avatar: true } }
+        }
+      });
+      // Format to match what the frontend expects
+      initialMessage = {
+        ...initialMessage,
+        _id: initialMessage.id,
+        message: initialMessage.content,
+        sender: { ...initialMessage.fromUser, _id: initialMessage.fromUser.id },
+        recipient: { ...initialMessage.toUser, _id: initialMessage.toUser.id }
+      };
+    }
 
     // Notify requester with in-app notification
     await NotificationService.createNotification({
@@ -173,6 +212,12 @@ router.put('/accept/:requestId', protect, async (req, res, next) => {
           username: req.user.username
         }
       });
+      
+      // Emit the initial message to BOTH users if it exists
+      if (initialMessage) {
+        io.to(`user:${friendRequest.toUserId}`).emit('new_direct_message', initialMessage);
+        io.to(`user:${friendRequest.fromUserId}`).emit('new_direct_message', initialMessage);
+      }
     }
 
     res.json({ success: true, friendRequest: { ...updated, _id: updated.id } });
@@ -201,7 +246,8 @@ router.put('/reject/:requestId', protect, async (req, res, next) => {
 
     await prisma.friend.update({
       where: { id: req.params.requestId },
-      data: { status: 'rejected' }
+      data: {
+          message: requestMessage || null, status: 'rejected' }
     });
 
     res.json({ success: true, message: 'Friend request rejected' });
@@ -232,17 +278,44 @@ router.delete('/:friendId', protect, async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Friendship not found' });
     }
 
-    await prisma.friend.delete({ where: { id: friendship.id } });
+    // Instead of deleting the friendship, set it to 'removed' so the other user keeps their chat history
+    await prisma.friend.update({ 
+      where: { id: friendship.id },
+      data: {
+          message: null, status: 'removed' }
+    });
 
-    // Clear direct message history between users
-    await prisma.directMessage.deleteMany({
+    // Soft delete messages for the current user ONLY
+    const messages = await prisma.directMessage.findMany({
       where: {
         OR: [
           { fromUserId: userId, toUserId: friendId },
           { fromUserId: friendId, toUserId: userId }
         ]
-      }
+      },
+      select: { id: true, deletedFor: true }
     });
+
+    for (const msg of messages) {
+      const deletedForStr = msg.deletedFor || '';
+      if (!deletedForStr.includes(userId)) {
+        const otherUserId = friendId;
+        const bothDeleted = deletedForStr.includes(otherUserId);
+        
+        if (bothDeleted) {
+          // Both users deleted, permanently remove
+          await prisma.directMessage.delete({ where: { id: msg.id } });
+        } else {
+          // Only this user deleted, append to string
+          const newDeletedFor = deletedForStr ? `${deletedForStr},${userId}` : userId;
+          await prisma.directMessage.update({
+            where: { id: msg.id },
+            data: {
+          message: requestMessage || null, deletedFor: newDeletedFor }
+          });
+        }
+      }
+    }
 
     // Emit socket events so both users update UI
     const io = req.app.get('io');
@@ -278,7 +351,9 @@ router.get('/status/:friendId', protect, async (req, res) => {
     });
 
     if (!friendship) {
-      return res.status(404).json({ success: false, message: 'Friendship not found' });
+      // Return 200 with isOnline: false instead of 404 to prevent console errors
+      // when checking status of a non-friend (e.g. before sending a request)
+      return res.json({ success: true, isOnline: false, message: 'Not friends' });
     }
 
     const io = req.app.get('io');
@@ -421,38 +496,6 @@ router.get('/requests/sent', protect, async (req, res, next) => {
   }
 });
 
-// @route   DELETE /api/friends/:friendId
-// @desc    Remove friend
-// @access  Private
-router.delete('/:friendId', protect, async (req, res, next) => {
-  try {
-    const userId = req.user.id;
-    const friendId = req.params.friendId;
-
-    const friendship = await prisma.friend.findFirst({
-      where: {
-        status: 'accepted',
-        OR: [
-          { fromUserId: userId, toUserId: friendId },
-          { fromUserId: friendId, toUserId: userId }
-        ]
-      }
-    });
-
-    if (!friendship) {
-      return res.status(404).json({ success: false, message: 'Friendship not found' });
-    }
-
-    await prisma.friend.delete({
-      where: { id: friendship.id }
-    });
-
-    res.json({ success: true, message: 'Friend removed' });
-  } catch (error) {
-    next(error);
-  }
-});
-
 // @route   GET /api/friends/search
 // @desc    Search users to add as friends
 // @access  Private
@@ -464,10 +507,11 @@ router.get('/search', protect, async (req, res, next) => {
       return res.json({ success: true, users: [] });
     }
 
+    // Case-insensitive search using lowercase comparison
     const users = await prisma.user.findMany({
       where: {
         id: { not: req.user.id },
-        username: { contains: query, mode: 'insensitive' }
+        username: { contains: query }
       },
       select: {
         id: true,
@@ -477,9 +521,14 @@ router.get('/search', protect, async (req, res, next) => {
       },
       take: 10
     });
+    
+    // Filter case-insensitively in JS (SQLite doesn't support mode: 'insensitive')
+    const filteredUsers = users.filter(u => 
+      u.username.toLowerCase().includes(query.toLowerCase())
+    );
 
-    // Format for frontend compatibility
-    const formattedUsers = users.map(u => ({
+    // Format for frontend compatibility (use filteredUsers for case-insensitive results)
+    const formattedUsers = filteredUsers.map(u => ({
       ...u,
       _id: u.id,
       totalPoints: u.totalTasksCompleted || 0,

@@ -2,6 +2,7 @@ import api from './api';
 import sqliteService, { LocalDirectMessage, LocalConversation } from './sqliteService';
 import syncEngine from './syncEngine';
 import NetInfo from '@react-native-community/netinfo';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ═══════════════════════════════════════════════════════════
 // Types
@@ -54,6 +55,13 @@ class MessageService {
   // Track friendship status in-memory for fast lookups
   private friendshipCache = new Map<string, { isFriend: boolean; requestId?: string; requestStatus: string }>();
   private memoryMessageCache = new Map<string, LocalDirectMessage[]>(); // web/offline fallback
+  // Batching for read receipts
+  private readReceiptBatch: Set<string> = new Set();
+  private readReceiptTimeout: ReturnType<typeof setTimeout> | null = null;
+  // Debounce for conversations fetch
+  private conversationsFetchPromise: Promise<void> | null = null;
+  private lastConversationsFetch = 0;
+  private readonly CONVERSATIONS_FETCH_COOLDOWN = 5000; // 5 seconds
 
   // ─── Lifecycle ───────────────────────────────────────────
   async initialize(userId: string): Promise<void> {
@@ -107,16 +115,33 @@ class MessageService {
 
         await sqliteService.saveDirectMessage(localMsg);
 
-        // Ensure conversation exists for the sender
+        // Determine the actual friend's ID and username (might be sender or recipient)
+        const isFromMe = senderId === this.currentUserId;
+        const friendId = isFromMe ? recipientId : senderId;
+        const friendUsername = isFromMe 
+          ? (data.recipient?.username || 'User') 
+          : (data.sender?.username || 'User');
+
+        // Ensure conversation exists for the friend
         await this.ensureConversation(
-          senderId,
-          data.sender?.username || 'User',
+          friendId,
+          friendUsername,
           null,
           content,
           localMsg.created_at,
-          true,
+          !isFromMe, // Only increment unread if we didn't send it
         );
 
+        // Update memory cache
+        if (this.currentUserId) {
+          const memKey = `${this.currentUserId}:${friendId}`;
+          const existing = this.memoryMessageCache.get(memKey) || [];
+          this.memoryMessageCache.set(memKey, [...existing, localMsg]);
+        }
+
+        // Update conversations list in background (don't block)
+        this.fetchAndMergeConversations().catch(() => {});
+        
         this.emit('message', localMsg);
         this.emit('conversations_updated');
 
@@ -182,20 +207,39 @@ class MessageService {
     // ─── Friend Request Events ──────────────────────────────
     // Received a friend request from someone
     this.unsubscribers.push(
-      syncEngine.on('friend:request', async (data: { request: any; requester: any }) => {
+      syncEngine.on('friend:request', async (data: { request: any; requester: any; message?: string }) => {
         const requesterId = data.requester?._id || data.requester?.id;
         const username = data.requester?.username || 'User';
         const requestId = data.request?._id || data.request?.id;
+        const messageContent = data.message || 'Sent you a message request';
 
         // Create/update conversation as incoming request
         await this.ensureConversation(
           requesterId, username, null,
-          'Sent you a message request', Date.now(),
+          messageContent, Date.now(),
           true, 'pending_received', requestId,
         );
 
         this.friendshipCache.set(requesterId, { isFriend: false, requestId, requestStatus: 'pending_received' });
-        this.emit('message_request', { friendId: requesterId, username, requestId });
+        this.emit('message_request', { friendId: requesterId, username, requestId, message: messageContent });
+        this.emit('conversations_updated');
+      })
+    );
+
+    // We sent a friend request (confirmation from server)
+    this.unsubscribers.push(
+      syncEngine.on('friend:request_sent', async (data: { request: any; recipientId: string; recipientUsername: string }) => {
+        const recipientId = data.recipientId;
+        const requestId = data.request?._id || data.request?.id;
+        
+        // Update conversation to show pending_sent status
+        this.friendshipCache.set(recipientId, { isFriend: false, requestId, requestStatus: 'pending_sent' });
+        await this.ensureConversation(
+          recipientId, data.recipientUsername, null,
+          'Waiting for acceptance...', Date.now(),
+          false, 'pending_sent', requestId,
+        );
+        
         this.emit('conversations_updated');
       })
     );
@@ -204,10 +248,18 @@ class MessageService {
     this.unsubscribers.push(
       syncEngine.on('friend:accepted', async (data: { friend: any }) => {
         const friendId = data.friend?._id || data.friend?.id;
+        const username = data.friend?.username || 'User';
         if (!friendId) return;
 
         this.friendshipCache.set(friendId, { isFriend: true, requestStatus: 'accepted' });
         await sqliteService.updateConversationRequestStatus(friendId, 'none');
+        
+        // Also update memory cache
+        const memIndex = this.memoryConversationCache.findIndex(c => c.friend_id === friendId);
+        if (memIndex >= 0) {
+          this.memoryConversationCache[memIndex].request_status = 'accepted';
+          this.memoryConversationCache[memIndex].username = username;
+        }
 
         // Flush any queued messages for this friend
         this.flushQueueForFriend(friendId).catch(() => {});
@@ -216,11 +268,40 @@ class MessageService {
       })
     );
 
-    // Friend removed
+    // Friend removed (received from socket when someone deletes us)
     this.unsubscribers.push(
       syncEngine.on('friend:removed', async (data: { friendId: string }) => {
-        this.friendshipCache.delete(data.friendId);
-        this.emit('friend_removed', data.friendId);
+        const { friendId } = data;
+        
+        // Remove friendship from cache
+        this.friendshipCache.delete(friendId);
+        
+        // Don't delete the entire conversation on the receiver's end, just update status and clear messages
+        if (this.currentUserId) {
+          // Clear messages from SQLite
+          await sqliteService.deleteConversationMessages(this.currentUserId, friendId);
+          // Clear memory message cache
+          this.memoryMessageCache.delete(`${this.currentUserId}:${friendId}`);
+        }
+
+        // Update the conversation status to 'removed' instead of deleting it
+        const convs = await this.getConversations();
+        const conv = convs.find(c => c.friend_id === friendId);
+        if (conv) {
+          await this.ensureConversation(
+            friendId,
+            conv.username,
+            conv.avatar,
+            '', // Clear last message preview
+            Date.now(),
+            false,
+            'removed',
+            null
+          );
+        }
+        
+        // Notify UI
+        this.emit('friend_removed', friendId);
         this.emit('conversations_updated');
       })
     );
@@ -239,9 +320,14 @@ class MessageService {
   ): Promise<void> {
     const convs = await sqliteService.getConversations();
     const existing = convs.find(c => c.friend_id === friendId);
+    
+    // Determine status - default to pending_sent if not provided and not already a friend
+    const finalStatus = requestStatus !== undefined 
+      ? requestStatus 
+      : (existing?.request_status || 'none');
 
     if (existing) {
-      await sqliteService.saveConversation({
+      const updatedConv = {
         ...existing,
         username: username || existing.username,
         avatar: avatar || existing.avatar,
@@ -249,22 +335,43 @@ class MessageService {
         last_message_at: timestamp,
         unread_count: incrementUnread ? existing.unread_count + 1 : existing.unread_count,
         updated_at: timestamp,
-        request_status: requestStatus !== undefined ? requestStatus : existing.request_status,
+        request_status: finalStatus,
         request_id: requestId !== undefined ? requestId : existing.request_id,
-      });
-    } else {
-      await sqliteService.saveConversation({
-        friend_id: friendId,
-        username,
-        avatar,
-        last_message: lastMessage,
-        last_message_at: timestamp,
-        unread_count: incrementUnread ? 1 : 0,
-        is_online: 0,
-        updated_at: timestamp,
-        request_status: requestStatus || 'none',
-        request_id: requestId || null,
-      });
+      };
+      await sqliteService.saveConversation(updatedConv);
+      
+      // Also update memory cache (web support)
+      const memIndex = this.memoryConversationCache.findIndex(c => c.friend_id === friendId);
+      if (memIndex >= 0) {
+        this.memoryConversationCache[memIndex] = updatedConv;
+      } else {
+        this.memoryConversationCache.push(updatedConv);
+      }
+      if (this.currentUserId) {
+        AsyncStorage.setItem(`web_conv_cache_${this.currentUserId}`, JSON.stringify(this.memoryConversationCache)).catch(()=>{});
+      }
+      return;
+    }
+
+    // Create new conversation
+    const newConv: LocalConversation = {
+      friend_id: friendId,
+      username,
+      avatar,
+      last_message: lastMessage,
+      last_message_at: timestamp,
+      unread_count: incrementUnread ? 1 : 0,
+      is_online: 0,
+      updated_at: timestamp,
+      request_status: finalStatus,
+      request_id: requestId || null,
+    };
+    await sqliteService.saveConversation(newConv);
+
+    // Also update memory cache (web support)
+    this.memoryConversationCache.push(newConv);
+    if (this.currentUserId) {
+      AsyncStorage.setItem(`web_conv_cache_${this.currentUserId}`, JSON.stringify(this.memoryConversationCache)).catch(()=>{});
     }
   }
 
@@ -316,9 +423,9 @@ class MessageService {
   }
 
   // ─── Send Friend Request ───────────────────────────────
-  async sendFriendRequest(recipientId: string): Promise<{ success: boolean; requestId?: string; error?: string }> {
+  async sendFriendRequest(recipientId: string, content?: string): Promise<{ success: boolean; requestId?: string; error?: string }> {
     try {
-      const response = await api.post('/friends/request', { recipientId });
+      const response = await api.post('/friends/request', { recipientId, message: content });
       if (response.data.success) {
         const requestId = response.data.friendRequest?._id || response.data.friendRequest?.id;
         this.friendshipCache.set(recipientId, { isFriend: false, requestId, requestStatus: 'pending_sent' });
@@ -327,12 +434,10 @@ class MessageService {
       return { success: false, error: response.data.message };
     } catch (error: any) {
       const msg = error.response?.data?.message || 'Failed to send request';
-      // "Already friends" means we can just send the message
       if (msg.includes('Already friends')) {
         this.friendshipCache.set(recipientId, { isFriend: true, requestStatus: 'accepted' });
         return { success: true };
       }
-      // "already sent" is also fine
       if (msg.includes('already sent') || msg.includes('already exists')) {
         return { success: true };
       }
@@ -347,6 +452,12 @@ class MessageService {
       if (res.data.success) {
         this.friendshipCache.set(friendId, { isFriend: true, requestStatus: 'accepted' });
         await sqliteService.updateConversationRequestStatus(friendId, 'none');
+        
+        const memIndex = this.memoryConversationCache.findIndex(c => c.friend_id === friendId);
+        if (memIndex >= 0) {
+          this.memoryConversationCache[memIndex].request_status = 'none';
+        }
+        
         this.emit('conversations_updated');
         return true;
       }
@@ -363,6 +474,7 @@ class MessageService {
         if (this.currentUserId) {
           await sqliteService.deleteConversationMessages(this.currentUserId, friendId);
         }
+        this.memoryConversationCache = this.memoryConversationCache.filter(c => c.friend_id !== friendId);
         this.emit('conversations_updated');
         return true;
       }
@@ -371,7 +483,6 @@ class MessageService {
   }
 
   async blockUser(friendId: string): Promise<boolean> {
-    // For now, decline + remove from local
     const convs = await sqliteService.getConversations();
     const conv = convs.find(c => c.friend_id === friendId);
     if (conv?.request_id) {
@@ -382,6 +493,7 @@ class MessageService {
       await sqliteService.deleteConversationMessages(this.currentUserId, friendId);
     }
     this.friendshipCache.delete(friendId);
+    this.memoryConversationCache = this.memoryConversationCache.filter(c => c.friend_id !== friendId);
     this.emit('conversations_updated');
     return true;
   }
@@ -440,8 +552,20 @@ class MessageService {
     const existing = this.memoryMessageCache.get(memKey) || [];
     this.memoryMessageCache.set(memKey, [...existing, localMsg]);
 
-    // 2. Ensure conversation exists locally IMMEDIATELY
-    await this.ensureConversation(friendId, friendUsername, friendAvatar, content, now, false);
+    // 2. Check friendship status and set pending status IMMEDIATELY if not friends
+    const friendship = await this.checkFriendship(friendId);
+    const isPending = !friendship.isFriend && friendship.requestStatus !== 'accepted';
+    
+    // 2. Ensure conversation exists locally IMMEDIATELY with correct pending status
+    await this.ensureConversation(
+      friendId, 
+      friendUsername, 
+      friendAvatar, 
+      content, 
+      now, 
+      false,
+      isPending ? 'pending_sent' : 'accepted'  // Set pending immediately if not friends
+    );
 
     // 3. Notify UI right away
     this.emit('message_sent', localMsg);
@@ -457,32 +581,31 @@ class MessageService {
     localMsg: LocalDirectMessage,
     friendId: string,
     content: string,
-    replyTo?: { id: string; text: string },
-  ): Promise<void> {
-    const netState = await NetInfo.fetch();
-    if (!netState.isConnected) return; // Will be flushed later
+    replyTo?: { id: string; text: string }
+  ) {
+    let friendship = this.friendshipCache.get(friendId);
+    if (!friendship) {
+      friendship = await this.checkFriendship(friendId);
+    }
 
-    // Check friendship status
-    let friendship = await this.checkFriendship(friendId);
+    // If not friends, send a friend request FIRST with the message attached
+    if (!friendship.isFriend && friendship.requestStatus !== 'accepted') {
+      const reqResult = await this.sendFriendRequest(friendId, content);
+      if (reqResult.success) {
+        // Re-read from cache — sendFriendRequest may have set isFriend=true (Already friends case)
+        friendship = this.friendshipCache.get(friendId) || friendship;
 
-    if (!friendship.isFriend && friendship.requestStatus !== 'pending_sent') {
-      // Auto-send friend request first
-      const reqResult = await this.sendFriendRequest(friendId);
-      if (!reqResult.success) {
-        if (reqResult.error && !reqResult.error.includes('Already friends')) {
-          await sqliteService.updateMessageStatus(localMsg.local_id, 'failed');
-          this.emit('message_failed', localMsg.local_id);
-          return;
+        // Update conversation to show pending status immediately
+        if (!friendship.isFriend) {
+          // Get conversation from cache for username
+          const convs = await sqliteService.getConversations();
+          const conv = convs.find(c => c.friend_id === friendId);
+          const memConv = this.memoryConversationCache.find(c => c.friend_id === friendId);
+          const username = conv?.username || memConv?.username || 'User';
+          
+          await this.ensureConversation(friendId, username, null, content, localMsg.created_at, false, 'pending_sent', reqResult.requestId || undefined);
+          this.emit('conversations_updated');
         }
-      }
-
-      // Re-read from cache — sendFriendRequest may have set isFriend=true (Already friends case)
-      friendship = this.friendshipCache.get(friendId) || friendship;
-
-      // Update conversation to show pending status
-      if (!friendship.isFriend && reqResult.requestId) {
-        await sqliteService.updateConversationRequestStatus(friendId, 'pending_sent', reqResult.requestId);
-        this.emit('conversations_updated');
       }
     }
 
@@ -498,6 +621,13 @@ class MessageService {
           const srv = response.data.message;
           const serverId = srv.id || srv._id;
           await sqliteService.updateMessageId(localMsg.local_id, serverId);
+          
+          // Also update memory cache
+          const memKey = `${this.currentUserId}:${friendId}`;
+          const cached = this.memoryMessageCache.get(memKey) || [];
+          const updated = cached.map(m => m.local_id === localMsg.local_id ? { ...m, id: serverId, synced: 1 } : m);
+          this.memoryMessageCache.set(memKey, updated);
+
           this.emit('message_synced', { localId: localMsg.local_id, serverId });
         }
       } catch (error: any) {
@@ -510,7 +640,6 @@ class MessageService {
         }
       }
     }
-    // If pending_sent, message stays in 'sending' state, will flush when accepted
   }
 
   // ─── Retry Failed Message ──────────────────────────────
@@ -540,11 +669,18 @@ class MessageService {
   async getMessages(friendId: string, before?: number): Promise<LocalDirectMessage[]> {
     if (!this.currentUserId) return [];
 
-    // Try cache FIRST (SQLite on native, memory on web)
+    // Check friendship early: if not accepted, return empty (avoid 403 spam)
+    const friendship = this.friendshipCache.get(friendId);
+    if (friendship && !friendship.isFriend && friendship.requestStatus !== 'accepted') {
+      return [];
+    }
+
+    // Try cache FIRST - check both SQLite AND memory cache (web uses memory)
     const memKey = `${this.currentUserId}:${friendId}`;
     const cachedSQLite = await sqliteService.getDirectMessages(this.currentUserId, friendId, 50, before);
     const cachedMemory = this.memoryMessageCache.get(memKey) || [];
     
+    // Use whichever cache has data
     const cached = cachedSQLite.length > 0 ? cachedSQLite : cachedMemory;
     
     // If we have cache, return it immediately and sync in background
@@ -558,108 +694,211 @@ class MessageService {
       await this.fetchAndMergeMessages(friendId);
     } catch {}
 
-    // Return whatever we got
-    const freshSQLite = await sqliteService.getDirectMessages(this.currentUserId, friendId, 50, before);
-    return freshSQLite.length > 0 ? freshSQLite : (this.memoryMessageCache.get(memKey) || []);
+    // Return whatever we got from server (stored in memory cache)
+    return this.memoryMessageCache.get(memKey) || [];
   }
+
+
+  private fetchMessagesPromises = new Map<string, Promise<void>>();
 
   private async fetchAndMergeMessages(friendId: string): Promise<void> {
     // Check friendship — but don't skip if cache is empty (may not be loaded yet)
     const friendship = this.friendshipCache.get(friendId);
     if (friendship && !friendship.isFriend && friendship.requestStatus !== 'accepted') return;
 
-    try {
-      const response = await api.get(`/direct-messages/${friendId}`);
-      if (response.data.success && response.data.messages) {
-        const memMessages: LocalDirectMessage[] = [];
-        for (const msg of response.data.messages) {
-          // Backend returns: sender._id, recipient._id, isRead (not fromUserId/toUserId)
-          const fromId = msg.sender?._id || msg.fromUserId;
-          const toId = msg.recipient?._id || msg.toUserId;
+    // Deduplicate concurrent fetch requests for the same friend
+    if (this.fetchMessagesPromises.has(friendId)) {
+      return this.fetchMessagesPromises.get(friendId);
+    }
 
-          const localMsg: LocalDirectMessage = {
-            id: msg.id || msg._id,
-            local_id: msg.id || msg._id,
-            from_user_id: fromId,
-            to_user_id: toId,
-            content: msg.content || msg.message,
-            status: msg.isRead ? 'read' : 'sent',
-            reply_to_id: msg.replyToId || msg.replyTo?._id || null,
-            reply_to_text: msg.replyToText || msg.replyTo?.message || null,
-            created_at: new Date(msg.createdAt).getTime(),
-            synced: 1,
-          };
-          await sqliteService.saveDirectMessage(localMsg);
-          memMessages.push(localMsg);
-        }
-        // Store in memory cache for web/offline fallback (SQLite is no-op on web)
+    const promise = (async () => {
+      try {
+        // Delta Sync: get last message ID from local DB to fetch only new messages
+        let lastId: string | undefined;
         if (this.currentUserId) {
-          const memKey = `${this.currentUserId}:${friendId}`;
-          this.memoryMessageCache.set(memKey, memMessages);
+          const localMessages = await sqliteService.getDirectMessages(this.currentUserId, friendId, 1);
+          if (localMessages.length > 0) {
+            lastId = localMessages[localMessages.length - 1].id;
+          }
         }
-        this.emit('messages_synced', friendId);
+
+        const response = await api.get(`/direct-messages/${friendId}`, {
+          params: lastId ? { last_id: lastId } : undefined,
+        });
+        if (response.data.success && response.data.messages) {
+          const memMessages: LocalDirectMessage[] = [];
+          for (const msg of response.data.messages) {
+            // Backend returns: sender._id, recipient._id, isRead (not fromUserId/toUserId)
+            const fromId = msg.sender?._id || msg.fromUserId;
+            const toId = msg.recipient?._id || msg.toUserId;
+
+            const localMsg: LocalDirectMessage = {
+              id: msg.id || msg._id,
+              local_id: msg.id || msg._id,
+              from_user_id: fromId,
+              to_user_id: toId,
+              content: msg.content || msg.message,
+              status: msg.isRead ? 'read' : 'sent',
+              reply_to_id: msg.replyToId || msg.replyTo?._id || null,
+              reply_to_text: msg.replyToText || msg.replyTo?.message || null,
+              created_at: new Date(msg.createdAt).getTime(),
+              synced: 1,
+            };
+            await sqliteService.saveDirectMessage(localMsg);
+            memMessages.push(localMsg);
+          }
+          
+          // MERGE with existing messages instead of replacing (fixes disappearing messages)
+          if (this.currentUserId) {
+            const memKey = `${this.currentUserId}:${friendId}`;
+            const existing = this.memoryMessageCache.get(memKey) || [];
+            // Get IDs of existing messages to avoid duplicates
+            const existingIds = new Set(existing.map(m => m.id));
+            // Keep all existing messages, add only new ones that aren't duplicates
+            const merged = [...existing];
+            for (const msg of memMessages) {
+              if (!existingIds.has(msg.id)) {
+                merged.push(msg);
+              }
+            }
+            // Sort by timestamp
+            merged.sort((a, b) => a.created_at - b.created_at);
+            this.memoryMessageCache.set(memKey, merged);
+          }
+          this.emit('messages_synced', friendId);
+        }
+      } catch (err: any) {
+        if (err.response?.status === 403) {
+          // Expected when checking a non-friend (e.g. before sending a request)
+          // Do not log a scary error
+        } else {
+          console.log('fetchAndMergeMessages error:', err.message);
+        }
       }
-    } catch (err) {
-      console.log('fetchAndMergeMessages error:', err);
+    })();
+
+    this.fetchMessagesPromises.set(friendId, promise);
+    try {
+      await promise;
+    } finally {
+      this.fetchMessagesPromises.delete(friendId);
     }
   }
 
   // ─── Conversations (cache-first) ───────────────────────
   // In-memory conversation cache for web (SQLite is no-op on web)
   private memoryConversationCache: LocalConversation[] = [];
+  private hasLoadedConversations = false;
 
   async getConversations(): Promise<LocalConversation[]> {
     // Try SQLite first (native) — returns [] on web
     const cached = await sqliteService.getConversations();
     if (cached.length > 0) {
       this.memoryConversationCache = cached;
-      // Background sync
-      this.fetchAndMergeConversations().catch(() => {});
+      this.hasLoadedConversations = true;
+      // Background sync with debounce
+      this.fetchAndMergeConversationsDebounced();
       return cached;
     }
-    // Web fallback: if memory cache has data return it, else await server fetch
-    if (this.memoryConversationCache.length > 0) {
-      this.fetchAndMergeConversations().catch(() => {});
+    
+    // Web fallback: if memory cache has data, OR if we have already loaded and know it's empty
+    if (this.memoryConversationCache.length > 0 || this.hasLoadedConversations) {
+      this.fetchAndMergeConversationsDebounced();
       return this.memoryConversationCache;
     }
+
+    // Web fallback: check AsyncStorage for persisted web cache
+    if (this.currentUserId) {
+      try {
+        const stored = await AsyncStorage.getItem(`web_conv_cache_${this.currentUserId}`);
+        if (stored) {
+          this.memoryConversationCache = JSON.parse(stored);
+          this.hasLoadedConversations = true;
+          this.fetchAndMergeConversationsDebounced();
+          return this.memoryConversationCache;
+        }
+      } catch (e) {}
+    }
+    
     // First load: await server fetch
     await this.fetchAndMergeConversations().catch(() => {});
     return this.memoryConversationCache;
   }
 
+  private fetchAndMergeConversationsDebounced(): void {
+    const now = Date.now();
+    if (now - this.lastConversationsFetch < this.CONVERSATIONS_FETCH_COOLDOWN) return;
+    
+    this.lastConversationsFetch = now;
+    this.fetchAndMergeConversations().catch(() => {});
+  }
+
   async fetchAndMergeConversations(): Promise<void> {
-    try {
-      const response = await api.get('/direct-messages/conversations');
-      if (response.data.success && response.data.conversations) {
-        const freshConvs: LocalConversation[] = [];
-        for (const conv of response.data.conversations as any[]) {
-          const friendId = conv.friend?.id || conv.friend?._id;
-          if (!friendId) continue;
+    if (this.conversationsFetchPromise) return this.conversationsFetchPromise;
 
-          // Check if we already have a local conversation
-          const existing = (await sqliteService.getConversations()).find(c => c.friend_id === friendId)
-            || this.memoryConversationCache.find(c => c.friend_id === friendId);
+    this.conversationsFetchPromise = (async () => {
+      try {
+        const response = await api.get('/direct-messages/conversations');
+        if (response.data.success && response.data.conversations) {
+          const freshConvs: LocalConversation[] = [];
+          const seenFriendIds = new Set<string>();
+          for (const conv of response.data.conversations as any[]) {
+            const friendId = conv.friend?.id || conv.friend?._id;
+            if (!friendId || seenFriendIds.has(friendId)) {
+              console.log('[Conversations] Skipping duplicate:', friendId, conv.requestStatus);
+              continue;
+            }
+            seenFriendIds.add(friendId);
 
-          const localConv: LocalConversation = {
-            friend_id: friendId,
-            username: conv.friend.username,
-            avatar: conv.friend.avatar || null,
-            last_message: conv.lastMessage?.content || conv.lastMessage?.message || '',
-            last_message_at: conv.lastMessage ? new Date(conv.lastMessage.createdAt).getTime() : 0,
-            unread_count: conv.unreadCount || 0,
-            is_online: existing?.is_online || 0,
-            updated_at: Date.now(),
-            request_status: existing?.request_status || 'none',
-            request_id: existing?.request_id || null,
-          };
-          await sqliteService.saveConversation(localConv);
-          freshConvs.push(localConv);
+            // Check if we already have a local conversation
+            const existing = (await sqliteService.getConversations()).find(c => c.friend_id === friendId)
+              || this.memoryConversationCache.find(c => c.friend_id === friendId);
+
+            const localConv: LocalConversation = {
+              friend_id: friendId,
+              username: conv.friend.username,
+              avatar: conv.friend.avatar || null,
+              last_message: conv.lastMessage?.content || conv.lastMessage?.message || '',
+              last_message_at: conv.lastMessage ? new Date(conv.lastMessage.createdAt).getTime() : 0,
+              unread_count: conv.unreadCount || 0,
+              is_online: existing?.is_online || 0,
+              updated_at: Date.now(),
+              // Use server-provided request status to ensure correctness
+              request_status: conv.requestStatus || existing?.request_status || 'none',
+              request_id: conv.requestId || existing?.request_id || null,
+            };
+            await sqliteService.saveConversation(localConv);
+            freshConvs.push(localConv);
+          }
+          
+          // Clean up: remove any stale conversations not in the fresh list
+          const freshFriendIds = freshConvs.map(c => c.friend_id);
+          const existingConvs = await sqliteService.getConversations();
+          for (const oldConv of existingConvs) {
+            if (!freshFriendIds.includes(oldConv.friend_id)) {
+              // Only delete if it's an old pending request that's no longer valid
+              if (oldConv.request_status?.startsWith('pending_')) {
+                await sqliteService.deleteConversation(oldConv.friend_id);
+              }
+            }
+          }
+          
+          // Update memory cache (web fallback)
+          this.memoryConversationCache = freshConvs;
+          if (this.currentUserId) {
+            AsyncStorage.setItem(`web_conv_cache_${this.currentUserId}`, JSON.stringify(freshConvs)).catch(()=>{});
+          }
+          this.hasLoadedConversations = true;
+          this.emit('conversations_updated');
         }
-        // Update memory cache (web fallback)
-        this.memoryConversationCache = freshConvs;
-        this.emit('conversations_updated');
-      }
-    } catch {}
+      } catch {}
+    })();
+
+    try {
+      await this.conversationsFetchPromise;
+    } finally {
+      this.conversationsFetchPromise = null;
+    }
   }
 
   // ─── Get Message Requests (incoming) ───────────────────
@@ -677,14 +916,51 @@ class MessageService {
       }));
   }
 
-  // ─── Mark as Read ──────────────────────────────────────
+  // ─── Mark as Read (Batched) ────────────────────────────
   async markAsRead(friendId: string): Promise<void> {
+    // Check if there are actually unread messages to prevent spamming API
+    const convs = await this.getConversations();
+    const conv = convs.find(c => c.friend_id === friendId);
+    
+    // If no conversation or already 0 unread, don't do anything
+    if (!conv || conv.unread_count === 0) return;
+
     await sqliteService.clearConversationUnread(friendId);
+    
+    // Also clear from memory cache
+    const memIndex = this.memoryConversationCache.findIndex(c => c.friend_id === friendId);
+    if (memIndex >= 0) {
+      this.memoryConversationCache[memIndex].unread_count = 0;
+    }
+
     this.emit('conversations_updated');
 
-    try {
-      await api.put(`/direct-messages/read/${friendId}`);
-    } catch {}
+    // Add to batch queue
+    this.readReceiptBatch.add(friendId);
+
+    // Cancel existing timeout
+    if (this.readReceiptTimeout) {
+      clearTimeout(this.readReceiptTimeout);
+    }
+
+    // Send batch after 2 seconds (collect multiple reads)
+    this.readReceiptTimeout = setTimeout(() => {
+      this.flushReadReceipts();
+    }, 2000);
+  }
+
+  private async flushReadReceipts(): Promise<void> {
+    const batch = Array.from(this.readReceiptBatch);
+    this.readReceiptBatch.clear();
+
+    if (batch.length === 0) return;
+
+    // Send batched read receipts in parallel
+    await Promise.allSettled(
+      batch.map(friendId => 
+        api.put(`/direct-messages/read/${friendId}`).catch(() => {})
+      )
+    );
   }
 
   // ─── Delete Conversation ───────────────────────────────
@@ -700,19 +976,30 @@ class MessageService {
   }
 
   // ─── Typing Indicator ─────────────────────────────────
+  private lastTypingEmit = 0;
   emitTyping(recipientId: string, isTyping: boolean): void {
+    // Debounce typing events - only emit if different from last state or after 3 seconds
+    const now = Date.now();
+    if (isTyping && now - this.lastTypingEmit < 3000) return;
+    this.lastTypingEmit = now;
+
     if (this.typingTimeout) clearTimeout(this.typingTimeout);
     syncEngine.emit('dm:typing', { recipientId, isTyping });
     if (isTyping) {
       this.typingTimeout = setTimeout(() => {
         syncEngine.emit('dm:typing', { recipientId, isTyping: false });
-      }, 5000);
+      }, 4000);
     }
   }
 
   // ─── Unread Count ──────────────────────────────────────
   async getUnreadCount(): Promise<number> {
-    return sqliteService.getTotalUnreadCount();
+    const convs = await this.getConversations();
+    // Sum standard unread messages + count any pending_received requests as unread
+    return convs.reduce((sum, c) => {
+      const isPendingReq = c.request_status === 'pending_received' ? 1 : 0;
+      return sum + c.unread_count + isPendingReq;
+    }, 0);
   }
 
   async getServerUnreadCount(): Promise<number> {
@@ -842,6 +1129,8 @@ class MessageService {
     this.listeners.clear();
     this.friendshipCache.clear();
     if (this.typingTimeout) clearTimeout(this.typingTimeout);
+    if (this.readReceiptTimeout) clearTimeout(this.readReceiptTimeout);
+    this.readReceiptBatch.clear();
     this.isInitialized = false;
     this.currentUserId = null;
   }

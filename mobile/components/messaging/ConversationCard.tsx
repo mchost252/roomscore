@@ -46,6 +46,7 @@ function ConversationCard({ conversation, isDark, onPress, onDelete }: Conversat
 
   // Swipe-to-delete
   const translateX = useRef(new Animated.Value(0)).current;
+
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 12 && Math.abs(gs.dy) < 12,
@@ -75,6 +76,11 @@ function ConversationCard({ conversation, isDark, onPress, onDelete }: Conversat
     }).start();
   }, [translateX]);
 
+  const triggerDelete = useCallback(() => {
+    closeSwipe();
+    onDelete?.();
+  }, [closeSwipe, onDelete]);
+
   const textColor = isDark ? '#f1f5f9' : '#1e293b';
   const subtextColor = isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)';
   const divider = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
@@ -89,9 +95,9 @@ function ConversationCard({ conversation, isDark, onPress, onDelete }: Conversat
   return (
     <View style={styles.swipeContainer}>
       {/* Delete action — hidden until swiped */}
-      <Animated.View style={[styles.deleteAction, { opacity: deleteOpacity }]}>
+      <Animated.View style={[styles.deleteAction, { opacity: deleteOpacity, zIndex: 1 }]}>
         <TouchableOpacity
-          onPress={() => { closeSwipe(); onDelete?.(); }}
+          onPress={triggerDelete}
           style={styles.deleteBtn}
           activeOpacity={0.8}
         >
@@ -101,7 +107,7 @@ function ConversationCard({ conversation, isDark, onPress, onDelete }: Conversat
 
       {/* Main card */}
       <Animated.View
-        style={[styles.cardOuter, { transform: [{ translateX }] }]}
+        style={[styles.cardOuter, { transform: [{ translateX }], zIndex: 2 }]}
         {...panResponder.panHandlers}
       >
         <TouchableOpacity

@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 interface MessageRequestBannerProps {
   isDark: boolean;
   username: string;
+  message?: string;
   onAccept: () => void;
   onDecline: () => void;
   onBlock: () => void;
@@ -15,7 +16,7 @@ const ACCENT_COLOR = '#6366f1';
 const VIOLET_ACCENT = '#8b5cf6';
 
 function MessageRequestBanner({ 
-  isDark, username, onAccept, onDecline, onBlock 
+  isDark, username, message, onAccept, onDecline, onBlock 
 }: MessageRequestBannerProps) {
   const bg = isDark ? 'rgba(139,92,246,0.1)' : 'rgba(139,92,246,0.06)';
   const borderColor = isDark ? 'rgba(139,92,246,0.2)' : 'rgba(139,92,246,0.12)';
@@ -35,7 +36,7 @@ function MessageRequestBanner({
             Message request from {username}
           </Text>
           <Text style={[styles.subtitle, { color: subtextColor }]}>
-            Accept to start messaging. They won't see this.
+            {message ? `"${message}"\n\nAccept to reply. They won't see this until you do.` : "Accept to start messaging. They won't see this."}
           </Text>
         </View>
       </View>

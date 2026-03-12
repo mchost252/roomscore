@@ -52,12 +52,15 @@ export default function HomeLayout() {
     return () => clearInterval(id);
   }, []);
 
-  const ctxValue = {
+  const setOpenAIChatStable = useCallback((fn: () => void) => setAiChatFn(() => fn), []);
+  const setOpenAddTaskStable = useCallback((fn: () => void) => setAddTaskFn(() => fn), []);
+
+  const ctxValue = React.useMemo(() => ({
     openAIChat: aiChatFn,
     openAddTask: addTaskFn,
-    setOpenAIChat: (fn: () => void) => setAiChatFn(() => fn),
-    setOpenAddTask: (fn: () => void) => setAddTaskFn(() => fn),
-  };
+    setOpenAIChat: setOpenAIChatStable,
+    setOpenAddTask: setOpenAddTaskStable,
+  }), [aiChatFn, addTaskFn, setOpenAIChatStable, setOpenAddTaskStable]);
 
   return (
     <HomeNavContext.Provider value={ctxValue}>
@@ -80,22 +83,24 @@ export default function HomeLayout() {
 
         {/* Sidebar nav: show on home and messages only, hide on modals */}
         {navStyle === 'sidebar' && (
-          pathname === '/' || 
+          (pathname === '/' || 
           pathname === '/(home)' || 
           pathname === '/(home)/index' ||
-          pathname === '/(home)/messages'
-        ) && (
-          <SidebarNav onAIPress={aiChatFn} onAddTask={addTaskFn} />
+          pathname === '/messages' ||
+          pathname === '/(home)/messages') && (
+            <SidebarNav onAIPress={aiChatFn} onAddTask={addTaskFn} />
+          )
         )}
 
         {/* Bottom tab bar: show on home and messages only */}
         {navStyle === 'bottom' && (
-          pathname === '/' || 
+          (pathname === '/' || 
           pathname === '/(home)' || 
           pathname === '/(home)/index' ||
-          pathname === '/(home)/messages'
-        ) && (
-          <BottomTabBar onAddTask={addTaskFn} />
+          pathname === '/messages' ||
+          pathname === '/(home)/messages') && (
+            <BottomTabBar onAddTask={addTaskFn} />
+          )
         )}
       </View>
     </HomeNavContext.Provider>

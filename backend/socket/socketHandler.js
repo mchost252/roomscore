@@ -9,6 +9,10 @@ const onlineUsers = new Map();
 // This avoids querying database for online status
 const roomPresence = new Map();
 
+// DM Presence Subscriptions: Map<userId, Set<subscriberUserId>>
+// Only send status updates to people who are subscribed (looking at that chat)
+const dmPresenceSubscriptions = new Map();
+
 module.exports = (io) => {
   // Helper to get online user IDs
   const getOnlineUserIds = () => Array.from(onlineUsers.keys());
@@ -33,7 +37,12 @@ module.exports = (io) => {
       try {
         decoded = jwt.verify(token, process.env.JWT_SECRET);
       } catch (jwtError) {
-        logger.warn('Socket JWT verification failed:', jwtError.message);
+        // Only log token expiration as debug to avoid log spam, as clients will auto-refresh
+        if (jwtError.name === 'TokenExpiredError') {
+          logger.debug(`Socket JWT expired for a connection attempt. Client should refresh.`);
+        } else {
+          logger.warn(`Socket JWT verification failed: ${jwtError.message}`);
+        }
         return next(new Error('Authentication error'));
       }
 
@@ -103,8 +112,14 @@ module.exports = (io) => {
     }
     onlineUsers.get(socket.userId).add(socket.id);
 
-    // Broadcast to all users that this user is online
-    io.emit('user:status', { userId: socket.userId, isOnline: true });
+    // OPTIMIZED: Only notify subscribers (people who are viewing this user's chat)
+    // NOT a global broadcast
+    const subscribers = dmPresenceSubscriptions.get(socket.userId);
+    if (subscribers) {
+      for (const subscriberId of subscribers) {
+        io.to(`user:${subscriberId}`).emit('user:status', { userId: socket.userId, isOnline: true });
+      }
+    }
 
     // Join user's personal room
     socket.join(`user:${socket.userId}`);
@@ -121,6 +136,26 @@ module.exports = (io) => {
     socket.on('user:checkStatus', (userId) => {
       const isOnline = onlineUsers.has(userId);
       socket.emit('user:status', { userId, isOnline });
+    });
+
+    // DM Presence Subscription: Subscribe to a user's status (when opening DM chat)
+    socket.on('dm:subscribe', (targetUserId) => {
+      if (!dmPresenceSubscriptions.has(targetUserId)) {
+        dmPresenceSubscriptions.set(targetUserId, new Set());
+      }
+      dmPresenceSubscriptions.get(targetUserId).add(socket.userId);
+      
+      // Immediately send current status
+      const isOnline = onlineUsers.has(targetUserId);
+      socket.emit('user:status', { userId: targetUserId, isOnline });
+    });
+
+    // Unsubscribe from a user's status (when closing DM chat)
+    socket.on('dm:unsubscribe', (targetUserId) => {
+      const subs = dmPresenceSubscriptions.get(targetUserId);
+      if (subs) {
+        subs.delete(socket.userId);
+      }
     });
 
     // Join room
@@ -266,8 +301,14 @@ module.exports = (io) => {
         // If user has no more active sockets, they're offline
         if (onlineUsers.get(socket.userId).size === 0) {
           onlineUsers.delete(socket.userId);
-          // Broadcast to all users that this user is offline
-          io.emit('user:status', { userId: socket.userId, isOnline: false });
+          
+          // OPTIMIZED: Only notify subscribers (people viewing this user's chat)
+          const subscribers = dmPresenceSubscriptions.get(socket.userId);
+          if (subscribers) {
+            for (const subscriberId of subscribers) {
+              io.to(`user:${subscriberId}`).emit('user:status', { userId: socket.userId, isOnline: false });
+            }
+          }
         }
       }
       

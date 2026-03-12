@@ -7,6 +7,7 @@ import Animated, {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, usePathname } from 'expo-router';
 import { useTheme } from '../context/ThemeContext';
+import messageService from '../services/messageService';
 
 const { height: SH } = Dimensions.get('window');
 const ITEM_H  = 48;
@@ -17,7 +18,7 @@ const N = 7; // nav items count
 const OPEN_H  = K_SIZE + N * ITEM_H + 8;
 
 const NAV_ITEMS = [
-  { icon: 'home',                label: 'Home',     route: '/(home)',          active: ['/', '/(home)', '/index'] },
+  { icon: 'home',                label: 'Home',     route: '/(home)',          active: ['/', '/(home)', '/(home)/index', '/index'] },
   { icon: 'briefcase-outline',   label: 'Rooms',    route: '/(home)/rooms',    active: ['/(home)/rooms', '/rooms'] },
   { icon: 'chatbubbles-outline', label: 'Messages', route: '/(home)/messages', active: ['/(home)/messages', '/messages'] },
   { icon: 'person-outline',      label: 'Profile',  route: '/(home)/profile',  active: ['/(home)/profile', '/profile'] },
@@ -26,7 +27,7 @@ const NAV_ITEMS = [
   { icon: 'add-circle-outline',  label: 'Add Task', route: 'add',              active: [] },
 ] as const;
 
-const FADE_ROUTES = ['/profile', '/settings', '/rooms', '/messages', '/chat', '/(home)/profile', '/(home)/settings', '/(home)/rooms', '/(home)/messages', '/(home)/chat'];
+const FADE_ROUTES = ['/profile', '/settings', '/rooms', '/chat', '/(home)/profile', '/(home)/settings', '/(home)/rooms', '/(home)/chat'];
 
 interface Props { onAIPress: () => void; onAddTask: () => void; }
 
@@ -37,6 +38,23 @@ export default function SidebarNav({ onAIPress, onAddTask }: Props) {
 
   const [open,   setOpen]   = useState(false);
   const [labeled, setLabeled] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const refreshUnread = useCallback(async () => {
+    try {
+      const count = await messageService.getUnreadCount();
+      setUnreadCount(count);
+    } catch {}
+  }, []);
+
+  React.useEffect(() => {
+    refreshUnread();
+    const unsub = (messageService as any).on?.('conversations_updated', refreshUnread);
+    return () => {
+      (messageService as any).off?.('conversations_updated', refreshUnread);
+      if (typeof unsub === 'function') unsub();
+    };
+  }, [refreshUnread]);
 
   // Shared values
   const pillW   = useSharedValue(K_SIZE);
@@ -99,11 +117,13 @@ export default function SidebarNav({ onAIPress, onAddTask }: Props) {
 
   const navigate = useCallback((route: string) => {
     doClose();
+    // Increase the timeout slightly to allow the close spring animation to fully resolve 
+    // before locking the JS thread with React Navigation's heavy unmount/mount cycles.
     setTimeout(() => {
       if      (route === 'ai')  { onAIPress(); }
       else if (route === 'add') { onAddTask(); }
       else                      { router.push(route as any); }
-    }, 80);
+    }, 150);
   }, [onAIPress, onAddTask, router, doClose]);
 
   // Animated styles
@@ -148,7 +168,12 @@ export default function SidebarNav({ onAIPress, onAddTask }: Props) {
         {/* Nav items */}
         <Animated.View style={[styles.items, itemsStyle]}>
           {NAV_ITEMS.map((item, i) => {
-            const isActive = item.active.some((a: string) => pathname === a || pathname.startsWith(a));
+            const isActive = item.active.some((a: string) => {
+              if (a === '/' || a === '/(home)' || a === '/(home)/index' || a === '/index') {
+                return pathname === a; // strict equality for home routes
+              }
+              return pathname === a || pathname.startsWith(a + '/');
+            });
             const isAI     = item.route === 'ai';
             const isAdd    = item.route === 'add';
             const iColor   = isActive ? P : isAI ? P : isAdd ? '#22c55e' : textC;
@@ -165,7 +190,14 @@ export default function SidebarNav({ onAIPress, onAddTask }: Props) {
                   isAI  && { backgroundColor: `${P}15` },
                   isAdd && { backgroundColor: 'rgba(34,197,94,0.1)' },
                 ]}>
-                  <Ionicons name={item.icon as any} size={19} color={iColor} />
+                  <View>
+                    <Ionicons name={item.icon as any} size={19} color={iColor} />
+                    {item.label === 'Messages' && unreadCount > 0 && (
+                      <View style={styles.unreadBadge}>
+                        <Text style={styles.unreadText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
                 <Animated.Text numberOfLines={1} style={[styles.label, { color: isActive ? P : textC }, labelStyle]}>
                   {item.label}
@@ -251,5 +283,24 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
     marginLeft:    8,
     flex:          1,
+  },
+  unreadBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -8,
+    backgroundColor: '#ef4444',
+    borderRadius: 9,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: '#1e1e2e',
+  },
+  unreadText: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '800',
   },
 });

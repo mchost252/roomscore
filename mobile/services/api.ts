@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
+import { Platform } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { API_BASE_URL, API_TIMEOUT, TOKEN_KEY, REFRESH_TOKEN_KEY } from '../constants/config';
 import { secureStorage } from './storage';
@@ -27,21 +28,23 @@ interface QueuedRequest {
 let offlineQueue: QueuedRequest[] = [];
 let isOffline = false;
 
-// Subscribe to network state
-NetInfo.addEventListener(state => {
-  const wasOffline = isOffline;
-  isOffline = !state.isConnected;
-  
-  // Process queue when coming back online
-  if (wasOffline && !isOffline && offlineQueue.length > 0) {
-    console.log(`Processing ${offlineQueue.length} queued requests`);
-    const queue = [...offlineQueue];
-    offlineQueue = [];
-    queue.forEach(item => {
-      api(item.config).then(item.resolve).catch(item.reject);
-    });
-  }
-});
+// Subscribe to network state - only on native platforms
+if (Platform.OS !== 'web') {
+  NetInfo.addEventListener(state => {
+    const wasOffline = isOffline;
+    isOffline = !state.isConnected;
+    
+    // Process queue when coming back online
+    if (wasOffline && !isOffline && offlineQueue.length > 0) {
+      console.log(`Processing ${offlineQueue.length} queued requests`);
+      const queue = [...offlineQueue];
+      offlineQueue = [];
+      queue.forEach(item => {
+        api(item.config).then(item.resolve).catch(item.reject);
+      });
+    }
+  });
+}
 
 // Helper to check if request should be retried
 const shouldRetry = (error: AxiosError): boolean => {

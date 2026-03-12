@@ -2,11 +2,11 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   Platform, StatusBar, Image, KeyboardAvoidingView,
-  ActivityIndicator, Dimensions,
+  ActivityIndicator, Dimensions, Alert, Modal, Pressable,
 } from 'react-native';
 import Animated, {
   FadeIn, FadeInDown, useSharedValue, useAnimatedStyle,
-  withSpring, withTiming, interpolate, Extrapolation,
+  withSpring, withTiming, interpolate, Extrapolation, runOnJS,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -17,10 +17,12 @@ import { useAuth } from '../../context/AuthContext';
 import api from '../../services/api';
 import messageService from '../../services/messageService';
 import sqliteService, { LocalDirectMessage } from '../../services/sqliteService';
+import syncEngine from '../../services/syncEngine';
 import ChatBubble from '../../components/messaging/ChatBubble';
 import MessageInput from '../../components/messaging/MessageInput';
 import TypingIndicator from '../../components/messaging/TypingIndicator';
 import MessageRequestBanner from '../../components/messaging/MessageRequestBanner';
+import ConfirmationModal from '../../components/ConfirmationModal';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -54,17 +56,29 @@ export default function ChatScreen() {
   const [isTyping, setIsTyping] = useState(false);
   const [isOnline, setIsOnline] = useState(false);
   const [replyTo, setReplyTo] = useState<{ id: string; text: string; username?: string } | null>(null);
+  // Prevent multiple initializations on the same friend (causes refresh loops)
+  const hasInitializedChat = useRef(false);
+  const lastMarkAsRead = useRef(0);
+  const lastMarkReadCall = useRef(0);
+  useEffect(() => {
+    hasInitializedChat.current = false; // reset when friendId changes
+  }, [friendId]);
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [friendBio, setFriendBio] = useState<string>('');
 
   // Message request state
   const [requestStatus, setRequestStatus] = useState<string>(initialRequestStatus);
   const [requestId, setRequestId] = useState<string | null>(null);
+  const [requestMessage, setRequestMessage] = useState<string | null>(null);
   const [requestLoading, setRequestLoading] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [clearChatModalVisible, setClearChatModalVisible] = useState(false);
+  const [deleteFriendModalVisible, setDeleteFriendModalVisible] = useState(false);
 
   const flatListRef = useRef<FlatList>(null);
   const sheetOpacity = useSharedValue(0);
   const sheetTranslateY = useSharedValue(30);
+  const listOpacity = useSharedValue(1);
 
   // ─── Colors ─────────────────────────────────────────────
   const bg = isDark ? '#080810' : '#f8f9ff';
@@ -79,6 +93,10 @@ export default function ChatScreen() {
   // ─── Load Messages + Check Friendship ──────────────────
   useEffect(() => {
     if (!user || !friendId) return;
+
+    // Guard against multiple initializations that cause refresh loops
+    if (hasInitializedChat.current) return;
+    hasInitializedChat.current = true;
 
     sheetOpacity.value = withTiming(1, { duration: 400 });
     sheetTranslateY.value = withSpring(0, { mass: 0.5, damping: 18, stiffness: 180 });
@@ -99,8 +117,16 @@ export default function ChatScreen() {
         setLoading(false);
       }
 
-      // Mark as read
-      await messageService.markAsRead(friendId);
+      // Mark as read with guard to prevent spam
+      const now = Date.now();
+      if (now - lastMarkReadCall.current > 2000) {
+        lastMarkReadCall.current = now;
+        // Only mark as read if we have messages and they are not already read
+        const unreadMessages = messages.filter(m => m.status !== 'read');
+        if (unreadMessages.length > 0) {
+          messageService.markAsRead(friendId).catch(()=>{});
+        }
+      }
 
       // Check friendship / request status
       const friendship = await messageService.checkFriendship(friendId);
@@ -110,13 +136,15 @@ export default function ChatScreen() {
       }
 
       // Check local conversation for cached online status (instant)
-      const convs = await sqliteService.getConversations();
+      // Use messageService.getConversations() which handles SQLite vs memory cache
+      const convs = await messageService.getConversations();
       const conv = convs.find(c => c.friend_id === friendId);
       if (conv && isSubscribed) {
         setIsOnline(conv.is_online === 1);
         if (conv.request_status && conv.request_status !== 'none') {
           setRequestStatus(conv.request_status);
           if (conv.request_id) setRequestId(conv.request_id);
+          if (conv.last_message) setRequestMessage(conv.last_message);
         }
       }
 
@@ -132,8 +160,13 @@ export default function ChatScreen() {
 
     init();
 
+    // Subscribe to friend's online status (optimized - only get updates for this user)
+    syncEngine.subscribeToUserStatus(friendId);
+
     return () => {
       isSubscribed = false;
+      // Unsubscribe from friend's online status
+      syncEngine.unsubscribeFromUserStatus(friendId);
     };
   }, [user, friendId]);
 
@@ -141,6 +174,7 @@ export default function ChatScreen() {
   useEffect(() => {
     const unsubs: (() => void)[] = [];
 
+    // Listen for incoming messages
     unsubs.push(
       messageService.on('message', (msg: LocalDirectMessage) => {
         if (msg.from_user_id === friendId || msg.to_user_id === friendId) {
@@ -149,17 +183,25 @@ export default function ChatScreen() {
             return [...prev, msg];
           });
           if (msg.from_user_id === friendId) {
-            messageService.markAsRead(friendId);
+          const msgNow = Date.now();
+          if (msgNow - lastMarkReadCall.current > 2000) {
+            lastMarkReadCall.current = msgNow;
+            // Only mark as read if the incoming message is not already read
+            if (msg.status !== 'read') {
+              messageService.markAsRead(friendId).catch(()=>{});
+            }
           }
+        }
         }
       })
     );
 
+    // Listen for messages we sent (to show immediately + scroll to bottom)
     unsubs.push(
       messageService.on('message_sent', (msg: LocalDirectMessage) => {
         if (msg.to_user_id === friendId) {
           setMessages(prev => {
-            if (prev.some(m => m.local_id === msg.local_id)) return prev;
+            if (prev.some(m => m.id === msg.id || m.local_id === msg.local_id)) return prev;
             return [...prev, msg];
           });
           setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
@@ -243,6 +285,7 @@ export default function ChatScreen() {
       messageService.on('friend_removed', (removedFriendId: string) => {
         if (removedFriendId === friendId) {
           setRequestStatus('removed');
+          setMessages([]); // Clear messages locally
         }
       })
     );
@@ -250,7 +293,8 @@ export default function ChatScreen() {
     unsubs.push(
       messageService.on('messages_synced', async (syncedFriendId: string) => {
         if (syncedFriendId === friendId && user) {
-          const fresh = await sqliteService.getDirectMessages(user.id, friendId, 50);
+          // Use messageService.getMessages which handles SQLite vs memory cache
+          const fresh = await messageService.getMessages(friendId);
           setMessages(fresh);
         }
       })
@@ -267,11 +311,13 @@ export default function ChatScreen() {
 
     unsubs.push(
       messageService.on('conversations_updated', async () => {
-        const convs = await sqliteService.getConversations();
+        // Use messageService.getConversations which handles SQLite vs memory cache
+        const convs = await messageService.getConversations();
         const conv = convs.find(c => c.friend_id === friendId);
         if (conv) {
           setRequestStatus(conv.request_status || 'none');
           setRequestId(conv.request_id || null);
+          if (conv.last_message) setRequestMessage(conv.last_message);
         }
       })
     );
@@ -309,8 +355,16 @@ export default function ChatScreen() {
     if (loadingMore || !user || messages.length === 0) return;
     setLoadingMore(true);
     const oldest = messages[0];
-    const older = await sqliteService.getDirectMessages(user.id, friendId, 50, oldest.created_at);
-    if (older.length > 0) setMessages(prev => [...older, ...prev]);
+    // Use messageService.getMessages which handles SQLite vs memory cache
+    const older = await messageService.getMessages(friendId, oldest.created_at);
+    if (older.length > 0) {
+      setMessages(prev => {
+        // Deduplicate by local_id
+        const existingIds = new Set(prev.map(m => m.local_id || m.id));
+        const unique = older.filter(m => !existingIds.has(m.local_id || m.id));
+        return [...unique, ...prev];
+      });
+    }
     setLoadingMore(false);
   }, [messages, loadingMore, user, friendId]);
 
@@ -369,6 +423,30 @@ export default function ChatScreen() {
     opacity: sheetOpacity.value,
     transform: [{ translateY: sheetTranslateY.value }],
   }));
+
+  const listAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: listOpacity.value,
+  }));
+
+  const performClear = useCallback(() => {
+    if (user?.id && friendId) {
+      sqliteService.deleteConversationMessages(user.id, friendId).then(() => {
+        const memCache = (messageService as any).memoryMessageCache;
+        if (memCache) memCache.delete(`${user.id}:${friendId}`);
+        setMessages([]);
+        listOpacity.value = withTiming(1, { duration: 300 });
+      });
+    }
+  }, [user?.id, friendId, listOpacity]);
+
+  const performDeleteFriend = useCallback(async () => {
+    try {
+      await messageService.deleteFriend(friendId);
+      router.back();
+    } catch (err) {
+      console.warn('Delete friend failed:', err);
+    }
+  }, [friendId, router]);
 
   // ─── Render Helpers ───────────────────────────────────
   const renderMessage = useCallback(({ item, index }: { item: LocalDirectMessage; index: number }) => (
@@ -454,8 +532,96 @@ export default function ChatScreen() {
               <Text style={styles.pendingBadgeText}>Pending</Text>
             </View>
           )}
+
+          {/* 3-dot menu */}
+          <TouchableOpacity
+            style={styles.menuBtn}
+            onPress={() => setMenuVisible(true)}
+          >
+            <Ionicons name="ellipsis-vertical" size={20} color={textColor} />
+          </TouchableOpacity>
         </View>
       </Animated.View>
+
+      {/* Custom Menu Modal */}
+      <Modal
+        visible={menuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuVisible(false)}
+      >
+        <Pressable style={styles.menuOverlay} onPress={() => setMenuVisible(false)}>
+          <Pressable style={[styles.menuContent, { backgroundColor: isDark ? '#1e1e2e' : '#ffffff' }]} onPress={() => {}}>
+            <TouchableOpacity
+              style={[styles.menuItem, { borderBottomColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)' }]}
+              onPress={() => {
+                setMenuVisible(false);
+                setTimeout(() => setClearChatModalVisible(true), 150);
+              }}
+            >
+              <Ionicons name="trash-outline" size={20} color="#ef4444" />
+              <Text style={[styles.menuItemText, { color: '#ef4444' }]}>Clear Chat</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.menuItem, { borderBottomColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)' }]}
+              onPress={() => {
+                setMenuVisible(false);
+                setTimeout(() => setDeleteFriendModalVisible(true), 150);
+              }}
+            >
+              <Ionicons name="person-remove-outline" size={20} color="#ef4444" />
+              <Text style={[styles.menuItemText, { color: '#ef4444' }]}>Delete Friend</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.menuItem, { borderBottomWidth: 0 }]}
+              onPress={() => setMenuVisible(false)}
+            >
+              <Text style={[styles.menuCancelText, { color: isDark ? '#fff' : '#1e293b' }]}>Cancel</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Confirmation Modals */}
+      <ConfirmationModal
+        visible={clearChatModalVisible}
+        title="Clear Chat"
+        message="Delete all messages from this conversation? This cannot be undone."
+        confirmText="Clear"
+        onCancel={() => setClearChatModalVisible(false)}
+        onConfirm={async () => {
+          setClearChatModalVisible(false);
+          // Animate list away
+          listOpacity.value = withTiming(0, { duration: 250 }, (finished) => {
+            if (finished) {
+              runOnJS(performClear)();
+            }
+          });
+        }}
+        isDark={isDark}
+        destructive
+      />
+
+      <ConfirmationModal
+        visible={deleteFriendModalVisible}
+        title="Delete Friend"
+        message={`Remove ${friendUsername} from your friends?`}
+        confirmText="Delete"
+        onCancel={() => setDeleteFriendModalVisible(false)}
+        onConfirm={() => {
+          setDeleteFriendModalVisible(false);
+          // Animate list away before leaving
+          listOpacity.value = withTiming(0, { duration: 250 }, (finished) => {
+            if (finished) {
+              runOnJS(performDeleteFriend)();
+            }
+          });
+        }}
+        isDark={isDark}
+        destructive
+      />
 
       {/* ── Curved Sheet Container ── */}
       <Animated.View
@@ -472,8 +638,8 @@ export default function ChatScreen() {
       >
         <KeyboardAvoidingView
           style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={0}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 20}
         >
           {/* Curved top handle */}
           <View style={styles.sheetHandle}>
@@ -487,7 +653,7 @@ export default function ChatScreen() {
               <ActivityIndicator size="large" color={accentColor} />
             </View>
           ) : (
-            <>
+            <Animated.View style={[styles.flex, listAnimatedStyle]}>
               <FlatList
                 ref={flatListRef as any}
                 data={messages}
@@ -518,27 +684,50 @@ export default function ChatScreen() {
                       <MessageRequestBanner
                         isDark={isDark}
                         username={friendUsername}
+                        message={requestMessage || undefined}
                         onAccept={handleAcceptRequest}
                         onDecline={handleDeclineRequest}
                         onBlock={handleBlockUser}
                       />
                     )}
+                    {requestStatus === 'removed' && (
+                      <View style={[styles.pendingBar, { 
+                        backgroundColor: isDark ? 'rgba(239,68,68,0.1)' : 'rgba(239,68,68,0.05)',
+                        borderColor: isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.1)',
+                        borderWidth: 1,
+                        marginHorizontal: 16,
+                        marginTop: 16,
+                        borderRadius: 12,
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        paddingVertical: 16,
+                      }]}>
+                        <Ionicons name="person-remove-outline" size={24} color="#ef4444" style={{ marginBottom: 8 }} />
+                        <Text style={{ color: textColor, fontWeight: '600', marginBottom: 4 }}>You are no longer friends</Text>
+                        <Text style={{ color: subtextColor, fontSize: 12, textAlign: 'center', marginHorizontal: 16, marginBottom: 12 }}>
+                          {friendUsername} has removed you from their friends list. Send a new message to send a friend request.
+                        </Text>
+                      </View>
+                    )}
                   </>
                 }
                 ListEmptyComponent={
-                  <View style={styles.emptyChat}>
-                    <View style={[styles.emptyIcon, { 
-                      backgroundColor: isDark ? 'rgba(99,102,241,0.1)' : 'rgba(99,102,241,0.06)' 
-                    }]}>
-                      <Ionicons name="chatbubble-outline" size={36} color={accentColor} />
+                  requestStatus !== 'removed' ? (
+                    <View style={styles.emptyChat}>
+                      <View style={[styles.emptyIcon, { 
+                        backgroundColor: isDark ? 'rgba(99,102,241,0.1)' : 'rgba(99,102,241,0.06)' 
+                      }]}>
+                        <Ionicons name="chatbubble-outline" size={36} color={accentColor} />
+                      </View>
+                      <Text style={[styles.emptyText, { color: textColor }]}>
+                        Start the conversation
+                      </Text>
+                      <Text style={[styles.emptySub, { color: subtextColor }]}>
+                        Say hi to {friendUsername} 👋
+                      </Text>
                     </View>
-                    <Text style={[styles.emptyText, { color: textColor }]}>
-                      Start the conversation
-                    </Text>
-                    <Text style={[styles.emptySub, { color: subtextColor }]}>
-                      Say hi to {friendUsername} 👋
-                    </Text>
-                  </View>
+                  ) : null
                 }
                 ListFooterComponent={
                   <TypingIndicator isDark={isDark} visible={isTyping} username={friendUsername} />
@@ -558,7 +747,7 @@ export default function ChatScreen() {
                   <Ionicons name="chevron-down" size={20} color={accentColor} />
                 </TouchableOpacity>
               )}
-            </>
+            </Animated.View>
           )}
 
           {/* Pending Sent Info Bar */}
@@ -639,6 +828,40 @@ const styles = StyleSheet.create({
   },
   pendingBadgeText: {
     fontSize: 10.5, fontWeight: '700', color: '#6366f1', letterSpacing: 0.1,
+  },
+  menuBtn: {
+    padding: 8,
+    marginLeft: 'auto',
+  },
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  menuContent: {
+    backgroundColor: '#1e1e2e',
+    borderRadius: 16,
+    width: '75%',
+    overflow: 'hidden',
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  menuItemText: {
+    fontSize: 16,
+    color: '#ef4444',
+  },
+  menuCancelText: {
+    fontSize: 16,
+    color: '#fff',
+    textAlign: 'center',
+    width: '100%',
   },
 
   // Curved Sheet

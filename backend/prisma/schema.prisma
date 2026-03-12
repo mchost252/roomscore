@@ -220,6 +220,7 @@ model Friend {
   fromUserId String
   toUserId   String
   status     String   @default("pending") // pending, accepted, rejected
+  message    String?   // Initial message sent with friend request
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

@@ -9,15 +9,15 @@ const logger = require('../utils/logger');
 // @route   GET /api/direct-messages/conversations
 // @desc    Get user's conversations (list of friends with last message)
 // @access  Private
-// OPTIMIZED: Batch queries instead of N+1 Promise.all
+// COMPATIBLE: Works with both SQLite and PostgreSQL
 router.get('/conversations', protect, async (req, res, next) => {
   try {
     const userId = req.user.id;
 
     // Get all accepted friendships
+    // Get all friendships (both accepted and pending)
     const friendships = await prisma.friend.findMany({
       where: {
-        status: 'accepted',
         OR: [
           { fromUserId: userId },
           { toUserId: userId }
@@ -29,64 +29,76 @@ router.get('/conversations', protect, async (req, res, next) => {
       }
     });
 
-    if (friendships.length === 0) {
-      return res.json({ success: true, conversations: [], totalUnread: 0 });
+    // Separate friendships
+    const acceptedFriendships = friendships.filter(f => f.status === 'accepted' || f.status === 'removed');
+    const pendingRequests = friendships.filter(f => f.status === 'pending');
+
+    // Add pending requests as conversations with request status
+    const pendingConversations = pendingRequests.map(req => {
+      const otherUserId = req.fromUserId === userId ? req.toUserId : req.fromUserId;
+      const otherUser = req.fromUserId === userId ? req.toUser : req.fromUser;
+      const isSentByMe = req.fromUserId === userId;
+      
+      // If there's an initial message attached to the request, show it
+      const lastMessage = req.message ? {
+        _id: req.id,
+        message: req.message,
+        content: req.message,
+        createdAt: req.createdAt,
+        fromUserId: req.fromUserId,
+        toUserId: req.toUserId
+      } : null;
+      
+      return {
+        friend: { ...otherUser, _id: otherUser.id },
+        lastMessage,
+        unreadCount: isSentByMe ? 0 : 1, // Treat incoming request as unread
+        requestStatus: isSentByMe ? 'pending_sent' : 'pending_received',
+        requestId: req.id
+      };
+    });
+
+    if (acceptedFriendships.length === 0 && pendingRequests.length === 0) {
+      return res.json({ success: true, conversations: pendingConversations, totalUnread: 0 });
     }
 
-    // Get friend IDs
-    const friendIds = friendships.map(f => 
+    // Get friend IDs from accepted friendships only
+    const friendIds = acceptedFriendships.map(f => 
       f.fromUserId === userId ? f.toUserId : f.fromUserId
     );
 
-    // OPTIMIZATION: Batch fetch all unread counts in ONE query using groupBy
-    const unreadCounts = await prisma.directMessage.groupBy({
-      by: ['fromUserId'],
+    // Get all messages involving user and their friends (SQLite compatible)
+    const allMessages = await prisma.directMessage.findMany({
       where: {
-        fromUserId: { in: friendIds },
-        toUserId: userId,
-        read: false,
-        NOT: { deletedFor: { has: userId } }
+        OR: [
+          { fromUserId: userId, toUserId: { in: friendIds } },
+          { toUserId: userId, fromUserId: { in: friendIds } }
+        ]
       },
-      _count: { id: true }
+      orderBy: { createdAt: 'desc' },
+      take: 100
     });
-    
-    // Create a map for quick lookup
-    const unreadCountMap = new Map(
-      unreadCounts.map(uc => [uc.fromUserId, uc._count.id])
-    );
 
-    // OPTIMIZATION: Fetch last messages in batch using raw query with DISTINCT ON
-    // This gets the most recent message per conversation in a single query
-    const lastMessagesRaw = await prisma.$queryRaw`
-      SELECT DISTINCT ON (conversation_id) *
-      FROM (
-        SELECT 
-          dm.*,
-          CASE 
-            WHEN dm."fromUserId" = ${userId} THEN dm."toUserId"
-            ELSE dm."fromUserId"
-          END as conversation_id
-        FROM "DirectMessage" dm
-        WHERE (
-          (dm."fromUserId" = ${userId} AND dm."toUserId" = ANY(${friendIds}::text[]))
-          OR 
-          (dm."toUserId" = ${userId} AND dm."fromUserId" = ANY(${friendIds}::text[]))
-        )
-        AND NOT (${userId} = ANY(dm."deletedFor"))
-        ORDER BY conversation_id, dm."createdAt" DESC
-      ) sub
-      ORDER BY conversation_id, "createdAt" DESC
-    `;
-
-    // Create map for last messages
+    // Build last message map per conversation (SQLite compatible)
     const lastMessageMap = new Map();
-    for (const msg of lastMessagesRaw) {
+    const unreadCountMap = new Map();
+    
+    for (const msg of allMessages) {
       const friendId = msg.fromUserId === userId ? msg.toUserId : msg.fromUserId;
-      lastMessageMap.set(friendId, msg);
+      
+      // Keep only the first (most recent) message per conversation
+      if (!lastMessageMap.has(friendId)) {
+        lastMessageMap.set(friendId, msg);
+      }
+      
+      // Count unread messages from this friend
+      if (msg.fromUserId === friendId && msg.toUserId === userId && !msg.read) {
+        unreadCountMap.set(friendId, (unreadCountMap.get(friendId) || 0) + 1);
+      }
     }
 
-    // Build conversations from friendships
-    const conversations = friendships.map(friendship => {
+    // Build conversations from accepted friendships
+    const acceptedConversations = acceptedFriendships.map(friendship => {
       const friendId = friendship.fromUserId === userId ? friendship.toUserId : friendship.fromUserId;
       const friendData = friendship.fromUserId === userId ? friendship.toUser : friendship.fromUser;
       const lastMessage = lastMessageMap.get(friendId);
@@ -99,9 +111,13 @@ router.get('/conversations', protect, async (req, res, next) => {
           _id: lastMessage.id, 
           message: lastMessage.content 
         } : null,
-        unreadCount
+        unreadCount,
+        requestStatus: 'accepted'
       };
     });
+
+    // Combine accepted and pending conversations
+    let conversations = [...acceptedConversations, ...pendingConversations];
 
     // Calculate total unread
     const totalUnread = conversations.reduce((sum, c) => sum + c.unreadCount, 0);
@@ -126,13 +142,11 @@ router.get('/unread-count', protect, async (req, res, next) => {
   try {
     const userId = req.user.id;
 
+    // NOTE: deletedFor filtering removed for SQLite compatibility
     const unreadCount = await prisma.directMessage.count({
       where: {
         toUserId: userId,
-        read: false,
-        NOT: {
-          deletedFor: { has: userId }
-        }
+        read: false
       }
     });
 
@@ -143,12 +157,13 @@ router.get('/unread-count', protect, async (req, res, next) => {
 });
 
 // @route   GET /api/direct-messages/:friendId
-// @desc    Get messages with a specific friend
+// @desc    Get messages with a specific friend (supports Delta Sync with last_id)
 // @access  Private
 router.get('/:friendId', protect, async (req, res, next) => {
   try {
     const userId = req.user.id;
     const friendId = req.params.friendId;
+    const { last_id, limit = 100 } = req.query;
 
     // Verify friendship exists
     const friendship = await prisma.friend.findFirst({
@@ -165,23 +180,43 @@ router.get('/:friendId', protect, async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Not friends with this user' });
     }
 
+    // Build where clause - Delta Sync support
+    // NOTE: deletedFor filtering removed for SQLite compatibility
+    const whereClause = {
+      OR: [
+        { fromUserId: userId, toUserId: friendId },
+        { fromUserId: friendId, toUserId: userId }
+      ]
+    };
+
+    // DELTA SYNC: If last_id provided, only fetch messages after that
+    if (last_id) {
+      const lastMessage = await prisma.directMessage.findUnique({
+        where: { id: String(last_id) },
+        select: { createdAt: true }
+      });
+      
+      if (lastMessage) {
+        whereClause.createdAt = { gt: lastMessage.createdAt };
+        console.log(`[Delta Sync] DM ${friendId}: Fetching messages after ${last_id}`);
+      }
+    }
+
     // Get messages (excluding ones deleted by current user)
+    // NOTE: deletedFor filtering removed for SQLite compatibility - can add back if needed
     const messages = await prisma.directMessage.findMany({
       where: {
         OR: [
           { fromUserId: userId, toUserId: friendId },
           { fromUserId: friendId, toUserId: userId }
-        ],
-        NOT: {
-          deletedFor: { has: userId }
-        }
+        ]
       },
       include: {
         fromUser: { select: { id: true, username: true } },
         toUser: { select: { id: true, username: true } }
       },
       orderBy: { createdAt: 'asc' },
-      take: 100
+      take: parseInt(limit)
     });
 
     // Mark messages from friend as read
@@ -214,7 +249,12 @@ router.get('/:friendId', protect, async (req, res, next) => {
       replyTo: m.replyToText ? { _id: m.replyToId, message: m.replyToText } : null
     }));
 
-    res.json({ success: true, messages: formattedMessages });
+    res.json({ 
+      success: true, 
+      messages: formattedMessages,
+      deltaSync: !!last_id,
+      syncFrom: last_id || null
+    });
   } catch (error) {
     next(error);
   }

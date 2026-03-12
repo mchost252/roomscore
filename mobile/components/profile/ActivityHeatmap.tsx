@@ -69,7 +69,7 @@ export function ActivityHeatmap({ data = [], isDark = true }: ActivityHeatmapPro
   );
 }
 
-function ActivityCell({ value, delay, color }: { value: number; delay: number; color: string }) {
+const ActivityCell = React.memo(function ActivityCell({ value, delay, color }: { value: number; delay: number; color: string }) {
   const scale = useSharedValue(0);
   useEffect(() => {
     scale.value = withDelay(delay, withSpring(1, { damping: 12, stiffness: 150 }));
@@ -80,7 +80,7 @@ function ActivityCell({ value, delay, color }: { value: number; delay: number; c
   return (
     <Animated.View style={[styles.cell, { backgroundColor: color }, animatedStyle]} />
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

@@ -89,7 +89,7 @@ class NotificationService {
    * Schedule morning digest notification
    * "Good morning! You have 3 ongoing tasks today"
    */
-  async scheduleMorningDigest(tasks: PersonalTask[]) {
+  async scheduleMorningDigest(tasks: PersonalTask[]) { return; // disabled for now
     if (Platform.OS === 'web' || !this.preferences.enabled) return;
 
     const ongoingCount = tasks.filter(t => 
@@ -120,7 +120,7 @@ class NotificationService {
    * Schedule evening preview notification
    * "Tomorrow you have 5 tasks scheduled"
    */
-  async scheduleEveningPreview(tasks: PersonalTask[]) {
+  async scheduleEveningPreview(tasks: PersonalTask[]) { return; // disabled for now
     if (Platform.OS === 'web' || !this.preferences.enabled) return;
 
     const tomorrow = new Date();
@@ -166,12 +166,20 @@ class NotificationService {
 
     if (dueTasks.length === 0) return;
 
-    // Cancel existing due reminders
+    // Cancel existing due reminders - cancel each individually
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
     const dueReminderIds = scheduled
       .filter(n => n.identifier.startsWith('due-reminder-'))
       .map(n => n.identifier);
-    await Notifications.cancelScheduledNotificationsAsync(dueReminderIds);
+    
+    // Cancel each notification individually
+    for (const id of dueReminderIds) {
+      try {
+        await Notifications.cancelScheduledNotificationAsync(id);
+      } catch (e) {
+        console.warn('Failed to cancel notification:', id);
+      }
+    }
 
     // Schedule new reminders
     for (const task of dueTasks) {

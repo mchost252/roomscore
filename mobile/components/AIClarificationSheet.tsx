@@ -11,6 +11,7 @@ import {
   Animated,
   Dimensions,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -20,6 +21,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { ClarificationQuestion } from '../services/aiNoteService';
 
@@ -42,6 +44,7 @@ export default function AIClarificationSheet({
   onSkip,
 }: Props) {
   const { isDark } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const slideAnim = useRef(new Animated.Value(SHEET_HEIGHT)).current;
   const backdropAnim = useRef(new Animated.Value(0)).current;
@@ -123,29 +126,35 @@ export default function AIClarificationSheet({
   if (!visible) return null;
 
   return (
-    <View style={StyleSheet.absoluteFillObject} pointerEvents={visible ? 'auto' : 'none'}>
-      {/* Backdrop */}
-      <Animated.View
-        style={[styles.backdrop, { opacity: backdropAnim }]}
-        pointerEvents={visible ? 'auto' : 'none'}
-      >
-        <Pressable style={StyleSheet.absoluteFillObject} onPress={onSkip} />
-      </Animated.View>
-
-      {/* Sheet */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.kvWrapper}
-        pointerEvents="box-none"
-      >
+    <Modal
+      transparent={true}
+      visible={visible}
+      animationType="fade"
+      presentationStyle="overFullScreen"
+    >
+      <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.4)' }]}>
+        {/* Backdrop */}
         <Animated.View
-          style={[
-            styles.sheet,
-            { backgroundColor: colors.bg, transform: [{ translateY: slideAnim }] },
-          ]}
+          style={[styles.backdrop, { opacity: backdropAnim }]}
+          pointerEvents={visible ? 'auto' : 'none'}
         >
-          {/* Handle bar */}
-          <View style={[styles.handle, { backgroundColor: colors.border }]} />
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={onSkip} />
+        </Animated.View>
+
+        {/* Sheet */}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.kvWrapper}
+          pointerEvents="box-none"
+        >
+          <Animated.View
+            style={[
+              styles.sheet,
+              { backgroundColor: colors.bg, maxHeight: SHEET_HEIGHT, transform: [{ translateY: slideAnim }] },
+            ]}
+          >
+            {/* Handle bar */}
+            <View style={[styles.handle, { backgroundColor: colors.border }]} />
 
           {/* Header */}
           <View style={styles.header}>
@@ -240,7 +249,7 @@ export default function AIClarificationSheet({
           </ScrollView>
 
           {/* Actions */}
-          <View style={[styles.footer, { borderTopColor: colors.border }]}>
+          <View style={[styles.footer, { borderTopColor: colors.border, paddingBottom: insets.bottom }]}>
             <TouchableOpacity
               style={[
                 styles.submitBtn,
@@ -264,7 +273,8 @@ export default function AIClarificationSheet({
           </View>
         </Animated.View>
       </KeyboardAvoidingView>
-    </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -273,7 +283,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.55)',
   },
-  kvWrapper: {
+  kvWrapper: { zIndex: 9999,
     flex: 1,
     justifyContent: 'flex-end',
   },

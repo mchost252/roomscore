@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
+  Pressable,
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Alert, Dimensions, TextInput, Keyboard, Platform, Image,
 } from 'react-native';
@@ -68,19 +69,6 @@ type TabKey = 'about' | 'activity' | 'achievements';
 function LiquidCard({ children, w, h, dark, style }: {
   children: React.ReactNode; w: number; h: number; dark: boolean; style?: any;
 }) {
-  const shimX = useSharedValue(-w);
-  useEffect(() => {
-    shimX.value = withRepeat(
-      withSequence(
-        withTiming(w * 1.5, { duration: 3200, easing: Easing.inOut(Easing.ease) }),
-        withTiming(-w, { duration: 0 }),
-      ), -1, false,
-    );
-  }, [w]);
-  const shimStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: shimX.value }],
-  }));
-
   const borderClr = dark ? 'rgba(99,102,241,0.16)' : 'rgba(99,102,241,0.10)';
 
   if (!SKIA_OK) {
@@ -93,15 +81,13 @@ function LiquidCard({ children, w, h, dark, style }: {
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
           style={[StyleSheet.absoluteFill, { borderRadius: 22 }]}
         />
-        <Animated.View style={[{ position: 'absolute', top: 0, width: w * 0.5, height: '100%' }, shimStyle]}>
-          <LinearGradient
+                  <LinearGradient
             colors={dark
               ? ['transparent', 'rgba(255,255,255,0.03)', 'rgba(255,255,255,0.06)', 'rgba(255,255,255,0.03)', 'transparent'] as any
               : ['transparent', 'rgba(99,102,241,0.02)', 'rgba(99,102,241,0.05)', 'rgba(99,102,241,0.02)', 'transparent'] as any}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
             style={StyleSheet.absoluteFill}
-          />
-        </Animated.View>
+        />
         <View style={{ ...StyleSheet.absoluteFillObject, borderRadius: 22, borderWidth: 1, borderColor: borderClr }} />
         {children}
       </View>
@@ -135,16 +121,6 @@ function LiquidCard({ children, w, h, dark, style }: {
           <SkBlurMask blur={20} style="normal" />
         </SkRect>
       </SkCanvas>
-      {/* Shimmer sweep */}
-      <Animated.View style={[{ position: 'absolute', top: 0, width: w * 0.5, height: '100%' }, shimStyle]}>
-        <LinearGradient
-          colors={dark
-            ? ['transparent', 'rgba(255,255,255,0.03)', 'rgba(255,255,255,0.06)', 'rgba(255,255,255,0.03)', 'transparent'] as any
-            : ['transparent', 'rgba(99,102,241,0.02)', 'rgba(99,102,241,0.05)', 'rgba(99,102,241,0.02)', 'transparent'] as any}
-          start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-          style={StyleSheet.absoluteFill}
-        />
-      </Animated.View>
       <View style={{ ...StyleSheet.absoluteFillObject, borderRadius: 22, borderWidth: 1, borderColor: borderClr }} />
       {children}
     </View>
@@ -249,10 +225,10 @@ export default function ProfileScreen() {
 
   /* ── Entrance ── */
   const fadeIn = useSharedValue(0);
-  const slideUp = useSharedValue(18);
+  const slideUp = useSharedValue(8); // reduced from 18
   useEffect(() => {
-    fadeIn.value = withTiming(1, { duration: 220 });
-    slideUp.value = withSpring(0, { damping: 18, stiffness: 200 });
+    fadeIn.value = withTiming(1, { duration: 150 });
+    slideUp.value = withSpring(0, { damping: 24, stiffness: 250 }); // reduced bounce
   }, []);
   const entStyle = useAnimatedStyle(() => ({
     flex: 1 as number, opacity: fadeIn.value, transform: [{ translateY: slideUp.value }],
@@ -578,12 +554,12 @@ export default function ProfileScreen() {
             {(['about', 'activity', 'achievements'] as TabKey[]).map(tab => {
               const on = activeTab === tab;
               return (
-                <TouchableOpacity key={tab} onPress={() => switchTab(tab)} activeOpacity={0.7}
+                <Pressable key={tab} onPress={() => switchTab(tab)} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
                   style={[st.tab, on && [st.tabOn, { backgroundColor: C.pri }]]}>
                   <Text style={[st.tabTxt, { color: on ? '#fff' : C.sec }, on && st.tabTxtOn]}>
                     {tab.charAt(0).toUpperCase() + tab.slice(1)}
                   </Text>
-                </TouchableOpacity>
+                </Pressable>
               );
             })}
           </View>
