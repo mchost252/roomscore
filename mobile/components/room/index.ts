@@ -9,3 +9,5 @@ export { default as TaskFolderList } from './TaskFolderList';
 export { default as TaskBottomSheet } from './TaskBottomSheet';
 export { default as SubwayTimeline } from './SubwayTimeline';
 export { default as RoomCard } from './RoomCard';
+export { default as TaskThreadModal } from './TaskThreadModal';
+export { default as MemoryWall } from './MemoryWall';

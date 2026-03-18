@@ -1,20 +1,28 @@
 /**
  * TaskBottomSheet - Action Sheet for Task Options
- * Shows Join/Leave options and Admin controls for owners
+ * Shows Join/Leave options, Proof submission, and Admin controls
+ * 
+ * Features:
+ * - Join/Leave task for regular users
+ * - Submit proof for verification
+ * - Challenge auto-approved proofs
+ * - Admin controls: Edit Task, Ban User, Justice Review
  */
 
 import React, { useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Pressable } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Pressable, Platform } from 'react-native';
 import Animated, { 
-  useSharedValue, 
-  useAnimatedStyle, 
+  useAnimatedStyle,
   withSpring,
-  FadeIn,
-  SlideInDown,
+  useSharedValue,
+  runOnJS,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../context/ThemeContext';
-import { EnhancedRoomTask } from '../../types';
+import { useHaptics } from '../../hooks';
+import { EnhancedRoomTask, ProofStatus } from '../../types';
+import { COLORS, GLASS, RADIUS, SPACING } from '../../styles/glassmorphism';
 
 interface TaskBottomSheetProps {
   visible: boolean;
@@ -24,9 +32,59 @@ interface TaskBottomSheetProps {
   onClose: () => void;
   onJoin?: () => void;
   onLeave?: () => void;
+  onSubmitProof?: () => void;
+  onChallenge?: () => void;
   onEdit?: () => void;
   onBanUser?: () => void;
   onJusticeReview?: () => void;
+  onViewProof?: () => void;
+}
+
+// Action item component
+function ActionItem({
+  icon,
+  iconColor,
+  iconBg,
+  title,
+  description,
+  onPress,
+  isDestructive = false,
+}: {
+  icon: string;
+  iconColor: string;
+  iconBg: string;
+  title: string;
+  description?: string;
+  onPress: () => void;
+  isDestructive?: boolean;
+}) {
+  const { colors } = useTheme();
+  
+  return (
+    <TouchableOpacity 
+      style={[styles.actionItem, { backgroundColor: GLASS.background }]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={[styles.iconBox, { backgroundColor: iconBg }]}>
+        <Ionicons name={icon as any} size={20} color={iconColor} />
+      </View>
+      <View style={styles.actionText}>
+        <Text style={[
+          styles.actionTitle, 
+          { color: isDestructive ? COLORS.danger : colors.text }
+        ]}>
+          {title}
+        </Text>
+        {description && (
+          <Text style={[styles.actionDesc, { color: colors.textSecondary }]}>
+            {description}
+          </Text>
+        )}
+      </View>
+      <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+    </TouchableOpacity>
+  );
 }
 
 export default function TaskBottomSheet({
@@ -37,155 +95,210 @@ export default function TaskBottomSheet({
   onClose,
   onJoin,
   onLeave,
+  onSubmitProof,
+  onChallenge,
   onEdit,
   onBanUser,
   onJusticeReview,
+  onViewProof,
 }: TaskBottomSheetProps) {
   const { colors, isDark } = useTheme();
+  const haptics = useHaptics();
 
-  const isParticipant = task?.participants.includes(currentUserId);
-  const isOwner = task?.participants.includes(currentUserId) && isRoomOwner;
-
-  const handleJoin = () => {
-    onJoin?.();
-    onClose();
-  };
-
-  const handleLeave = () => {
-    onLeave?.();
-    onClose();
-  };
-
-  const handleEdit = () => {
-    onEdit?.();
-    onClose();
-  };
-
-  const handleBanUser = () => {
-    onBanUser?.();
-    onClose();
-  };
-
-  const handleJusticeReview = () => {
-    onJusticeReview?.();
+  const handlePress = (action: () => void) => {
+    haptics.selection();
+    action();
     onClose();
   };
 
   if (!task) return null;
 
+  const isParticipant = task.participants.includes(currentUserId);
+  const hasProof = task.proof?.status === 'pending';
+  const hasAutoApproved = task.proof?.status === 'auto_approved';
+  const canChallenge = hasAutoApproved && task.proof?.challengeExpiresAt > Date.now();
+
   return (
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      animationType="slide"
       onRequestClose={onClose}
+      statusBarTranslucent
     >
       <Pressable style={styles.overlay} onPress={onClose}>
         <Animated.View 
-          entering={SlideInDown.springify().damping(18)}
-          style={[styles.sheet, { backgroundColor: isDark ? '#1a1a2e' : '#ffffff' }]}
+          entering={{ type: 'spring', damping: 20, stiffness: 200 }}
+          style={[
+            styles.sheet, 
+            { 
+              backgroundColor: isDark ? 'rgba(26,26,46,0.98)' : 'rgba(255,255,255,0.98)',
+              borderColor: GLASS.border,
+            }
+          ]}
         >
-          {/* Handle */}
-          <View style={[styles.handle, { backgroundColor: colors.border.primary }]} />
+          {/* Drag handle */}
+          <View style={[styles.handle, { backgroundColor: colors.textTertiary }]} />
 
           {/* Header */}
           <View style={styles.header}>
-            <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
-              {task.title}
-            </Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Ionicons name="close" size={20} color={colors.textSecondary} />
+            <View style={styles.headerContent}>
+              <LinearGradient
+                colors={[COLORS.primary, COLORS.primaryLight]}
+                style={styles.taskIcon}
+              >
+                <Ionicons name="folder" size={20} color="#fff" />
+              </LinearGradient>
+              <View style={styles.headerText}>
+                <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
+                  {task.title}
+                </Text>
+                <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+                  {isParticipant ? 'You are participating' : 'You are spectating'}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity 
+              onPress={onClose} 
+              style={[styles.closeBtn, { backgroundColor: GLASS.surface }]}
+            >
+              <Ionicons name="close" size={18} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
           {/* Actions */}
           <View style={styles.actions}>
-            {/* Join/Leave for regular users */}
+            {/* User Actions */}
             {!isRoomOwner && (
               <>
                 {isParticipant ? (
-                  <TouchableOpacity 
-                    style={[styles.actionItem, { backgroundColor: colors.surface }]}
-                    onPress={handleLeave}
-                  >
-                    <View style={[styles.iconBox, { backgroundColor: 'rgba(239,68,68,0.1)' }]}>
-                      <Ionicons name="exit-outline" size={20} color="#ef4444" />
-                    </View>
-                    <View style={styles.actionText}>
-                      <Text style={[styles.actionTitle, { color: colors.text }]}>Leave Task</Text>
-                      <Text style={[styles.actionDesc, { color: colors.textSecondary }]}>
-                        Stop participating in this task
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
+                  <>
+                    {/* Submit Proof */}
+                    <ActionItem
+                      icon="camera-outline"
+                      iconColor={COLORS.primary}
+                      iconBg={`${COLORS.primary}15`}
+                      title="Submit Proof"
+                      description="Upload evidence of completion"
+                      onPress={() => handlePress(onSubmitProof || (() => {}))}
+                    />
+                    
+                    {/* View Proof Status */}
+                    {hasProof && (
+                      <ActionItem
+                        icon="time-outline"
+                        iconColor={COLORS.accent}
+                        iconBg={`${COLORS.accent}15`}
+                        title="Proof Under Review"
+                        description="Awaiting admin verification"
+                        onPress={() => handlePress(onViewProof || (() => {}))}
+                      />
+                    )}
+                    
+                    {/* Challenge Auto-Approval */}
+                    {canChallenge && (
+                      <ActionItem
+                        icon="alert-circle-outline"
+                        iconColor={COLORS.danger}
+                        iconBg={`${COLORS.danger}15`}
+                        title="Challenge Auto-Approval"
+                        description="Dispute the automatic approval"
+                        onPress={() => handlePress(onChallenge || (() => {}))}
+                        isDestructive
+                      />
+                    )}
+                    
+                    {/* Leave Task */}
+                    <ActionItem
+                      icon="exit-outline"
+                      iconColor={COLORS.danger}
+                      iconBg={`${COLORS.danger}15`}
+                      title="Leave Task"
+                      description="Stop participating in this task"
+                      onPress={() => handlePress(onLeave || (() => {}))}
+                      isDestructive
+                    />
+                  </>
                 ) : (
-                  <TouchableOpacity 
-                    style={[styles.actionItem, { backgroundColor: colors.surface }]}
-                    onPress={handleJoin}
-                  >
-                    <View style={[styles.iconBox, { backgroundColor: 'rgba(34,197,94,0.1)' }]}>
-                      <Ionicons name="add-circle-outline" size={20} color="#22c55e" />
-                    </View>
-                    <View style={styles.actionText}>
-                      <Text style={[styles.actionTitle, { color: colors.text }]}>Join Task</Text>
-                      <Text style={[styles.actionDesc, { color: colors.textSecondary }]}>
-                        Participate and earn points
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
+                  <ActionItem
+                    icon="add-circle-outline"
+                    iconColor={COLORS.secondary}
+                    iconBg={`${COLORS.secondary}15`}
+                    title="Join Task"
+                    description="Start participating and earn points"
+                    onPress={() => handlePress(onJoin || (() => {}))}
+                  />
                 )}
               </>
             )}
 
-            {/* Admin Actions for Room Owner */}
+            {/* Admin Actions */}
             {isRoomOwner && (
               <>
-                <TouchableOpacity 
-                  style={[styles.actionItem, { backgroundColor: colors.surface }]}
-                  onPress={handleEdit}
-                >
-                  <View style={[styles.iconBox, { backgroundColor: 'rgba(99,102,241,0.1)' }]}>
-                    <Ionicons name="create-outline" size={20} color="#6366f1" />
-                  </View>
-                  <View style={styles.actionText}>
-                    <Text style={[styles.actionTitle, { color: colors.text }]}>Edit Task</Text>
-                    <Text style={[styles.actionDesc, { color: colors.textSecondary }]}>
-                      Modify task details and deadline
-                    </Text>
-                  </View>
-                </TouchableOpacity>
+                <View style={styles.divider}>
+                  <Text style={[styles.dividerText, { color: colors.textSecondary }]}>
+                    Admin Controls
+                  </Text>
+                </View>
 
-                <TouchableOpacity 
-                  style={[styles.actionItem, { backgroundColor: colors.surface }]}
-                  onPress={handleBanUser}
-                >
-                  <View style={[styles.iconBox, { backgroundColor: 'rgba(239,68,68,0.1)' }]}>
-                    <Ionicons name="person-remove-outline" size={20} color="#ef4444" />
-                  </View>
-                  <View style={styles.actionText}>
-                    <Text style={[styles.actionTitle, { color: colors.text }]}>Ban User</Text>
-                    <Text style={[styles.actionDesc, { color: colors.textSecondary }]}>
-                      Remove user from this task
-                    </Text>
-                  </View>
-                </TouchableOpacity>
+                <ActionItem
+                  icon="create-outline"
+                  iconColor={COLORS.primary}
+                  iconBg={`${COLORS.primary}15`}
+                  title="Edit Task"
+                  description="Modify task details and deadline"
+                  onPress={() => handlePress(onEdit || (() => {}))}
+                />
 
-                <TouchableOpacity 
-                  style={[styles.actionItem, { backgroundColor: colors.surface }]}
-                  onPress={handleJusticeReview}
-                >
-                  <View style={[styles.iconBox, { backgroundColor: 'rgba(168,85,247,0.1)' }]}>
-                    <Ionicons name="shield-checkmark-outline" size={20} color="#a855f7" />
-                  </View>
-                  <View style={styles.actionText}>
-                    <Text style={[styles.actionTitle, { color: colors.text }]}>Justice Review</Text>
-                    <Text style={[styles.actionDesc, { color: colors.textSecondary }]}>
-                      Review challenge disputes
-                    </Text>
-                  </View>
-                </TouchableOpacity>
+                <ActionItem
+                  icon="shield-checkmark-outline"
+                  iconColor={COLORS.primaryLight}
+                  iconBg={`${COLORS.primaryLight}15`}
+                  title="Review Proofs"
+                  description="View and verify submissions"
+                  onPress={() => handlePress(onViewProof || (() => {}))}
+                />
+
+                <ActionItem
+                  icon="scales-outline"
+                  iconColor="#a855f7"
+                  iconBg="rgba(168,85,247,0.15)"
+                  title="Justice Review"
+                  description="Resolve challenge disputes"
+                  onPress={() => handlePress(onJusticeReview || (() => {}))}
+                />
+
+                <ActionItem
+                  icon="person-remove-outline"
+                  iconColor={COLORS.danger}
+                  iconBg={`${COLORS.danger}15`}
+                  title="Manage Members"
+                  description="Remove or ban users"
+                  onPress={() => handlePress(onBanUser || (() => {}))}
+                />
               </>
             )}
+          </View>
+
+          {/* Task Stats */}
+          <View style={[styles.statsBar, { borderColor: GLASS.border }]}>
+            <View style={styles.statItem}>
+              <Ionicons name="star" size={14} color={COLORS.accent} />
+              <Text style={[styles.statValue, { color: colors.text }]}>{task.points}</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>pts</Text>
+            </View>
+            <View style={[styles.statDivider, { backgroundColor: GLASS.border }]} />
+            <View style={styles.statItem}>
+              <Ionicons name="people" size={14} color={COLORS.primary} />
+              <Text style={[styles.statValue, { color: colors.text }]}>{task.participants.length}</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>members</Text>
+            </View>
+            <View style={[styles.statDivider, { backgroundColor: GLASS.border }]} />
+            <View style={styles.statItem}>
+              <Ionicons name="eye" size={14} color={colors.textSecondary} />
+              <Text style={[styles.statValue, { color: colors.text }]}>{task.viewerIds.length}</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>viewing</Text>
+            </View>
           </View>
         </Animated.View>
       </Pressable>
@@ -200,11 +313,22 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 20,
+    borderTopLeftRadius: RADIUS.xl,
+    borderTopRightRadius: RADIUS.xl,
+    borderWidth: 1,
+    borderBottomWidth: 0,
     paddingBottom: 40,
-    maxHeight: '70%',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
   },
   handle: {
     width: 36,
@@ -218,34 +342,56 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+  },
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: SPACING.md,
+  },
+  taskIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerText: {
+    flex: 1,
   },
   title: {
     fontSize: 18,
     fontWeight: '700',
-    flex: 1,
-    marginRight: 12,
+    letterSpacing: -0.3,
+  },
+  subtitle: {
+    fontSize: 12,
+    marginTop: 2,
   },
   closeBtn: {
-    padding: 4,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   actions: {
-    paddingTop: 16,
-    gap: 12,
+    paddingHorizontal: SPACING.lg,
+    gap: SPACING.sm,
   },
   actionItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 14,
-    borderRadius: 14,
-    gap: 14,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    gap: SPACING.md,
   },
   iconBox: {
     width: 42,
     height: 42,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -255,9 +401,47 @@ const styles = StyleSheet.create({
   actionTitle: {
     fontSize: 15,
     fontWeight: '600',
-    marginBottom: 2,
   },
   actionDesc: {
-    fontSize: 13,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+  dividerText: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  statsBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: SPACING.lg,
+    marginTop: SPACING.lg,
+    paddingVertical: SPACING.md,
+    borderTopWidth: 1,
+    gap: SPACING.xl,
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  statValue: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  statLabel: {
+    fontSize: 12,
+  },
+  statDivider: {
+    width: 1,
+    height: 16,
   },
 });
