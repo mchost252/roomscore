@@ -6,8 +6,8 @@ import { Platform } from 'react-native';
 const USE_LOCAL_DEV = true; // <-- CHANGE THIS to false when ready for production
 
 // Local server URL (emulator/simulator)
-const LOCAL_API_URL = 'http://10.164.0.150:5000';  // Physical device
-const LOCAL_SOCKET_URL = 'http://10.164.0.150:5000';
+const LOCAL_API_URL = 'http://10.143.147.150:5000';  // Physical device
+const LOCAL_SOCKET_URL = 'http://10.143.147.150:5000';
 
 const LOCAL_WEB_URL = 'http://localhost:5000';  // Browser testing
 const LOCAL_WEB_SOCKET_URL = 'http://localhost:5000';

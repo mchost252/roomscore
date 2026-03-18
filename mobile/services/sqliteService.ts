@@ -48,11 +48,15 @@ export interface LocalFriend {
 class SQLiteService {
   private db: any = null;
   private initialized = false;
+  
+  // In-memory storage for web platform when SQLite is unavailable
+  private webConversations: LocalConversation[] = [];
+  private webMessages: LocalDirectMessage[] = [];
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
     if (isWeb) {
-      console.log('ℹ️ SQLite skipped on web — using backend API');
+      console.log('ℹ️ SQLite skipped on web — using in-memory cache');
       this.initialized = true;
       return;
     }
@@ -63,8 +67,15 @@ class SQLiteService {
       console.log('✅ SQLite initialized');
     } catch (error) {
       console.error('❌ SQLite initialization failed:', error);
+      // Fall back to in-memory storage on mobile if SQLite fails
+      console.log('⚠️ Falling back to in-memory storage');
       this.initialized = true;
     }
+  }
+
+  // Check if using SQLite or in-memory
+  private isUsingSQLite(): boolean {
+    return !!this.db;
   }
 
   private async createTables(): Promise<void> {
@@ -206,7 +217,12 @@ class SQLiteService {
   // DIRECT MESSAGES
   // ═══════════════════════════════════════════════════════════
   async saveDirectMessage(msg: LocalDirectMessage): Promise<void> {
-    if (!this.db) return;
+    if (!this.db) {
+      // In-memory storage for web
+      this.webMessages.push(msg);
+      console.log('[SQLite] Saved message to in-memory:', msg.id || msg.local_id);
+      return;
+    }
     await this.db.runAsync(
       `INSERT OR REPLACE INTO direct_messages
        (id, local_id, from_user_id, to_user_id, content, status, reply_to_id, reply_to_text, created_at, synced)
@@ -217,7 +233,15 @@ class SQLiteService {
   }
 
   async getDirectMessages(userId: string, friendId: string, limit = 50, before?: number): Promise<LocalDirectMessage[]> {
-    if (!this.db) return [];
+    if (!this.db) {
+      // In-memory storage for web
+      const filtered = this.webMessages.filter(m =>
+        (m.from_user_id === userId && m.to_user_id === friendId) ||
+        (m.from_user_id === friendId && m.to_user_id === userId)
+      );
+      const sorted = filtered.sort((a, b) => b.created_at - a.created_at);
+      return sorted.slice(0, limit);
+    }
     const query = before
       ? `SELECT * FROM direct_messages
          WHERE ((from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?))
@@ -263,16 +287,87 @@ class SQLiteService {
     );
   }
 
-  async markMessagesReadFrom(friendId: string, userId: string): Promise<void> {
+  /**
+   * Mark all messages FROM a friend TO the current user as 'read'.
+   * This is idempotent — already-read messages are skipped.
+   * Status promotion: only upgrades status, never downgrades.
+   */
+  async markMessagesReadFrom(friendId: string, myUserId: string): Promise<void> {
     if (!this.db) return;
     await this.db.runAsync(
       `UPDATE direct_messages SET status = 'read' WHERE from_user_id = ? AND to_user_id = ? AND status != 'read'`,
-      [userId, friendId]
+      [friendId, myUserId]
     );
   }
 
-  async deleteConversationMessages(userId: string, friendId: string): Promise<void> {
+  /**
+   * Mark all messages FROM the current user TO a friend as 'read' (when friend reads them).
+   * Status promotion only — never downgrades.
+   */
+  async markMyMessagesReadBy(myUserId: string, friendId: string): Promise<void> {
     if (!this.db) return;
+    await this.db.runAsync(
+      `UPDATE direct_messages SET status = 'read' WHERE from_user_id = ? AND to_user_id = ? AND status != 'read'`,
+      [myUserId, friendId]
+    );
+  }
+
+  /**
+   * Update message status with promotion-only semantics.
+   * Status can only move forward: sending -> sent -> delivered -> read
+   * Never downgrades (e.g. if local is 'read', server returning 'sent' is ignored).
+   */
+  async promoteMessageStatus(id: string, newStatus: string, synced?: number): Promise<void> {
+    if (!this.db) return;
+    const STATUS_ORDER: Record<string, number> = { sending: 0, sent: 1, delivered: 2, read: 3, failed: -1 };
+    const newOrder = STATUS_ORDER[newStatus] ?? 0;
+    
+    // For 'failed', always allow (it's a special case)
+    if (newStatus === 'failed') {
+      if (synced !== undefined) {
+        await this.db.runAsync(
+          'UPDATE direct_messages SET status = ?, synced = ? WHERE (id = ? OR local_id = ?) AND status = \'sending\'',
+          [newStatus, synced, id, id]
+        );
+      } else {
+        await this.db.runAsync(
+          'UPDATE direct_messages SET status = ? WHERE (id = ? OR local_id = ?) AND status = \'sending\'',
+          [newStatus, id, id]
+        );
+      }
+      return;
+    }
+
+    // For normal promotions: only upgrade
+    const validPrevStatuses = Object.entries(STATUS_ORDER)
+      .filter(([, order]) => order >= 0 && order < newOrder)
+      .map(([status]) => `'${status}'`)
+      .join(',');
+    
+    if (!validPrevStatuses) return;
+
+    if (synced !== undefined) {
+      await this.db.runAsync(
+        `UPDATE direct_messages SET status = ?, synced = ? WHERE (id = ? OR local_id = ?) AND status IN (${validPrevStatuses})`,
+        [newStatus, synced, id, id]
+      );
+    } else {
+      await this.db.runAsync(
+        `UPDATE direct_messages SET status = ? WHERE (id = ? OR local_id = ?) AND status IN (${validPrevStatuses})`,
+        [newStatus, id, id]
+      );
+    }
+  }
+
+  async deleteConversationMessages(userId: string, friendId: string): Promise<void> {
+    if (!this.db) {
+      // In-memory storage for web
+      this.webMessages = this.webMessages.filter(m => 
+        !((m.from_user_id === userId && m.to_user_id === friendId) || 
+          (m.from_user_id === friendId && m.to_user_id === userId))
+      );
+      return;
+    }
     await this.db.runAsync(
       `DELETE FROM direct_messages
        WHERE (from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?)`,
@@ -284,7 +379,17 @@ class SQLiteService {
   // CONVERSATIONS
   // ═══════════════════════════════════════════════════════════
   async saveConversation(conv: LocalConversation): Promise<void> {
-    if (!this.db) return;
+    if (!this.db) {
+      // In-memory storage for web
+      const existingIndex = this.webConversations.findIndex(c => c.friend_id === conv.friend_id);
+      if (existingIndex >= 0) {
+        this.webConversations[existingIndex] = conv;
+      } else {
+        this.webConversations.push(conv);
+      }
+      console.log('[SQLite] Saved conversation to in-memory:', conv.friend_id);
+      return;
+    }
     await this.db.runAsync(
       `INSERT OR REPLACE INTO conversations
        (friend_id, username, avatar, last_message, last_message_at, unread_count, is_online, updated_at, request_status, request_id)
@@ -296,14 +401,24 @@ class SQLiteService {
   }
 
   async getConversations(): Promise<LocalConversation[]> {
-    if (!this.db) return [];
+    if (!this.db) {
+      console.log('[SQLite] Using in-memory conversations:', this.webConversations.length);
+      return [...this.webConversations].sort((a, b) => (b.last_message_at || 0) - (a.last_message_at || 0));
+    }
     return this.db.getAllAsync(
       'SELECT * FROM conversations ORDER BY last_message_at DESC'
     ) as Promise<LocalConversation[]>;
   }
 
   async updateConversationOnline(friendId: string, isOnline: boolean): Promise<void> {
-    if (!this.db) return;
+    if (!this.db) {
+      // In-memory storage for web
+      const conv = this.webConversations.find(c => c.friend_id === friendId);
+      if (conv) {
+        conv.is_online = isOnline ? 1 : 0;
+      }
+      return;
+    }
     await this.db.runAsync(
       'UPDATE conversations SET is_online = ? WHERE friend_id = ?',
       [isOnline ? 1 : 0, friendId]
@@ -311,7 +426,14 @@ class SQLiteService {
   }
 
   async clearConversationUnread(friendId: string): Promise<void> {
-    if (!this.db) return;
+    if (!this.db) {
+      // In-memory storage for web
+      const conv = this.webConversations.find(c => c.friend_id === friendId);
+      if (conv) {
+        conv.unread_count = 0;
+      }
+      return;
+    }
     await this.db.runAsync(
       'UPDATE conversations SET unread_count = 0 WHERE friend_id = ?',
       [friendId]
@@ -319,12 +441,24 @@ class SQLiteService {
   }
 
   async deleteConversation(friendId: string): Promise<void> {
-    if (!this.db) return;
+    if (!this.db) {
+      // In-memory storage for web
+      this.webConversations = this.webConversations.filter(c => c.friend_id !== friendId);
+      return;
+    }
     await this.db.runAsync('DELETE FROM conversations WHERE friend_id = ?', [friendId]);
   }
 
   async updateConversationRequestStatus(friendId: string, status: string, requestId?: string | null): Promise<void> {
-    if (!this.db) return;
+    if (!this.db) {
+      // In-memory storage for web
+      const conv = this.webConversations.find(c => c.friend_id === friendId);
+      if (conv) {
+        conv.request_status = status;
+        conv.request_id = requestId || null;
+      }
+      return;
+    }
     await this.db.runAsync(
       'UPDATE conversations SET request_status = ?, request_id = ? WHERE friend_id = ?',
       [status, requestId || null, friendId]
@@ -332,7 +466,10 @@ class SQLiteService {
   }
 
   async getTotalUnreadCount(): Promise<number> {
-    if (!this.db) return 0;
+    if (!this.db) {
+      // In-memory storage for web
+      return this.webConversations.reduce((sum, c) => sum + (c.unread_count || 0), 0);
+    }
     const r = await this.db.getFirstAsync(
       'SELECT COALESCE(SUM(unread_count), 0) as total FROM conversations'
     ) as { total: number } | null;

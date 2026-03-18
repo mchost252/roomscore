@@ -36,12 +36,24 @@ export default function BottomTabBar({
 
   useEffect(() => {
     refreshUnread();
-    const unsub = (messageService as any).on?.('conversations_updated', refreshUnread);
+    const unsub = (messageService as any).on?.('conversation:list', refreshUnread);
     return () => {
-      (messageService as any).off?.('conversations_updated', refreshUnread);
+      (messageService as any).off?.('conversation:list', refreshUnread);
       if (typeof unsub === 'function') unsub();
     };
   }, [refreshUnread]);
+
+  const isHomeActive = pathname === '/' || pathname === '/(home)' || pathname === '/(home)/index';
+  const isRoomsActive = pathname.includes('/rooms');
+  const isMessagesActive = pathname.includes('/messages');
+  const isProfileActive = pathname.includes('/profile');
+
+  const handleNavigation = useCallback((route: string, isActive: boolean) => {
+    if (!isActive) {
+      router.push(route);
+    }
+    // If already active, do nothing to prevent re-render/shake
+  }, [router]);
 
   return (
     <>
@@ -63,25 +75,25 @@ export default function BottomTabBar({
 
       <View style={[s.tabBar, { paddingTop: 8, paddingBottom: Math.max(insets.bottom, 16) }]}>
         {/* Home */}
-        <TouchableOpacity style={s.tabItem} onPress={() => router.push('/(home)')}>
+        <TouchableOpacity style={s.tabItem} onPress={() => handleNavigation('/(home)', isHomeActive)}>
           <Ionicons 
-            name={pathname === '/' || pathname === '/(home)' || pathname === '/(home)/index' ? 'home' : 'home-outline'} 
+            name={isHomeActive ? 'home' : 'home-outline'} 
             size={22} 
-            color={pathname === '/' || pathname === '/(home)' || pathname === '/(home)/index' ? primary : textHint} 
+            color={isHomeActive ? primary : textHint} 
           />
-          {(pathname === '/' || pathname === '/(home)' || pathname === '/(home)/index') && (
+          {isHomeActive && (
             <View style={[s.tabActiveDot, { backgroundColor: primary }]} />
           )}
         </TouchableOpacity>
 
         {/* Rooms */}
-        <TouchableOpacity style={s.tabItem} onPress={() => router.push('/(home)/rooms')}>
+        <TouchableOpacity style={s.tabItem} onPress={() => handleNavigation('/(home)/rooms', isRoomsActive)}>
           <Ionicons 
-            name={pathname.includes('/rooms') ? 'planet' : 'planet-outline'} 
+            name={isRoomsActive ? 'planet' : 'planet-outline'} 
             size={22} 
-            color={pathname.includes('/rooms') ? primary : textHint} 
+            color={isRoomsActive ? primary : textHint} 
           />
-          {pathname.includes('/rooms') && (
+          {isRoomsActive && (
             <View style={[s.tabActiveDot, { backgroundColor: primary }]} />
           )}
         </TouchableOpacity>
@@ -105,14 +117,14 @@ export default function BottomTabBar({
         </View>
 
         {/* Messages */}
-        <TouchableOpacity style={s.tabItem} onPress={() => router.push('/(home)/messages')}>
+        <TouchableOpacity style={s.tabItem} onPress={() => handleNavigation('/(home)/messages', isMessagesActive)}>
           <View>
             <Ionicons 
-              name={pathname.includes('/messages') ? 'chatbubbles' : 'chatbubbles-outline'} 
+              name={isMessagesActive ? 'chatbubbles' : 'chatbubbles-outline'} 
               size={22} 
-              color={pathname.includes('/messages') ? primary : textHint} 
+              color={isMessagesActive ? primary : textHint} 
             />
-            {pathname.includes('/messages') && (
+            {isMessagesActive && (
               <View style={[s.tabActiveDot, { backgroundColor: primary, position: 'absolute', zIndex: 1, bottom: -12, alignSelf: 'center' }]} />
             )}
             {unreadCount > 0 && (
@@ -124,13 +136,13 @@ export default function BottomTabBar({
         </TouchableOpacity>
 
         {/* Profile */}
-        <TouchableOpacity style={s.tabItem} onPress={() => router.push('/(home)/profile')}>
+        <TouchableOpacity style={s.tabItem} onPress={() => handleNavigation('/(home)/profile', isProfileActive)}>
           <Ionicons 
-            name={pathname.includes('/profile') ? 'person' : 'person-outline'} 
+            name={isProfileActive ? 'person' : 'person-outline'} 
             size={22} 
-            color={pathname.includes('/profile') ? primary : textHint} 
+            color={isProfileActive ? primary : textHint} 
           />
-          {pathname.includes('/profile') && (
+          {isProfileActive && (
             <View style={[s.tabActiveDot, { backgroundColor: primary }]} />
           )}
         </TouchableOpacity>

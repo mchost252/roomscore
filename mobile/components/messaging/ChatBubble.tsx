@@ -58,7 +58,7 @@ function ChatBubble({
     <View style={[styles.row, isMine ? styles.rowRight : styles.rowLeft]}>
       <TouchableOpacity
         activeOpacity={0.85}
-        onLongPress={() => onReply?.(message)}
+        onLongPress={() => onLongPress ? onLongPress(message) : onReply?.(message)}
         onPress={isFailed ? () => onRetry?.(message) : undefined}
         style={[
           styles.bubble,
@@ -165,7 +165,17 @@ function ChatBubble({
   );
 }
 
-export default memo(ChatBubble);
+export default memo(ChatBubble, (prevProps, nextProps) => {
+  // Only re-render if these specific properties change
+  return (
+    prevProps.message.id === nextProps.message.id &&
+    prevProps.message.status === nextProps.message.status &&
+    prevProps.message.content === nextProps.message.content &&
+    prevProps.isMine === nextProps.isMine &&
+    prevProps.isDark === nextProps.isDark &&
+    prevProps.showTimestamp === nextProps.showTimestamp
+  );
+});
 
 const styles = StyleSheet.create({
   row: {

@@ -1,4 +1,4 @@
-import React, { useEffect, memo } from 'react';
+import React, { useEffect, useState, memo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import Animated, {
   useSharedValue, useAnimatedStyle, withRepeat, withTiming,
@@ -17,11 +17,13 @@ function TypingIndicator({ isDark, visible, username }: TypingIndicatorProps) {
   const dot2 = useSharedValue(0);
   const dot3 = useSharedValue(0);
   const containerOpacity = useSharedValue(0);
+  const [shouldRender, setShouldRender] = useState(visible);
 
   useEffect(() => {
-    containerOpacity.value = withTiming(visible ? 1 : 0, { duration: 200 });
-
     if (visible) {
+      setShouldRender(true);
+      containerOpacity.value = withTiming(1, { duration: 200 });
+
       const pulse = (delay: number) =>
         withDelay(
           delay,
@@ -39,9 +41,13 @@ function TypingIndicator({ isDark, visible, username }: TypingIndicatorProps) {
       dot2.value = pulse(150);
       dot3.value = pulse(300);
     } else {
+      containerOpacity.value = withTiming(0, { duration: 200 });
       dot1.value = withTiming(0, { duration: 100 });
       dot2.value = withTiming(0, { duration: 100 });
       dot3.value = withTiming(0, { duration: 100 });
+
+      const timeout = setTimeout(() => setShouldRender(false), 200);
+      return () => clearTimeout(timeout);
     }
   }, [visible]);
 
@@ -60,7 +66,7 @@ function TypingIndicator({ isDark, visible, username }: TypingIndicatorProps) {
   const d2Style = makeDotStyle(dot2);
   const d3Style = makeDotStyle(dot3);
 
-  if (!visible) return null;
+  if (!shouldRender) return null;
 
   const dotColor = isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.4)';
   const bubbleBg = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.04)';

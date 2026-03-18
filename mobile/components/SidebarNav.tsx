@@ -49,9 +49,9 @@ export default function SidebarNav({ onAIPress, onAddTask }: Props) {
 
   React.useEffect(() => {
     refreshUnread();
-    const unsub = (messageService as any).on?.('conversations_updated', refreshUnread);
+    const unsub = (messageService as any).on?.('conversation:list', refreshUnread);
     return () => {
-      (messageService as any).off?.('conversations_updated', refreshUnread);
+      (messageService as any).off?.('conversation:list', refreshUnread);
       if (typeof unsub === 'function') unsub();
     };
   }, [refreshUnread]);
@@ -115,7 +115,12 @@ export default function SidebarNav({ onAIPress, onAddTask }: Props) {
     }
   }, [open, labeled, doOpen, doClose]);
 
-  const navigate = useCallback((route: string) => {
+  const navigate = useCallback((route: string, isActive: boolean) => {
+    if (isActive) {
+      // Already on this route - just close the sidebar, don't navigate
+      doClose();
+      return;
+    }
     doClose();
     // Increase the timeout slightly to allow the close spring animation to fully resolve 
     // before locking the JS thread with React Navigation's heavy unmount/mount cycles.
@@ -181,7 +186,7 @@ export default function SidebarNav({ onAIPress, onAddTask }: Props) {
               <TouchableOpacity
                 key={i}
                 style={[styles.item, isActive && { backgroundColor: `${P}15` }]}
-                onPress={() => navigate(item.route)}
+                onPress={() => navigate(item.route, isActive || false)}
                 activeOpacity={0.7}
               >
                 {isActive && <View style={[styles.activeDot, { backgroundColor: P }]} />}

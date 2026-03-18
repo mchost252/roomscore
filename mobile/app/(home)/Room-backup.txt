@@ -1,23 +1,7 @@
-/**
- * RoomsScreen - Room List / Folder Hub
- * 
- * Displays user's rooms with tabs for My Rooms, Discover, and Join Code
- * Uses the enhanced RoomCard component for glassmorphic UI
- * 
- * @FIX: Removed entrance animations to prevent white flash on navigation
- */
-
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useRef, useLayoutEffect, useState, useCallback, useEffect } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  RefreshControl,
-  TextInput,
-  Modal,
-  ActivityIndicator,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated,
+  RefreshControl, TextInput, Modal, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,9 +11,9 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useHaptics } from '../../hooks';
-import { RoomCard } from '../../components/room';
-import { Room, EnhancedRoom } from '../../types';
 import roomService from '../../services/roomService';
+import { Room } from '../../types';
+import Skeleton, { SkeletonGroup } from '../../components/ui/Skeleton';
 
 type Tab = 'mine' | 'discover';
 
@@ -41,7 +25,17 @@ export default function RoomsScreen() {
   const haptics = useHaptics();
   const insets = useSafeAreaInsets();
 
-  // ── Theme colors ──
+  // ── Entrance animation ──
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+  useLayoutEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.spring(slideAnim, { toValue: 0, tension: 220, friction: 18, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  // ── Theme ──
   const t = {
     bg: colors.background.primary,
     surface: colors.surface,
@@ -57,41 +51,37 @@ export default function RoomsScreen() {
   const [activeTab, setActiveTab] = useState<Tab>('mine');
   const [myRooms, setMyRooms] = useState<Room[]>([]);
   const [publicRooms, setPublicRooms] = useState<Room[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [joinModalVisible, setJoinModalVisible] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [joining, setJoining] = useState(false);
 
-  // ── Data loading - completely silent, no loading state ──
+  // ── Data loading ──
   const loadRooms = useCallback(async (isRefresh = false) => {
     try {
+      if (!isRefresh) setLoading(true);
       if (activeTab === 'mine') {
         const rooms = await roomService.getMyRooms();
-        setMyRooms(prev => {
-          if (JSON.stringify(prev) !== JSON.stringify(rooms)) return rooms;
-          return prev;
-        });
+        setMyRooms(rooms);
       } else {
         const rooms = await roomService.getPublicRooms();
-        setPublicRooms(prev => {
-          if (JSON.stringify(prev) !== JSON.stringify(rooms)) return rooms;
-          return prev;
-        });
+        setPublicRooms(rooms);
       }
     } catch (err: any) {
-      // Silent fail - keep showing current data
+      showToast({ message: err?.message || 'Failed to load rooms', type: 'error' });
     } finally {
+      setLoading(false);
       setRefreshing(false);
     }
   }, [activeTab]);
 
-  // ── Initial load - no loading state, show empty or cached ──
   useEffect(() => {
     loadRooms();
   }, [activeTab]);
 
   const onRefresh = useCallback(() => {
-    // Silent background refresh - no UI change
+    setRefreshing(true);
     loadRooms(true);
   }, [loadRooms]);
 
@@ -119,7 +109,7 @@ export default function RoomsScreen() {
     } finally {
       setJoining(false);
     }
-  }, [joinCode, activeTab, router, loadRooms, haptics, showToast]);
+  }, [joinCode, activeTab]);
 
   // ── Join public room ──
   const handleJoinPublic = useCallback(async (room: Room) => {
@@ -137,11 +127,18 @@ export default function RoomsScreen() {
       haptics.error();
       showToast({ message: err?.response?.data?.message || 'Failed to join', type: 'error' });
     }
-  }, [loadRooms, haptics, showToast]);
+  }, []);
 
-  // ── Convert Room to EnhancedRoom for RoomCard component ──
-  const convertToEnhancedRoom = useCallback((room: Room): EnhancedRoom => {
-    return {
+  // ── Helpers ──
+  const getCompletedCount = (room: Room) => room.tasks?.filter(t => t.isCompleted).length || 0;
+  const getTotalTasks = (room: Room) => room.tasks?.length || 0;
+  const getMemberCount = (room: Room) => room.members?.length || 0;
+  const isOwner = (room: Room) => room.ownerId === user?.id || room.owner?._id === user?.id;
+
+  // ── Render room card using new enhanced component ──
+  const renderRoomCard = (room: Room, isPublic = false) => {
+    // Convert Room to EnhancedRoom format for the new component
+    const enhancedRoom = {
       id: room.id || room._id,
       name: room.name,
       code: room.joinCode,
@@ -153,58 +150,40 @@ export default function RoomsScreen() {
       taskCount: room.tasks?.length || 0,
       isFlipped: false,
     };
-  }, []);
-
-  // ── Render room card using enhanced component ──
-  const renderRoomCard = (room: Room, index: number) => {
-    const enhancedRoom = convertToEnhancedRoom(room);
-    const isPublic = activeTab === 'discover';
 
     return (
       <RoomCard
-        key={room.id || room._id}
         room={enhancedRoom}
         onPress={() => {
-          if (isPublic) {
-            // For public rooms, show join option
-            handleJoinPublic(room);
-            return;
-          }
+          if (isPublic) return;
           haptics.tap();
-          router.push({
-            pathname: '/(home)/room-detail',
-            params: { roomId: room.id || room._id }
-          });
+          router.push({ pathname: '/(home)/room-detail', params: { roomId: room.id || room._id } });
         }}
         isFirstEntry={true}
-        index={index}
+        index={0}
       />
     );
   };
 
-  // ── WhatsApp-style content - show immediately, no refresh control ──
-  const renderContent = () => {
-    const rooms = activeTab === 'mine' ? myRooms : publicRooms;
-    
-    // Show empty state without any loading indicator
-    if (rooms.length === 0) {
-      return (
-        <View style={styles.content}>
-          {renderEmpty()}
+  // ── Loading skeleton ──
+  const renderSkeleton = () => (
+    <View style={{ paddingHorizontal: 20, gap: 12 }}>
+      {[1, 2, 3].map(i => (
+        <View key={i} style={[styles.roomCard, { backgroundColor: t.surface, borderColor: t.border }]}>
+          <SkeletonGroup gap={10}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Skeleton width={40} height={40} borderRadius={12} />
+              <View style={{ flex: 1, gap: 6 }}>
+                <Skeleton width="60%" height={16} borderRadius={6} />
+                <Skeleton width="40%" height={12} borderRadius={4} />
+              </View>
+            </View>
+            <Skeleton width="100%" height={4} borderRadius={2} />
+          </SkeletonGroup>
         </View>
-      );
-    }
-    
-    return (
-      <ScrollView
-        style={styles.content}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {rooms.map((room, index) => renderRoomCard(room, index))}
-      </ScrollView>
-    );
-  };
+      ))}
+    </View>
+  );
 
   // ── Empty state ──
   const renderEmpty = () => (
@@ -215,11 +194,7 @@ export default function RoomsScreen() {
         end={{ x: 1, y: 1 }}
         style={styles.emptyIcon}
       >
-        <Ionicons
-          name={activeTab === 'mine' ? 'people' : 'search'}
-          size={32}
-          color="#fff"
-        />
+        <Ionicons name={activeTab === 'mine' ? 'people' : 'search'} size={32} color="#fff" />
       </LinearGradient>
       <Text style={[styles.emptyTitle, { color: t.text }]}>
         {activeTab === 'mine' ? 'No Rooms Yet' : 'No Public Rooms'}
@@ -258,9 +233,7 @@ export default function RoomsScreen() {
             style={[styles.emptyBtnOutline, { borderColor: t.border }]}
           >
             <Ionicons name="enter-outline" size={16} color={t.primary} />
-            <Text style={[styles.emptyBtnOutlineText, { color: t.primary }]}>
-              Join with Code
-            </Text>
+            <Text style={[styles.emptyBtnOutlineText, { color: t.primary }]}>Join with Code</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -270,111 +243,91 @@ export default function RoomsScreen() {
   const rooms = activeTab === 'mine' ? myRooms : publicRooms;
 
   return (
-    <View style={[styles.container, { backgroundColor: t.bg }]}>
-      <LinearGradient
-        colors={t.gradient as any}
-        start={{ x: 0.2, y: 0 }}
-        end={{ x: 0.8, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
+    <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+      <View style={[styles.container, { backgroundColor: t.bg }]}>
+        <LinearGradient
+          colors={t.gradient as any}
+          start={{ x: 0.2, y: 0 }}
+          end={{ x: 0.8, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
 
-      {/* ── Header ── */}
-      <View style={[styles.header, { paddingTop: Math.max(insets.top + 8, 52) }]}>
-        <View style={styles.headerLeft}>
-          <Text style={[styles.title, { color: t.text }]}>Spaces</Text>
-          <Text style={[styles.subtitle, { color: t.textSub }]}>Your habit rooms</Text>
-        </View>
-        <TouchableOpacity
-          onPress={() => {
-            haptics.tap();
-            router.push('/(home)/create-room');
-          }}
-          style={[styles.createButton, { backgroundColor: colors.primary }]}
-        >
-          <Ionicons name="add" size={22} color="#fff" />
-        </TouchableOpacity>
-      </View>
-
-      {/* ── Tab bar - Pill shaped segmented control ── */}
-      <View style={[styles.tabBar, { backgroundColor: t.surface, borderColor: t.border }]}>
-        <View style={[styles.tabPill, activeTab === 'mine' && { backgroundColor: t.primary }]}>
+        {/* ── Header ── */}
+        <View style={[styles.header, { paddingTop: Math.max(insets.top + 8, 52) }]}>
           <TouchableOpacity
-            style={styles.tab}
+            onPress={() => router.back()}
+            style={[styles.backButton, { backgroundColor: t.surface, borderColor: t.border }]}
+          >
+            <Ionicons name="chevron-back" size={22} color={t.text} />
+          </TouchableOpacity>
+          <Text style={[styles.title, { color: t.text }]}>Rooms</Text>
+          <TouchableOpacity
             onPress={() => {
-              haptics.selection();
-              setActiveTab('mine');
+              haptics.tap();
+              router.push('/(home)/create-room');
             }}
+            style={[styles.backButton, { backgroundColor: t.surface, borderColor: t.border }]}
+          >
+            <Ionicons name="add" size={22} color={t.primary} />
+          </TouchableOpacity>
+        </View>
+
+        {/* ── Tab bar ── */}
+        <View style={[styles.tabBar, { borderColor: t.border }]}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'mine' && styles.tabActive, activeTab === 'mine' && { borderColor: t.primary }]}
+            onPress={() => { haptics.selection(); setActiveTab('mine'); }}
             activeOpacity={0.7}
           >
-            <Ionicons
-              name="home-outline"
-              size={16}
-              color={activeTab === 'mine' ? '#fff' : t.textSub}
-            />
-            <Text
-              style={[
-                styles.tabText,
-                { color: activeTab === 'mine' ? '#fff' : t.textSub }
-              ]}
-            >
+            <Ionicons name="home-outline" size={16} color={activeTab === 'mine' ? t.primary : t.textSub} />
+            <Text style={[styles.tabText, { color: activeTab === 'mine' ? t.primary : t.textSub }]}>
               My Rooms
             </Text>
           </TouchableOpacity>
-        </View>
-        <View style={[styles.tabPill, activeTab === 'discover' && { backgroundColor: t.primary }]}>
           <TouchableOpacity
-            style={styles.tab}
-            onPress={() => {
-              haptics.selection();
-              setActiveTab('discover');
-            }}
+            style={[styles.tab, activeTab === 'discover' && styles.tabActive, activeTab === 'discover' && { borderColor: t.primary }]}
+            onPress={() => { haptics.selection(); setActiveTab('discover'); }}
             activeOpacity={0.7}
           >
-            <Ionicons
-              name="compass-outline"
-              size={16}
-              color={activeTab === 'discover' ? '#fff' : t.textSub}
-            />
-            <Text
-              style={[
-                styles.tabText,
-                { color: activeTab === 'discover' ? '#fff' : t.textSub }
-              ]}
-            >
+            <Ionicons name="compass-outline" size={16} color={activeTab === 'discover' ? t.primary : t.textSub} />
+            <Text style={[styles.tabText, { color: activeTab === 'discover' ? t.primary : t.textSub }]}>
               Discover
             </Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab]}
+            onPress={() => { haptics.tap(); setJoinModalVisible(true); }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="enter-outline" size={16} color={t.textSub} />
+            <Text style={[styles.tabText, { color: t.textSub }]}>Join Code</Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          style={styles.tabJoin}
-          onPress={() => {
-            haptics.tap();
-            setJoinModalVisible(true);
-          }}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="enter-outline" size={16} color={t.textSub} />
-          <Text style={[styles.tabText, { color: t.textSub }]}>Join</Text>
-        </TouchableOpacity>
+
+        {/* ── Content ── */}
+        {loading ? renderSkeleton() : rooms.length === 0 ? (
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.primary} />}
+          >
+            {renderEmpty()}
+          </ScrollView>
+        ) : (
+          <ScrollView
+            style={styles.content}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.primary} />}
+          >
+            {rooms.map(room => renderRoomCard(room, activeTab === 'discover'))}
+          </ScrollView>
+        )}
       </View>
 
-      {/* ── Content - WhatsApp style: show immediately, no skeleton ── */}
-      {renderContent()}
-
       {/* ── Join Code Modal ── */}
-      <Modal
-        visible={joinModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setJoinModalVisible(false)}
-      >
+      <Modal visible={joinModalVisible} transparent animationType="fade" onRequestClose={() => setJoinModalVisible(false)}>
         <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalContent,
-              { backgroundColor: isDark ? '#1a1a2e' : '#fff', borderColor: t.border }
-            ]}
-          >
+          <View style={[styles.modalContent, { backgroundColor: isDark ? '#1a1a2e' : '#fff', borderColor: t.border }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: t.text }]}>Join a Room</Text>
               <TouchableOpacity onPress={() => setJoinModalVisible(false)}>
@@ -387,14 +340,11 @@ export default function RoomsScreen() {
             </Text>
 
             <TextInput
-              style={[
-                styles.codeInput,
-                {
-                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                  borderColor: t.border,
-                  color: t.text,
-                }
-              ]}
+              style={[styles.codeInput, {
+                backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                borderColor: t.border,
+                color: t.text,
+              }]}
               placeholder="e.g. ABCD1234"
               placeholderTextColor={t.textHint}
               value={joinCode}
@@ -410,11 +360,7 @@ export default function RoomsScreen() {
               activeOpacity={0.8}
               onPress={handleJoin}
               disabled={joining || !joinCode.trim()}
-              style={{
-                borderRadius: 14,
-                overflow: 'hidden',
-                opacity: joining || !joinCode.trim() ? 0.5 : 1
-              }}
+              style={{ borderRadius: 14, overflow: 'hidden', opacity: joining || !joinCode.trim() ? 0.5 : 1 }}
             >
               <LinearGradient
                 colors={['#6366f1', '#8b5cf6']}
@@ -435,35 +381,18 @@ export default function RoomsScreen() {
           </View>
         </View>
       </Modal>
-    </View>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingBottom: 16,
-  },
-  headerLeft: {
-    flex: 1,
-  },
-  createButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#6366f1',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    paddingBottom: 12,
   },
   backButton: {
     width: 36,
@@ -474,52 +403,30 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   title: {
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 14,
-    marginTop: 2,
-    fontWeight: '500',
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: -0.3,
   },
   // ── Tabs ──
   tabBar: {
     flexDirection: 'row',
     marginHorizontal: 20,
     marginBottom: 16,
-    backgroundColor: 'rgba(99,102,241,0.08)',
-    borderRadius: 14,
-    padding: 4,
-  },
-  tabPill: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 10,
-    paddingVertical: 8,
-    gap: 6,
-  },
-  tabJoin: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    gap: 6,
+    gap: 4,
   },
   tab: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    flex: 1,
-    paddingVertical: 8,
-    gap: 6,
-    borderRadius: 8,
+    gap: 4,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderBottomWidth: 2,
+    borderColor: 'transparent',
   },
   tabActive: {
     borderBottomWidth: 2,
-    borderColor: 'transparent',
   },
   tabText: {
     fontSize: 13,
@@ -527,76 +434,166 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   // ── Content ──
-  content: {
-    flex: 1,
-  },
+  content: { flex: 1 },
   scrollContent: {
     paddingHorizontal: 20,
     paddingBottom: 40,
     gap: 12,
   },
-  // ── Empty State ──
-  emptyContainer: {
+  // ── Room Card ──
+  roomCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    gap: 12,
+  },
+  roomCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  roomCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     flex: 1,
+  },
+  roomIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  roomNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  roomName: {
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: -0.2,
+    flexShrink: 1,
+  },
+  roomDesc: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  ownerBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  ownerBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#6366f1',
+    letterSpacing: 0.3,
+  },
+  // ── Stats ──
+  roomStats: {
+    flexDirection: 'row',
+    gap: 14,
+    flexWrap: 'wrap',
+  },
+  stat: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  statText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  // ── Progress ──
+  progressBarBg: {
+    height: 4,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  // ── Join card button ──
+  joinCardBtn: {
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  joinCardBtnGradient: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 32,
+    gap: 6,
+    paddingVertical: 8,
+  },
+  joinCardBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  // ── Empty State ──
+  emptyContainer: {
+    alignItems: 'center',
     paddingTop: 60,
+    paddingHorizontal: 32,
   },
   emptyIcon: {
     width: 72,
     height: 72,
-    borderRadius: 24,
-    alignItems: 'center',
+    borderRadius: 36,
     justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: 20,
   },
   emptyTitle: {
     fontSize: 20,
     fontWeight: '700',
-    letterSpacing: -0.3,
+    letterSpacing: -0.4,
     marginBottom: 8,
   },
   emptySubtitle: {
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 20,
-    marginBottom: 24,
+    marginBottom: 28,
   },
   emptyActions: {
-    flexDirection: 'row',
     gap: 12,
+    width: '100%',
   },
   emptyBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 6,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
   },
   emptyBtnText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
   },
   emptyBtnOutline: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 6,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
     borderRadius: 14,
     borderWidth: 1,
   },
   emptyBtnOutlineText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
   },
   // ── Modal ──
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
@@ -604,44 +601,44 @@ const styles = StyleSheet.create({
   modalContent: {
     width: '100%',
     borderRadius: 20,
-    padding: 20,
     borderWidth: 1,
+    padding: 24,
+    gap: 16,
   },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: '700',
+    letterSpacing: -0.3,
   },
   modalSubtitle: {
-    fontSize: 14,
-    marginBottom: 16,
+    fontSize: 13,
+    lineHeight: 18,
   },
   codeInput: {
-    height: 52,
     borderRadius: 12,
-    paddingHorizontal: 16,
-    fontSize: 16,
-    fontWeight: '600',
-    letterSpacing: 2,
     borderWidth: 1,
-    marginBottom: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 4,
+    textAlign: 'center',
   },
   modalJoinBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    height: 50,
-    borderRadius: 14,
+    paddingVertical: 14,
   },
   modalJoinBtnText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
   },
 });

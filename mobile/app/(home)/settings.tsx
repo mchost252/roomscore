@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Alert, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -8,6 +8,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import notificationService from '../../services/notificationService';
+import ConfirmationModal from '../../components/ConfirmationModal';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -37,6 +38,12 @@ export default function SettingsScreen() {
   const [notifications, setNotifications] = useState(true);
   const [soundEffects, setSoundEffects] = useState(true);
   const [hapticFeedback, setHapticFeedback] = useState(true);
+  const [infoModal, setInfoModal] = useState<{ visible: boolean; title: string; message: string }>({
+    visible: false,
+    title: '',
+    message: '',
+  });
+  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -75,32 +82,26 @@ export default function SettingsScreen() {
       // Re-enable: request permission and schedule
       const granted = await notificationService.initialize();
       if (granted) {
-        Alert.alert(
-          'Notifications Enabled ✓',
-          'You\'ll receive smart reminders for your tasks at 8am and 8pm, plus alerts for overdue tasks.',
-          [{ text: 'Got it!' }]
-        );
+        setInfoModal({
+          visible: true,
+          title: 'Notifications Enabled',
+          message: 'You’ll receive smart reminders for your tasks at 8am and 8pm, plus alerts for overdue tasks.',
+        });
       } else {
-        Alert.alert(
-          'Permission Required',
-          'Please enable notifications in your device settings to receive task reminders.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Open Settings', onPress: () => {
-              // On real device this would open settings
-              Alert.alert('Info', 'Open your device Settings → Krios → Notifications');
-            }},
-          ]
-        );
+        setInfoModal({
+          visible: true,
+          title: 'Permission Required',
+          message: 'Please enable notifications in your device settings to receive task reminders.\n\nOpen your device Settings → Krios → Notifications.',
+        });
       }
     } else {
       // Disable: cancel all scheduled notifications
       await notificationService.cancelAll();
-      Alert.alert(
-        'Notifications Disabled',
-        'You won\'t receive any task reminders. You can re-enable them anytime.',
-        [{ text: 'OK' }]
-      );
+      setInfoModal({
+        visible: true,
+        title: 'Notifications Disabled',
+        message: 'You won’t receive any task reminders. You can re-enable them anytime.',
+      });
     }
   };
 
@@ -115,10 +116,7 @@ export default function SettingsScreen() {
   };
 
   const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: async () => { await logout(); } },
-    ]);
+    setLogoutModalVisible(true);
   };
 
   const accentColor = '#6366f1';
@@ -149,16 +147,16 @@ export default function SettingsScreen() {
       title: 'Account',
       items: [
         { icon: 'person', label: 'Edit Profile', desc: 'Change your name and avatar', type: 'navigate', onPress: () => router.push('/(home)/profile') },
-        { icon: 'lock-closed', label: 'Privacy', desc: 'Manage your privacy settings', type: 'navigate', onPress: () => Alert.alert('Privacy', 'Coming soon!') },
-        { icon: 'shield-checkmark', label: 'Security', desc: 'Password and authentication', type: 'navigate', onPress: () => Alert.alert('Security', 'Coming soon!') },
+        { icon: 'lock-closed', label: 'Privacy', desc: 'Manage your privacy settings', type: 'navigate', onPress: () => setInfoModal({ visible: true, title: 'Privacy', message: 'Coming soon!' }) },
+        { icon: 'shield-checkmark', label: 'Security', desc: 'Password and authentication', type: 'navigate', onPress: () => setInfoModal({ visible: true, title: 'Security', message: 'Coming soon!' }) },
       ],
     },
     {
       title: 'Support',
       items: [
-        { icon: 'help-circle', label: 'Help & FAQ', desc: 'Get help and find answers', type: 'navigate', onPress: () => Alert.alert('Help', 'Coming soon!') },
-        { icon: 'chatbubble', label: 'Contact Support', desc: 'Reach out to our team', type: 'navigate', onPress: () => Alert.alert('Support', 'Coming soon!') },
-        { icon: 'document-text', label: 'Terms of Service', desc: 'Read our terms', type: 'navigate', onPress: () => Alert.alert('Terms', 'Coming soon!') },
+        { icon: 'help-circle', label: 'Help & FAQ', desc: 'Get help and find answers', type: 'navigate', onPress: () => setInfoModal({ visible: true, title: 'Help & FAQ', message: 'Coming soon!' }) },
+        { icon: 'chatbubble', label: 'Contact Support', desc: 'Reach out to our team', type: 'navigate', onPress: () => setInfoModal({ visible: true, title: 'Support', message: 'Coming soon!' }) },
+        { icon: 'document-text', label: 'Terms of Service', desc: 'Read our terms', type: 'navigate', onPress: () => setInfoModal({ visible: true, title: 'Terms of Service', message: 'Coming soon!' }) },
       ],
     },
   ];
@@ -171,6 +169,32 @@ export default function SettingsScreen() {
         start={{ x: 0.2, y: 0 }}
         end={{ x: 0.8, y: 1 }}
         style={StyleSheet.absoluteFill}
+      />
+
+      <ConfirmationModal
+        visible={infoModal.visible}
+        title={infoModal.title}
+        message={infoModal.message}
+        confirmText="OK"
+        cancelText="Close"
+        isDark={isDark}
+        onConfirm={() => setInfoModal({ visible: false, title: '', message: '' })}
+        onCancel={() => setInfoModal({ visible: false, title: '', message: '' })}
+      />
+
+      <ConfirmationModal
+        visible={logoutModalVisible}
+        title="Logout"
+        message="Are you sure you want to logout?"
+        confirmText="Logout"
+        cancelText="Cancel"
+        destructive
+        isDark={isDark}
+        onCancel={() => setLogoutModalVisible(false)}
+        onConfirm={async () => {
+          setLogoutModalVisible(false);
+          await logout();
+        }}
       />
 
       <View style={[styles.header, { paddingTop: Math.max(insets.top + 8, 52) }]}>

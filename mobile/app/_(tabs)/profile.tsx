@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../constants/theme';
 import { GradientText, GlowCard } from '../../components';
 import { CosmicAvatar, NeumorphicStatsCard, ActivityHeatmap } from '../../components/profile';
+import ConfirmationModal from '../../components/ConfirmationModal';
 
 interface MenuItem {
   icon: string;
@@ -22,6 +23,7 @@ export default function ProfileScreen() {
   const [tasksCompleted, setTasksCompleted] = useState(0);
   const [roomsCount, setRoomsCount] = useState(0);
   const [timeSaved, setTimeSaved] = useState(0);
+  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
 
   useEffect(() => {
     setTasksCompleted(47);
@@ -30,21 +32,7 @@ export default function ProfileScreen() {
   }, []);
 
   const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            await logout();
-            router.replace('/(auth)/login');
-          },
-        },
-      ]
-    );
+    setLogoutModalVisible(true);
   };
 
   const menuItems: MenuItem[] = [
@@ -61,6 +49,21 @@ export default function ProfileScreen() {
       locations={gradients.background.locations as any}
       style={styles.container}
     >
+      <ConfirmationModal
+        visible={logoutModalVisible}
+        title="Logout"
+        message="Are you sure you want to logout?"
+        confirmText="Logout"
+        cancelText="Cancel"
+        destructive
+        isDark={isDark}
+        onCancel={() => setLogoutModalVisible(false)}
+        onConfirm={async () => {
+          setLogoutModalVisible(false);
+          await logout();
+          router.replace('/(auth)/login');
+        }}
+      />
       <ScrollView contentContainerStyle={{ padding: spacing.screen.paddingHorizontal }}>
         <View style={[styles.header, { marginTop: spacing.xxxl, marginBottom: spacing.xl }]}>
           <CosmicAvatar 

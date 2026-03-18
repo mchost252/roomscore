@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
+import React, { createContext, useState, useContext, useEffect, useRef, ReactNode } from 'react';
 import axios from 'axios';
 import api from '../services/api';
 import { secureStorage } from '../services/storage';
@@ -36,14 +36,34 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  let lastLoadUserAttempt = 0;
+  // FIX: useRef so the cooldown persists across re-renders (was a plain `let` before)
+  const lastLoadUserAttemptRef = useRef(0);
   const LOAD_USER_COOLDOWN = 30000; // 30 seconds
+
+  // Helper: safely initialize all messaging services
+  const initializeMessagingServices = async (userId: string, token: string) => {
+    try {
+      await sqliteService.initialize();
+    } catch (err) {
+      console.warn('[Auth] SQLite init failed (non-fatal):', err);
+    }
+    try {
+      await syncEngine.initialize(userId.toString(), token);
+    } catch (err) {
+      console.warn('[Auth] SyncEngine init failed (non-fatal):', err);
+    }
+    try {
+      await messageService.initialize(userId);
+    } catch (err) {
+      console.warn('[Auth] MessageService init failed (non-fatal):', err);
+    }
+  };
 
   // Load user on mount
   useEffect(() => {
-    console.log('🚀 AuthProvider mounted');
+    console.log('[Auth] AuthProvider mounted');
     checkAuthStatus().catch((err) => {
-      console.error('❌ Fatal error in checkAuthStatus:', err);
+      console.error('[Auth] Fatal error in checkAuthStatus:', err);
       setLoading(false);
     });
   }, []);
@@ -51,33 +71,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Check if user is authenticated
   const checkAuthStatus = async () => {
     try {
-      console.log('🔍 Checking auth status...');
       const token = await secureStorage.getItem(TOKEN_KEY);
       if (token) {
-        console.log('✅ Token found');
-        
-        // PHASE 1 OPTIMISTIC: Load cached user immediately for instant UI
+        // OPTIMISTIC: Load cached user immediately for instant UI
         const cachedUser = await secureStorage.getItem('cached_user');
         if (cachedUser) {
-          console.log('⚡ Using cached user for instant load');
           const parsed = JSON.parse(cachedUser);
           setUser(parsed);
           setLoading(false);
 
-          // Initialize messaging services in background
-          await sqliteService.initialize();
-          await syncEngine.initialize(parsed.id.toString(), token);
-          await messageService.initialize(parsed.id);
+          // Initialize messaging services in background (with error handling)
+          await initializeMessagingServices(parsed.id, token);
         }
         
         // Then fetch fresh data in background
         await loadUser();
       } else {
-        console.log('ℹ️ No token found, user not authenticated');
         setLoading(false);
       }
     } catch (error) {
-      console.error('❌ Error checking auth status:', error);
+      console.error('[Auth] Error checking auth status:', error);
       setLoading(false);
     }
   };
@@ -94,34 +107,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Load user profile (debounced to prevent rate limiting)
   const loadUser = async () => {
     const now = Date.now();
-    if (now - lastLoadUserAttempt < LOAD_USER_COOLDOWN) {
-      console.log('⏳ loadUser skipped - cooldown period');
+    if (now - lastLoadUserAttemptRef.current < LOAD_USER_COOLDOWN) {
       return;
     }
-    lastLoadUserAttempt = now;
+    lastLoadUserAttemptRef.current = now;
 
     try {
-      console.log('🔄 Loading user profile...');
       const response = await api.get('/auth/profile', { timeout: 5000 });
-      console.log('✅ User profile loaded');
       
-      // PHASE 1: Cache user data for next instant load
+      // Cache user data for next instant load
       await secureStorage.setItem('cached_user', JSON.stringify(response.data.user));
       
       setUser(response.data.user);
       setLoading(false);
     } catch (error: any) {
-      console.error('❌ Failed to load user:', error.response?.data || error.message);
+      console.error('[Auth] Failed to load user:', error.response?.data || error.message);
       
       // Only logout on explicit auth errors (401)
       if (error.response?.status === 401) {
-        console.log('🔒 Authentication failed - logging out');
         await secureStorage.removeItem('cached_user');
         setLoading(false);
         await logout();
       } else {
-        // Don't retry - just set loading false to avoid delays
-        console.warn('⚠️ Could not load user profile');
         setLoading(false);
       }
     }
@@ -130,7 +137,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Register
   const register = async (email: string, password: string, username: string) => {
     try {
-      console.log('📝 Attempting registration...');
       const timezone = getUserTimezone();
       
       const response = await axios.post<AuthResponse>(`${API_BASE_URL}/api/auth/register`, {
@@ -144,13 +150,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       await secureStorage.setItem(TOKEN_KEY, token);
       await secureStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+      // Cache user for instant load next time
+      await secureStorage.setItem('cached_user', JSON.stringify(newUser));
       
       setUser(newUser);
-      console.log('✅ Registration successful');
+
+      // FIX: Initialize messaging services after registration (was missing before)
+      await initializeMessagingServices(newUser.id, token);
       
+      console.log('[Auth] Registration successful');
       return { success: true };
     } catch (error: any) {
-      console.error('❌ Registration failed:', error.response?.data || error.message);
+      console.error('[Auth] Registration failed:', error.response?.data || error.message);
       
       let errorMessage = 'Registration failed';
       
@@ -173,7 +184,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Login
   const login = async (email: string, password: string) => {
     try {
-      console.log('🔐 Attempting login...');
       const timezone = getUserTimezone();
       
       const response = await axios.post<AuthResponse>(`${API_BASE_URL}/api/auth/login`, {
@@ -188,27 +198,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       await secureStorage.setItem(TOKEN_KEY, token);
       await secureStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
-      // PHASE 1: Cache user for instant load next time
+      // Cache user for instant load next time
       await secureStorage.setItem('cached_user', JSON.stringify(newUser));
       
       setUser(newUser);
       
-      // PHASE 3: Initialize real-time sync engine
-      await syncEngine.initialize(newUser.id.toString(), token);
+      // Initialize all messaging services
+      await initializeMessagingServices(newUser.id, token);
       
-      // PHASE 4: Initialize messaging (SQLite + socket listeners)
-      await sqliteService.initialize();
-      await messageService.initialize(newUser.id);
-      
-      console.log('✅ Login successful');
-      
+      console.log('[Auth] Login successful');
       return { success: true };
     } catch (error: any) {
-      console.error('❌ Login failed:', error.response?.data || error.message);
+      console.error('[Auth] Login failed:', error.response?.data || error.message);
       
       let errorMessage = 'Login failed';
       
-      // Check for network errors with better detection
       if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
         errorMessage = 'Connection timed out. The server might be starting up. Please try again.';
       } else if (error.code === 'ERR_NETWORK' || error.message === 'Network Error' || !error.response) {
@@ -234,17 +238,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       await api.post('/auth/logout');
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error('[Auth] Logout API error:', error);
     } finally {
       await secureStorage.removeItem(TOKEN_KEY);
       await secureStorage.removeItem(REFRESH_TOKEN_KEY);
       await secureStorage.removeItem('cached_user');
       
-      // PHASE 3: Disconnect sync engine
+      // Disconnect real-time services
       syncEngine.disconnect();
-      
-      // PHASE 4: Disconnect messaging
       messageService.disconnect();
+      
+      // FIX: Clear local data on logout to prevent cross-user data leakage
+      try {
+        await sqliteService.clearAllData();
+      } catch (err) {
+        console.warn('[Auth] Failed to clear SQLite on logout:', err);
+      }
       
       setUser(null);
     }

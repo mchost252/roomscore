@@ -9,7 +9,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, RefreshControl, Pressable, ScrollView,
-  Dimensions, Platform, StatusBar, Alert, Modal, FlatList, Image,
+  Dimensions, Platform, StatusBar, Modal, FlatList, Image,
+  KeyboardAvoidingView,
 } from 'react-native';
 import Animated, {
   useSharedValue, useAnimatedStyle, useAnimatedScrollHandler,
@@ -23,18 +24,21 @@ import { BlurView } from 'expo-blur';
 import { Svg, Path, Defs, LinearGradient as SvgGrad, Stop } from 'react-native-svg';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
+import { HomeNavContext } from './_layout';
 import messageService from '../../services/messageService';
+import api from '../../services/api';
 import { LocalConversation } from '../../services/sqliteService';
 import ConversationCard from '../../components/messaging/ConversationCard';
+import ConfirmationModal from '../../components/ConfirmationModal';
 import { CircularKMenu } from '../../components/CircularKMenu';
 import SidebarNav from '../../components/SidebarNav';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
+import { secureStorage } from '../../services/storage';
 const { width: W, height: H } = Dimensions.get('window');
 const COLLAPSE_AT = 80;
 const primary   = '#6366f1';
 const accent    = '#8b5cf6';
 const cyan      = '#06b6d4';
+const AnimatedFlatList = Animated.createAnimatedComponent(FlatList);
 
 export default function MessagesScreen() {
   const { isDark } = useTheme();
@@ -65,12 +69,23 @@ export default function MessagesScreen() {
   const [addFriendSearch, setAddFriendSearch] = useState('');
   const [addFriendResults, setAddFriendResults] = useState<LocalConversation[]>([]);
   const [navStyle, setNavStyle] = useState<'bottom' | 'sidebar'>('bottom');
+  const [removeModalVisible, setRemoveModalVisible] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<LocalConversation | null>(null);
 
   useEffect(() => {
-    AsyncStorage.getItem('krios_nav_style').then(v => {
+    secureStorage.getItem('krios_nav_style').then(v => {
       if (v === 'sidebar' || v === 'bottom') setNavStyle(v as 'bottom' | 'sidebar');
     });
   }, []);
+
+  // Register + button to open add friend modal (instead of task modal on home)
+  const { setOpenAddTask } = React.useContext(HomeNavContext);
+  const openAddFriend = React.useCallback(() => {
+    setAddFriendModalVisible(true);
+  }, []);
+  React.useEffect(() => {
+    setOpenAddTask(openAddFriend);
+  }, [openAddFriend, setOpenAddTask]);
 
   // ── Samsung-style scroll (same as profile.tsx) ───────────
   const scrollY = useSharedValue(0);
@@ -112,13 +127,15 @@ export default function MessagesScreen() {
   // Initial load
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Refresh on screen focus — clears search too
+  // Refresh on screen focus — clears search, refreshes conversations + online snapshot
   useFocusEffect(useCallback(() => {
     setSearch('');
     setSearchResults([]);
     setAddFriendSearch('');
     setAddFriendResults([]);
     loadData(true);
+    // Always ask server for a fresh online snapshot when entering Messages
+    (messageService as any).requestOnlineSnapshot?.();
   }, [loadData]));
 
   // Real-time events
@@ -144,18 +161,14 @@ export default function MessagesScreen() {
       });
     };
 
-    (messageService as any).on?.('conversations_updated', refresh);
-    (messageService as any).on?.('message_received', refresh);
-    (messageService as any).on?.('message_sent', refresh);
-    (messageService as any).on?.('online_status', handleOnlineStatus);
-    (messageService as any).on?.('online_users', handleOnlineUsers);
+    const unsubs: (() => void)[] = [];
+    unsubs.push(messageService.on('conversation:list', refresh));
+    unsubs.push(messageService.on('message:new', refresh));
+    unsubs.push(messageService.on('presence:changed', handleOnlineStatus));
+    unsubs.push(messageService.on('presence:bulk', handleOnlineUsers));
     
     return () => {
-      (messageService as any).off?.('conversations_updated', refresh);
-      (messageService as any).off?.('message_received', refresh);
-      (messageService as any).off?.('message_sent', refresh);
-      (messageService as any).off?.('online_status', handleOnlineStatus);
-      (messageService as any).off?.('online_users', handleOnlineUsers);
+      unsubs.forEach(u => u());
     };
   }, [loadData]);
 
@@ -176,13 +189,46 @@ export default function MessagesScreen() {
   }, [conversations]);
 
   // ── Search for AddFriendModal ────────────────────────────
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
   const handleAddFriendSearch = useCallback((q: string) => {
     setAddFriendSearch(q);
-    if (!q.trim()) { setAddFriendResults([]); return; }
-    const results = conversations.filter(c =>
-      (c.username || '').toLowerCase().includes(q.toLowerCase())
-    );
-    setAddFriendResults(results);
+    
+    // Clear previous timeout
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    
+    if (!q.trim()) { 
+      setAddFriendResults([]); 
+      return; 
+    }
+    
+    // Debounce API call
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const res = await api.get(`/friends/search?query=${encodeURIComponent(q)}`);
+        if (res.data?.users) {
+          // Transform to LocalConversation format
+          const transformed = res.data.users.map((u: any) => ({
+            friend_id: u.id,
+            username: u.username,
+            avatar: null,
+            last_message: null,
+            is_online: 0,
+            unread_count: 0,
+            request_status: 'none',
+            updated_at: new Date().toISOString(),
+          }));
+          setAddFriendResults(transformed);
+        }
+      } catch (err) {
+        console.warn('[AddFriend] Search failed:', err);
+        // Fallback to local filter
+        const results = conversations.filter(c =>
+          (c.username || '').toLowerCase().includes(q.toLowerCase())
+        );
+        setAddFriendResults(results);
+      }
+    }, 300);
   }, [conversations]);
 
   // ── Navigate ─────────────────────────────────────────────
@@ -200,29 +246,8 @@ export default function MessagesScreen() {
 
   // ── Delete with warning + actual API call ───────────────
   const handleDelete = useCallback((conv: LocalConversation) => {
-    Alert.alert(
-      'Remove Friend',
-      `Remove ${conv.username} from your friends? You'll need to send a new message request to chat again. This only affects your side.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove', style: 'destructive',
-          onPress: async () => {
-            // Optimistically remove from UI immediately
-            setConversations(prev => prev.filter(c => c.friend_id !== conv.friend_id));
-            setOnlineFriends(prev => prev.filter(c => c.friend_id !== conv.friend_id));
-            // Call backend to delete friendship + clear messages
-            try {
-              await messageService.deleteFriend(conv.friend_id);
-            } catch (err) {
-              console.warn('[Messages] Delete friend failed:', err);
-              // Reload conversations if it failed
-              loadData(true);
-            }
-          },
-        },
-      ]
-    );
+    setRemoveTarget(conv);
+    setRemoveModalVisible(true);
   }, [loadData]);
 
   // ── Computed ─────────────────────────────────────────────
@@ -237,6 +262,39 @@ export default function MessagesScreen() {
   return (
     <View style={[s.root, { backgroundColor: bg }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+
+      <ConfirmationModal
+        visible={removeModalVisible}
+        title="Remove Friend"
+        message={
+          removeTarget
+            ? `Remove ${removeTarget.username} from your friends? You'll need to send a new message request to chat again. This only affects your side.`
+            : 'Remove this friend?'
+        }
+        confirmText="Remove"
+        cancelText="Cancel"
+        destructive
+        isDark={isDark}
+        onCancel={() => {
+          setRemoveModalVisible(false);
+          setRemoveTarget(null);
+        }}
+        onConfirm={async () => {
+          const target = removeTarget;
+          setRemoveModalVisible(false);
+          setRemoveTarget(null);
+          if (!target) return;
+          // Optimistically remove from UI immediately
+          setConversations(prev => prev.filter(c => c.friend_id !== target.friend_id));
+          setOnlineFriends(prev => prev.filter(c => c.friend_id !== target.friend_id));
+          try {
+            await messageService.deleteFriend(target.friend_id);
+          } catch (err) {
+            console.warn('[Messages] Delete friend failed:', err);
+            loadData(true);
+          }
+        }}
+      />
 
       {/* ── Background ── */}
       <LinearGradient
@@ -435,57 +493,68 @@ export default function MessagesScreen() {
           )}
         </View>
 
-          {/* ── Conversation list ── */}
+          {/* ── Conversation list (FlashList for performance) ── */}
           {loading ? (
-          // Skeleton
-          [1,2,3,4,5].map(i => (
-            <View key={i} style={[s.skeleton, {
-              backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
-              opacity: 1 - i * 0.15,
-            }]} />
-          ))
-        ) : filtered.length > 0 ? (
-          filtered.map((item, index) => (
-            <Animated.View key={item.friend_id} entering={FadeInDown.delay(index * 40).springify().damping(18)}>
-              <ConversationCard
-                conversation={item}
-                onPress={() => goToChat(item)}
-                onDelete={() => handleDelete(item)}
-                isDark={isDark}
+            [1, 2, 3, 4, 5].map(i => (
+              <View
+                key={i}
+                style={[
+                  s.skeleton,
+                  {
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
+                    opacity: 1 - i * 0.15,
+                  },
+                ]}
               />
-            </Animated.View>
-          ))
-        ) : (
-          // Empty state
-          <View style={s.emptyWrap}>
-            <LinearGradient
-              colors={['rgba(99,102,241,0.12)', 'rgba(139,92,246,0.07)']}
-              style={[s.emptyIcon, { borderColor: `${primary}33` }]}
-            >
-              <Ionicons name="chatbubbles-outline" size={34} color={primary} />
-            </LinearGradient>
-            <Text style={[s.emptyTitle, { color: text }]}>
-              {search ? 'No conversations found' : 'No messages yet'}
-            </Text>
-            <Text style={[s.emptySub, { color: textSub }]}>
-              {search ? 'Try a different name' : 'Add friends to start chatting'}
-            </Text>
-            {!search && (
-              <TouchableOpacity
-                style={{ borderRadius: 22, overflow: 'hidden', marginTop: 8 }}
-                onPress={() => router.push('/(home)/profile')}
-              >
-                <LinearGradient
-                  colors={[primary, accent]}
-                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                  style={s.emptyBtn}
+            ))
+          ) : (
+            <FlatList
+              data={filtered}
+              keyExtractor={(item) => `${item.friend_id}-${item.request_status || 'none'}`}
+              renderItem={({ item, index }) => (
+                <Animated.View
+                  entering={FadeInDown.delay(index * 40).springify().damping(18)}
                 >
-                  <Ionicons name="person-add-outline" size={16} color="#fff" />
-                  <Text style={s.emptyBtnTxt}>Find Friends</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            )}
-          </View>
+                  <ConversationCard
+                    conversation={item}
+                    onPress={() => goToChat(item)}
+                    onDelete={() => handleDelete(item)}
+                    isDark={isDark}
+                  />
+                </Animated.View>
+              )}
+              ListEmptyComponent={
+                <View style={s.emptyWrap}>
+                  <LinearGradient
+                    colors={['rgba(99,102,241,0.12)', 'rgba(139,92,246,0.07)']}
+                    style={[s.emptyIcon, { borderColor: `${primary}33` }]}
+                  >
+                    <Ionicons name="chatbubbles-outline" size={34} color={primary} />
+                  </LinearGradient>
+                  <Text style={[s.emptyTitle, { color: text }]}>
+                    {search ? 'No conversations found' : 'No messages yet'}
+                  </Text>
+                  <Text style={[s.emptySub, { color: textSub }]}>
+                    {search ? 'Try a different name' : 'Add friends to start chatting'}
+                  </Text>
+                  {!search && (
+                    <TouchableOpacity
+                      style={{ borderRadius: 22, overflow: 'hidden', marginTop: 8 }}
+                      onPress={() => setAddFriendModalVisible(true)}
+                    >
+                      <LinearGradient
+                        colors={[primary, accent]}
+                        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                        style={s.emptyBtn}
+                      >
+                        <Ionicons name="person-add-outline" size={16} color="#fff" />
+                        <Text style={s.emptyBtnTxt}>Find Friends</Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              }
+            />
           )}
         </View>
       </Animated.ScrollView>
@@ -497,8 +566,12 @@ export default function MessagesScreen() {
         transparent={true}
         onRequestClose={() => setAddFriendModalVisible(false)}
       >
-        <View style={[s.modalOverlay, { backgroundColor: isDark ? 'rgba(8,8,16,0.6)' : 'rgba(0,0,0,0.4)' }]}>
-          <View style={[s.modalContent, { backgroundColor: bg }]}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          <View style={[s.modalOverlay, { backgroundColor: isDark ? 'rgba(8,8,16,0.6)' : 'rgba(0,0,0,0.4)' }]}>
+            <View style={[s.modalContent, { backgroundColor: bg }]}>
             {/* Header with close button */}
             <View style={[s.modalHeader, { borderBottomColor: border }]}>
               <Text style={[s.modalTitle, { color: text }]}>Message Friends</Text>
@@ -534,7 +607,7 @@ export default function MessagesScreen() {
             {/* Friends list */}
             <FlatList
               data={addFriendSearch.trim() ? addFriendResults : conversations}
-              keyExtractor={(item) => item.friend_id}
+              keyExtractor={(item) => `${item.friend_id}-${item.request_status || 'none'}`}
               scrollEnabled={true}
               contentContainerStyle={s.modalListContent}
               renderItem={({ item, index }) => (
@@ -577,6 +650,7 @@ export default function MessagesScreen() {
             />
           </View>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ── Nav bars ── */}

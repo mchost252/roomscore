@@ -28,6 +28,9 @@ interface QueuedRequest {
 let offlineQueue: QueuedRequest[] = [];
 let isOffline = false;
 
+// Token refresh mutex - prevents concurrent 401 handlers from racing
+let refreshPromise: Promise<string> | null = null;
+
 // Subscribe to network state - only on native platforms
 if (Platform.OS !== 'web') {
   NetInfo.addEventListener(state => {
@@ -116,27 +119,35 @@ api.interceptors.response.use(
       });
     }
 
-    // Handle 401 - Token expired
+    // Handle 401 - Token expired (with mutex to prevent concurrent refresh races)
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       try {
-        const refreshToken = await secureStorage.getItem(REFRESH_TOKEN_KEY);
-        if (!refreshToken) {
-          throw new Error('No refresh token');
+        // If a refresh is already in flight, share the same promise
+        if (!refreshPromise) {
+          refreshPromise = (async () => {
+            const refreshToken = await secureStorage.getItem(REFRESH_TOKEN_KEY);
+            if (!refreshToken) {
+              throw new Error('No refresh token');
+            }
+            const response = await axios.post(`${API_BASE_URL}/api/auth/refresh`, { 
+              refreshToken 
+            });
+            const { token } = response.data;
+            await secureStorage.setItem(TOKEN_KEY, token);
+            return token;
+          })();
         }
-        
-        const response = await axios.post(`${API_BASE_URL}/api/auth/refresh`, { 
-          refreshToken 
-        });
-        
-        const { token } = response.data;
-        await secureStorage.setItem(TOKEN_KEY, token);
+
+        const token = await refreshPromise;
+        refreshPromise = null; // Clear mutex after success
         
         if (originalRequest.headers) {
           originalRequest.headers.Authorization = `Bearer ${token}`;
         }
         return api(originalRequest);
       } catch (refreshError) {
+        refreshPromise = null; // Clear mutex on failure
         await secureStorage.removeItem(TOKEN_KEY);
         await secureStorage.removeItem(REFRESH_TOKEN_KEY);
         return Promise.reject(refreshError);

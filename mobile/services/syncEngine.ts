@@ -172,7 +172,7 @@ class SyncEngine {
    * Handle incoming real-time events
    */
   private handleEvent(eventType: string, data: any): void {
-    console.log('📨 Real-time event:', eventType, data);
+    console.log('[SyncEngine] Real-time event received:', eventType, data);
     
     // Call all registered handlers for this event
     const handlers = this.eventHandlers.get(eventType) || [];
@@ -336,6 +336,24 @@ class SyncEngine {
   emit(event: string, data: any): void {
     if (this.socket?.connected) {
       this.socket.emit(event, data);
+    }
+  }
+
+  /**
+   * Ask server for a fresh snapshot of online users.
+   * Used by the Messages screen so presence is always up to date on focus.
+   */
+  refreshOnlineUsers(): void {
+    console.log('[SyncEngine] refreshOnlineUsers called');
+    if (this.socket?.connected) {
+      console.log('[SyncEngine] Socket connected, emitting users:getOnline');
+      try {
+        this.socket.emit('users:getOnline');
+      } catch (e) {
+        console.warn('[SyncEngine] Error emitting users:getOnline:', e);
+      }
+    } else {
+      console.log('[SyncEngine] Socket NOT connected, cannot refresh online users');
     }
   }
 

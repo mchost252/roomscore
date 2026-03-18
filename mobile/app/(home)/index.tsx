@@ -208,14 +208,14 @@ export default function HomeScreen() {
   const [pendingTask, setPendingTask] = useState<PersonalTask | null>(null);
 
   const openAddTask = useCallback(()=>{
-    addTaskAnim.setValue(H);
+    // Instant open - no animation for faster UX
     setShowAddTask(true);
-    setTimeout(()=>{ Animated.spring(addTaskAnim,{toValue:0,useNativeDriver:true,tension:200,friction:16}).start(); },20);
-  },[addTaskAnim]);
+  },[]);
 
   const closeAddTask = useCallback(()=>{
-    Animated.timing(addTaskAnim,{toValue:H,duration:240,useNativeDriver:true}).start(()=>{ setShowAddTask(false); setNewTaskTitle(''); });
-  },[addTaskAnim]);
+    setShowAddTask(false); 
+    setNewTaskTitle('');
+  },[]);
 
   const navigateToThread = useCallback((task: PersonalTask, clarifications?: Record<string,string>) => {
     router.push({
@@ -371,8 +371,22 @@ export default function HomeScreen() {
   const [undoTask, setUndoTask] = useState<PersonalTask|null>(null);
   const undoAnim = useRef(new Animated.Value(0)).current;
 
+  const [taskOptionsVisible, setTaskOptionsVisible] = useState(false);
+  const [taskOptionsTarget, setTaskOptionsTarget] = useState<PersonalTask | null>(null);
+
+  const openTaskOptions = useCallback((task: PersonalTask) => {
+    setTaskOptionsTarget(task);
+    setTaskOptionsVisible(true);
+  }, []);
+
+  const closeTaskOptions = useCallback(() => {
+    setTaskOptionsVisible(false);
+    setTaskOptionsTarget(null);
+  }, []);
+
   const handleDeleteTask = useCallback(async(id:string)=>{
     const taskToDelete = tasks.find(t=>t.id===id);
+    closeTaskOptions();
     await taskService.deleteTask(id);
     setTasks(prev=>prev.filter(t=>t.id!==id));
     if (taskToDelete) {
@@ -386,7 +400,7 @@ export default function HomeScreen() {
     } else {
       showToast('Task deleted');
     }
-  },[tasks, showToast, undoAnim]);
+  },[tasks, showToast, undoAnim, closeTaskOptions]);
 
   const greeting = (() => {
     const h = new Date().getHours();
@@ -724,13 +738,14 @@ export default function HomeScreen() {
               const borderWidth = priority === 'high' ? 1.5 : StyleSheet.hairlineWidth;
               const shadowIntensity = priority === 'high' ? 0.12 : priority === 'low' ? 0.04 : 0.08;
               return(
-                <TouchableOpacity key={task.id} onPress={()=>openTaskSheet(task)} onLongPress={() => {
-            Alert.alert('Task Options', undefined, [
-              { text: 'Edit', onPress: () => openTaskSheet(task) },
-              { text: 'Delete', onPress: () => handleDeleteTask(task.id), style: 'destructive' },
-              { text: 'Cancel', style: 'cancel' }
-            ]);
-          }} activeOpacity={0.82} style={s.timelineRow}>
+                <TouchableOpacity
+                  key={task.id}
+                  onPress={()=>openTaskSheet(task)}
+                  onLongPress={() => openTaskOptions(task)}
+                  delayLongPress={250}
+                  activeOpacity={0.82}
+                  style={s.timelineRow}
+                >
                   {/* Time axis */}
                   <View style={s.timelineTime}>
                     <Text style={[s.timelineTimeText,{fontSize:priority==='high'?12:11}]}>{timeStr}</Text>
@@ -1045,6 +1060,46 @@ export default function HomeScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
+      {/* ════ TASK OPTIONS SHEET (Edit / Delete) ════ */}
+      <Modal
+        visible={taskOptionsVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeTaskOptions}
+      >
+        <Pressable style={[StyleSheet.absoluteFillObject,{backgroundColor:'rgba(0,0,0,0.5)'}]} onPress={closeTaskOptions} />
+        <View style={[s.taskOptionsSheet,{paddingBottom:insets.bottom + 16}]}>
+          <View style={s.taskOptionsHandle} />
+          <Text style={s.taskOptionsTitle}>{taskOptionsTarget?.title || 'Task'}</Text>
+          <TouchableOpacity
+            style={s.taskOptionsItem}
+            onPress={() => {
+              if (taskOptionsTarget) {
+                closeTaskOptions();
+                openTaskSheet(taskOptionsTarget);
+              }
+            }}
+          >
+            <Ionicons name="create-outline" size={18} color="#0f172a" />
+            <Text style={s.taskOptionsItemText}>Edit task details</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={s.taskOptionsItem}
+            onPress={() => {
+              if (taskOptionsTarget) {
+                handleDeleteTask(taskOptionsTarget.id);
+              }
+            }}
+          >
+            <Ionicons name="trash-outline" size={18} color="#ef4444" />
+            <Text style={[s.taskOptionsItemText,{color:'#ef4444'}]}>Delete task</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.taskOptionsCancel} onPress={closeTaskOptions}>
+            <Text style={s.taskOptionsCancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
     </View>
   );
 }
@@ -1236,4 +1291,52 @@ const s = StyleSheet.create({
   emptySubtitle:     { fontSize:13, textAlign:'center', lineHeight:19 },
   emptyAddBtn:       { flexDirection:'row', alignItems:'center', gap:8, paddingHorizontal:24, paddingVertical:12, borderRadius:24 },
   emptyAddText:      { color:'#fff', fontSize:14, fontWeight:'700' },
+  taskOptionsSheet: {
+    position:'absolute',
+    left:0,
+    right:0,
+    bottom:0,
+    borderTopLeftRadius:24,
+    borderTopRightRadius:24,
+    backgroundColor:'#ffffff',
+    paddingHorizontal:20,
+    paddingTop:10,
+  },
+  taskOptionsHandle: {
+    alignSelf:'center',
+    width:36,
+    height:4,
+    borderRadius:2,
+    backgroundColor:'rgba(148,163,184,0.6)',
+    marginBottom:10,
+  },
+  taskOptionsTitle: {
+    fontSize:15,
+    fontWeight:'700',
+    marginBottom:12,
+    color:'#0f172a',
+  },
+  taskOptionsItem: {
+    flexDirection:'row',
+    alignItems:'center',
+    gap:10,
+    paddingVertical:10,
+  },
+  taskOptionsItemText: {
+    fontSize:14,
+    fontWeight:'500',
+    color:'#0f172a',
+  },
+  taskOptionsCancel: {
+    marginTop:8,
+    borderRadius:18,
+    paddingVertical:10,
+    alignItems:'center',
+    backgroundColor:'rgba(148,163,184,0.12)',
+  },
+  taskOptionsCancelText: {
+    fontSize:14,
+    fontWeight:'600',
+    color:'#0f172a',
+  },
 });

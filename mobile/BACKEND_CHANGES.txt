@@ -1,0 +1,90 @@
+================================================================================
+BACKEND CHANGES RECOMMENDATION - copy.txt
+================================================================================
+
+After analyzing the backend code, MOST functionality is already implemented:
+- Message requests with pending status (2-message limit) ✅
+- Friend removal with 'removed' status ✅  
+- Delta sync for messages ✅
+- Real-time socket events ✅
+- Typing indicators ✅
+- Read receipts ✅
+
+================================================================================
+MINIMAL CHANGE RECOMMENDATION (OPTIONAL)
+================================================================================
+
+The backend already works well. Only ONE optional enhancement is recommended:
+
+File: backend/routes/friends.js
+Location: DELETE /:friendId endpoint (~line 315)
+
+Add a count of messages sent when emitting the friend:removed event so the 
+frontend knows how many messages the removed user can still send.
+
+Current code emits:
+  io.to(`user:${friendId}`).emit('friend:removed', { friendId: userId });
+
+Recommended change:
+  // Get count of messages from the removed user to the remover (these are "used" messages)
+  const messagesSent = await prisma.directMessage.count({
+    where: {
+      fromUserId: friendId,
+      toUserId: userId,
+    }
+  });
+  
+  io.to(`user:${friendId}`).emit('friend:removed', { 
+    friendId: userId,
+    messagesUsed: messagesSent,
+    messagesLeft: Math.max(0, 2 - messagesSent)
+  });
+
+================================================================================
+ALREADY IMPLEMENTED FEATURES
+================================================================================
+
+1. WhatsApp-style Message Requests:
+   - When sending to non-friend: creates pending request
+   - Sender can send up to 2 messages before acceptance
+   - Recipient sees request with accept/decline options
+   - After acceptance: full messaging enabled
+
+2. Friend Removal (WhatsApp-style):
+   - Status changed to 'removed' (not deleted)
+   - Sender's messages are wiped locally
+   - Recipient keeps their chat history
+   - Recipient can still send messages (limited to 2)
+
+3. Delta Sync:
+   - Uses last_id parameter for efficient sync
+   - Only new messages are fetched
+   - Status promotion (sending → sent → delivered → read)
+
+4. Socket Events:
+   - friend:request - new request received
+   - friend:request_sent - request confirmed
+   - friend:accepted - request accepted
+   - friend:removed - user removed you
+   - dm:typing - typing indicator
+   - dm:read - read receipt
+   - dm:delivered - delivery confirmation
+
+5. Offline Support:
+   - Messages saved to SQLite first
+   - Background sync when online
+   - Retry failed messages
+
+================================================================================
+NO CHANGES REQUIRED FOR BASIC FUNCTIONALITY
+================================================================================
+
+The mobile app will work WITHOUT any backend changes. The frontend handles
+all the business logic for:
+- Tracking pending message count
+- Disabling input after limit reached
+- Showing appropriate UI states
+
+Simply run the existing backend and mobile app together.
+
+================================================================================

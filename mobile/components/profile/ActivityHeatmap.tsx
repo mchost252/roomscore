@@ -1,11 +1,10 @@
-import React, { useEffect } from 'react';
+/**
+ * ActivityHeatmap - Optimized version without animations
+ * Shows user activity as a GitHub-style contribution graph
+ */
+
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withDelay,
-  withSpring,
-} from 'react-native-reanimated';
 
 interface ActivityHeatmapProps {
   data?: number[];
@@ -13,8 +12,13 @@ interface ActivityHeatmapProps {
 }
 
 export function ActivityHeatmap({ data = [], isDark = true }: ActivityHeatmapProps) {
-  const days = 49;
-  const activityData = data.length > 0 ? data : Array.from({ length: days }, () => Math.floor(Math.random() * 5));
+  // Generate 49 days of data (7 weeks)
+  // If no real data provided, use empty data (no random)
+  const activityData = useMemo(() => {
+    if (data.length > 0) return data;
+    // Return all zeros if no data - clean look
+    return Array(49).fill(0);
+  }, [data]);
 
   const getColor = (value: number) => {
     if (isDark) {
@@ -37,26 +41,42 @@ export function ActivityHeatmap({ data = [], isDark = true }: ActivityHeatmapPro
   const containerBg = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)';
   const containerBorder = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)';
 
+  // Render cells directly without animation for instant display
+  const renderCells = () => {
+    const weeks: React.ReactNode[] = [];
+    
+    for (let weekIndex = 0; weekIndex < 7; weekIndex++) {
+      const days: React.ReactNode[] = [];
+      
+      for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+        const index = weekIndex * 7 + dayIndex;
+        if (index >= activityData.length) {
+          days.push(<View key={dayIndex} style={styles.cell} />);
+        } else {
+          days.push(
+            <View
+              key={dayIndex}
+              style={[styles.cell, { backgroundColor: getColor(activityData[index]) }]}
+            />
+          );
+        }
+      }
+      
+      weeks.push(
+        <View key={weekIndex} style={styles.week}>
+          {days}
+        </View>
+      );
+    }
+    
+    return weeks;
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: containerBg, borderColor: containerBorder }]}>
       <Text style={[styles.title, { color: textColor }]}>Activity This Month</Text>
       <View style={styles.heatmapContainer}>
-        {Array.from({ length: 7 }).map((_, weekIndex) => (
-          <View key={weekIndex} style={styles.week}>
-            {Array.from({ length: 7 }).map((_, dayIndex) => {
-              const index = weekIndex * 7 + dayIndex;
-              if (index >= activityData.length) return null;
-              return (
-                <ActivityCell
-                  key={dayIndex}
-                  value={activityData[index]}
-                  delay={index * 10}
-                  color={getColor(activityData[index])}
-                />
-              );
-            })}
-          </View>
-        ))}
+        {renderCells()}
       </View>
       <View style={styles.legend}>
         <Text style={[styles.legendText, { color: secColor }]}>Less</Text>
@@ -68,19 +88,6 @@ export function ActivityHeatmap({ data = [], isDark = true }: ActivityHeatmapPro
     </View>
   );
 }
-
-const ActivityCell = React.memo(function ActivityCell({ value, delay, color }: { value: number; delay: number; color: string }) {
-  const scale = useSharedValue(0);
-  useEffect(() => {
-    scale.value = withDelay(delay, withSpring(1, { damping: 12, stiffness: 150 }));
-  }, []);
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-  return (
-    <Animated.View style={[styles.cell, { backgroundColor: color }, animatedStyle]} />
-  );
-});
 
 const styles = StyleSheet.create({
   container: {

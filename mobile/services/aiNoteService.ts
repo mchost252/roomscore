@@ -158,12 +158,69 @@ export async function checkVagueness(
 function localVaguenessCheck(title: string): VaguenessResult {
   const lower = title.toLowerCase().trim();
   const wordCount = lower.split(/\s+/).length;
-  const vagueWords = ['read', 'study', 'learn', 'exercise', 'workout', 'write', 'watch', 'cook', 'practice', 'do', 'finish'];
-  const isVague = wordCount <= 4 || vagueWords.some(w => lower.includes(w));
+  
+  // Comprehensive list of vague action words
+  const vagueWords = [
+    // General vague
+    'do', 'done', 'finish', 'start', 'continue', 'keep', 'stop', 'quit',
+    // Learning
+    'learn', 'study', 'practice', 'review', 'revise', 'memorize', 'master',
+    // Physical activities  
+    'exercise', 'workout', 'run', 'walk', 'train', 'gym', 'fitness', 'yoga',
+    // Creative
+    'read', 'write', 'draw', 'paint', 'create', 'design', 'make', 'build',
+    // Media
+    'watch', 'listen', 'play', 'stream', 'browse', 'scroll',
+    // Food
+    'cook', 'meal', 'eat', 'diet', 'fast',
+    // Self-care
+    'meditate', 'relax', 'rest', 'sleep', 'nap', 'breathe',
+    // Productivity
+    'organize', 'clean', 'tidy', 'declutter', 'sort', 'file',
+    // Social
+    'call', 'text', 'message', 'email', 'connect', 'reach',
+    // Work
+    'work', 'task', 'project', 'meeting', 'plan', 'prepare',
+    // Financial
+    'budget', 'save', 'spend', 'pay', 'file',
+    // Health
+    'doctor', 'medicine', 'checkup', 'appointment',
+  ];
+  
+  // Check for vague patterns (short tasks with action words)
+  const vaguePatterns = [
+    /^(go|make|get|have|do|start)\s+/i,
+    /\b(thing|stuff|something|anything|everything)\b/i,
+    /^\w+$/i, // Single word tasks
+  ];
+  
+  let vagueScore = 0;
+
+  // Very short tasks are often vague
+  if (wordCount <= 2) vagueScore += 3;
+  if (wordCount <= 3) vagueScore += 1;
+  if (wordCount <= 4) vagueScore += 1;
+
+  // Check vague keywords
+  for (const kw of vagueWords) {
+    if (lower.includes(kw)) { 
+      vagueScore += 2; 
+    }
+  }
+
+  // Check vague patterns
+  for (const pattern of vaguePatterns) {
+    if (pattern.test(lower)) { 
+      vagueScore += 3; 
+      break;
+    }
+  }
+
+  const isVague = vagueScore >= 3;
 
   return {
     isVague,
-    vagueScore: isVague ? 3 : 0,
+    vagueScore,
     questions: [], // no questions offline — just skip clarification gracefully
   };
 }

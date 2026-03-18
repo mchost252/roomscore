@@ -44,38 +44,72 @@ export default function ConfirmationModal({
         )}
         
         <Pressable 
-          style={[styles.card, { backgroundColor: bg, borderColor: border }]} 
+          style={styles.cardWrapper}
           onPress={(e) => e.stopPropagation()}
         >
-          <View style={styles.iconWrap}>
-            <View style={[styles.iconCircle, { backgroundColor: destructive ? 'rgba(239,68,68,0.15)' : 'rgba(99,102,241,0.15)' }]}>
-              <Ionicons 
-                name={destructive ? 'warning-outline' : 'information-circle-outline'} 
-                size={28} 
-                color={confirmBg} 
-              />
+          {/* Space-gradient halo behind card */}
+          <LinearGradient
+            colors={
+              destructive
+                ? ['rgba(248,113,113,0.22)','rgba(30,64,175,0.0)']
+                : ['rgba(94,92,255,0.28)','rgba(14,165,233,0.0)']
+            }
+            start={{ x: 0.1, y: 0 }}
+            end={{ x: 0.9, y: 1 }}
+            style={styles.glow}
+          />
+
+          <View style={[styles.card, { backgroundColor: bg, borderColor: border }]}>
+            <View style={styles.iconWrap}>
+              <LinearGradient
+                colors={
+                  destructive
+                    ? ['rgba(248,113,113,0.35)','rgba(239,68,68,0.05)']
+                    : ['rgba(129,140,248,0.38)','rgba(56,189,248,0.05)']
+                }
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.iconCircle}
+              >
+                <Ionicons 
+                  name={destructive ? 'warning-outline' : 'information-circle-outline'} 
+                  size={28} 
+                  color={confirmBg} 
+                />
+              </LinearGradient>
             </View>
-          </View>
-          
-          <Text style={[styles.title, { color: textC }]}>{title}</Text>
-          <Text style={[styles.message, { color: subC }]}>{message}</Text>
-          
-          <View style={styles.btnRow}>
-            <TouchableOpacity 
-              style={[styles.btn, styles.cancelBtn, { borderColor: border, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }]} 
-              onPress={onCancel}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.cancelText, { color: textC }]}>{cancelText}</Text>
-            </TouchableOpacity>
             
-            <TouchableOpacity 
-              style={[styles.btn, { backgroundColor: confirmBg }]} 
-              onPress={onConfirm}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.confirmText}>{confirmText}</Text>
-            </TouchableOpacity>
+            <Text style={[styles.title, { color: textC }]}>{title}</Text>
+            <Text style={[styles.message, { color: subC }]}>{message}</Text>
+            
+            <View style={styles.btnRow}>
+              <TouchableOpacity 
+                style={[styles.btn, styles.cancelBtn, { borderColor: border, backgroundColor: isDark ? 'rgba(15,23,42,0.7)' : 'rgba(248,250,252,0.9)' }]} 
+                onPress={onCancel}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.cancelText, { color: textC }]}>{cancelText}</Text>
+              </TouchableOpacity>
+              
+              <LinearGradient
+                colors={
+                  destructive
+                    ? ['#f97373','#ef4444']
+                    : ['#6366f1','#8b5cf6']
+                }
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.btn}
+              >
+                <TouchableOpacity
+                  style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}
+                  onPress={onConfirm}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.confirmText}>{confirmText}</Text>
+                </TouchableOpacity>
+              </LinearGradient>
+            </View>
           </View>
         </Pressable>
       </Pressable>
@@ -90,9 +124,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
   },
+  cardWrapper: {
+    width: '100%',
+    maxWidth: 360,
+  },
+  glow: {
+    position: 'absolute',
+    top: -40,
+    left: -20,
+    right: -20,
+    height: 160,
+    borderRadius: 60,
+    opacity: 0.8,
+  },
   card: {
     width: '100%',
-    maxWidth: 340,
     borderRadius: 24,
     borderWidth: 1,
     padding: 24,

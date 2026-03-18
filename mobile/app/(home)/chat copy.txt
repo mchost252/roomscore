@@ -69,25 +69,16 @@ export default function ChatScreen() {
   const [clearChatModalVisible, setClearChatModalVisible] = useState(false);
   const [deleteFriendModalVisible, setDeleteFriendModalVisible] = useState(false);
 
-  // Keep requestStatusRef in sync with requestStatus state
-  useEffect(() => {
-    requestStatusRef.current = requestStatus;
-  }, [requestStatus]);
-
   // Refs
   const flatListRef = useRef<FlashList<LocalDirectMessage>>(null);
   const hasInitializedChat = useRef(false);
-  const hasScrolledToBottom = useRef(false);
   const lastMarkReadCall = useRef(0);
   // Track the message count at last render to only animate new messages
   const prevMessageCountRef = useRef(0);
-  // Track requestStatus to avoid stale closures in async callbacks
-  const requestStatusRef = useRef(initialRequestStatus);
 
   // Reset init guard when friendId changes
   useEffect(() => {
     hasInitializedChat.current = false;
-    hasScrolledToBottom.current = false;
   }, [friendId]);
 
   // Animation values
@@ -149,27 +140,22 @@ export default function ChatScreen() {
       // 3. Background: check friendship + mark as read (non-blocking)
       messageService.checkFriendship(friendId).then((friendship) => {
         if (!isSubscribed) return;
-        
-        // Don't override 'removed' status
-        if (requestStatusRef.current === 'removed') return;
-        
+        // Don't override 'removed' with server fallbacks
+        const convs2 = messages; // use local
+        if (requestStatus === 'removed') return;
         setRequestStatus(friendship.requestStatus);
         if (friendship.requestId) setRequestId(friendship.requestId);
 
         // Mark as read once on open (only if accepted/none)
-        const effectiveStatus = friendship.requestStatus || requestStatusRef.current;
+        const effectiveStatus = friendship.requestStatus || requestStatus;
         if (effectiveStatus === 'accepted' || effectiveStatus === 'none') {
           const now = Date.now();
           if (now - lastMarkReadCall.current > 2000) {
             lastMarkReadCall.current = now;
-            messageService.markAsRead(friendId).catch((err) => {
-              console.warn('[Chat] markAsRead failed:', err);
-            });
+            messageService.markAsRead(friendId).catch(() => {});
           }
         }
-      }).catch((err) => {
-        console.warn('[Chat] checkFriendship failed:', err);
-      });
+      }).catch(() => {});
     };
 
     init();
@@ -201,10 +187,7 @@ export default function ChatScreen() {
 
           // Auto-scroll for sent messages
           if (msg.from_user_id === user?.id) {
-            setTimeout(() => {
-              flatListRef.current?.scrollToEnd({ animated: true });
-              hasScrolledToBottom.current = true;
-            }, 100);
+            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
           }
 
           // Mark as read for incoming messages while chat is open
@@ -294,26 +277,12 @@ export default function ChatScreen() {
 
     // ── friend_removed ──
     unsubs.push(
-      messageService.on('friend_removed', async (payload: { friendId: string; initiatedByMe: boolean }) => {
-        console.log('[Chat] friend_removed event:', payload);
+      messageService.on('friend_removed', (payload: { friendId: string; initiatedByMe: boolean }) => {
         if (payload.friendId !== friendId) return;
-        
         if (payload.initiatedByMe) {
-          // I deleted them - navigate back to messages list
-          console.log('[Chat] I deleted this friend, navigating back to messages');
-          router.replace('/(home)/messages');
-        } else {
-          // They deleted me - reload to update status
-          console.log('[Chat] Friend removed me, reloading conversation');
-          // Reload conversation data
-          const convs = await messageService.getConversations();
-          const conv = convs.find(c => c.friend_id === friendId);
-          if (conv) {
-            setRequestStatus(conv.request_status || 'none');
-            if (conv.request_id) setRequestId(conv.request_id);
-            if (conv.last_message) setRequestMessage(conv.last_message);
-          }
+          setMessages([]); // I removed them: clear my side
         }
+        setRequestStatus('removed');
       })
     );
 
@@ -346,23 +315,12 @@ export default function ChatScreen() {
   // ─── Send Message ─────────────────────────────────────
   const handleSend = useCallback(async (text: string) => {
     if (!user || !friendId) return;
-    
-    // If status is 'removed', send a new friend request instead of message
-    if (requestStatus === 'removed') {
-      const result = await messageService.sendFriendRequest(friendId, text);
-      if (result.success) {
-        setRequestStatus('pending_sent');
-        setRequestId(result.requestId || null);
-      }
-      return;
-    }
-    
     await messageService.sendMessage(
       friendId, text, friendUsername, friendAvatar || null,
       replyTo ? { id: replyTo.id, text: replyTo.text } : undefined,
     );
     setReplyTo(null);
-  }, [friendId, user, replyTo, friendUsername, friendAvatar, requestStatus]);
+  }, [friendId, user, replyTo, friendUsername, friendAvatar]);
 
   // ─── Retry Failed ─────────────────────────────────────
   const handleRetry = useCallback(async (msg: LocalDirectMessage) => {
@@ -437,7 +395,6 @@ export default function ChatScreen() {
 
   const scrollToBottom = useCallback(() => {
     flatListRef.current?.scrollToEnd({ animated: true });
-    hasScrolledToBottom.current = true;
   }, []);
 
   // ─── Helpers ──────────────────────────────────────────
@@ -451,11 +408,10 @@ export default function ChatScreen() {
     if (!myId) return 0;
     return messages.filter(m => m.from_user_id === myId && m.to_user_id === friendId).length;
   }, [isPendingSent, messages, user?.id, friendId]);
-  // When status is 'removed', user CAN type to send a new friend request
-  // Input is only locked for: loading, pending_received, or pending_sent with 2+ messages
   const isInputLocked =
     requestLoading ||
     isPendingReceived ||
+    requestStatus === 'removed' ||
     (isPendingSent && pendingSentCount >= 2);
 
   // ─── Animated Styles ──────────────────────────────────
@@ -470,19 +426,8 @@ export default function ChatScreen() {
 
   const performClear = useCallback(() => {
     if (user?.id && friendId) {
-      sqliteService.deleteConversationMessages(user.id, friendId).then(async () => {
+      sqliteService.deleteConversationMessages(user.id, friendId).then(() => {
         setMessages([]);
-        // Also update conversation to clear last_message so messages screen shows "Start new conversation"
-        const convs = await sqliteService.getConversations();
-        const conv = convs.find(c => c.friend_id === friendId);
-        if (conv) {
-          await sqliteService.saveConversation({
-            ...conv,
-            last_message: '',
-            last_message_at: Date.now(),
-          });
-          messageService.notifyConversationUpdate();
-        }
         listOpacity.value = withTiming(1, { duration: 300 });
       });
     }
@@ -736,12 +681,8 @@ export default function ChatScreen() {
                 // Since FlashList doesn't support onStartReached, we detect scroll near top
                 onEndReachedThreshold={0.3}
                 onContentSizeChange={() => {
-                  // Only auto-scroll to bottom on initial load or when new message is sent
-                  if (messages.length > 0 && !loading && !hasScrolledToBottom.current) {
-                    setTimeout(() => {
-                      flatListRef.current?.scrollToEnd({ animated: false });
-                      hasScrolledToBottom.current = true;
-                    }, 100);
+                  if (messages.length > 0 && !loading) {
+                    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
                   }
                 }}
                 ListHeaderComponent={
@@ -764,10 +705,6 @@ export default function ChatScreen() {
                         <Text style={[styles.loadMoreText, { color: accentColor }]}>Load older messages</Text>
                       </TouchableOpacity>
                     )}
-                  </>
-                }
-                ListFooterComponent={
-                  <>
                     {isPendingReceived && (
                       <MessageRequestBanner
                         isDark={isDark}
@@ -783,9 +720,6 @@ export default function ChatScreen() {
                       <View style={[styles.removedBanner, { 
                         backgroundColor: isDark ? 'rgba(239,68,68,0.1)' : 'rgba(239,68,68,0.05)',
                         borderColor: isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.1)',
-                        marginTop: 8,
-                        marginHorizontal: 16,
-                        marginBottom: 16,
                       }]}>
                         <Ionicons name="person-remove-outline" size={24} color="#ef4444" style={{ marginBottom: 8 }} />
                         <Text style={{ color: textColor, fontWeight: '600', marginBottom: 4 }}>You are no longer friends</Text>
@@ -794,7 +728,6 @@ export default function ChatScreen() {
                         </Text>
                       </View>
                     )}
-                    <TypingIndicator isDark={isDark} visible={isTyping} username={friendUsername} />
                   </>
                 }
                 ListEmptyComponent={
@@ -813,6 +746,9 @@ export default function ChatScreen() {
                       </Text>
                     </View>
                   ) : null
+                }
+                ListFooterComponent={
+                  <TypingIndicator isDark={isDark} visible={isTyping} username={friendUsername} />
                 }
               />
 

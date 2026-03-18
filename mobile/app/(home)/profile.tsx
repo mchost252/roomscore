@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Pressable,
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Alert, Dimensions, TextInput, Keyboard, Platform, Image,
+  Dimensions, TextInput, Keyboard, Platform, Image,
+  InteractionManager,
 } from 'react-native';
 // Optional dependency (so bundling doesn't fail if not installed yet)
 let ImagePicker: any = null;
@@ -35,6 +36,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ActivityHeatmap } from '../../components/profile/ActivityHeatmap';
 import { AchievementBadge } from '../../components/profile/AchievementBadge';
+import ConfirmationModal from '../../components/ConfirmationModal';
 
 // Conditional Skia import
 let SkCanvas: any, SkRect: any, skVec: any,
@@ -171,6 +173,8 @@ export default function ProfileScreen() {
   const [saving, setSaving] = useState(false);
   const [localBio, setLocalBio] = useState('');
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [activityReady, setActivityReady] = useState(false);
+  const [activitySkeleton, setActivitySkeleton] = useState(false);
 
   // Load locally cached bio on mount
   useEffect(() => {
@@ -223,16 +227,8 @@ export default function ProfileScreen() {
     opacity: interpolate(scrollY.value, [0, COLLAPSE_AT * 0.65], [0, 1], Extrapolation.CLAMP),
   }));
 
-  /* ── Entrance ── */
-  const fadeIn = useSharedValue(0);
-  const slideUp = useSharedValue(8); // reduced from 18
-  useEffect(() => {
-    fadeIn.value = withTiming(1, { duration: 150 });
-    slideUp.value = withSpring(0, { damping: 24, stiffness: 250 }); // reduced bounce
-  }, []);
-  const entStyle = useAnimatedStyle(() => ({
-    flex: 1 as number, opacity: fadeIn.value, transform: [{ translateY: slideUp.value }],
-  }));
+  /* ── Entrance - removed for instant render ── */
+  const entStyle = { flex: 1 };
 
   /* ── Tab switch ── */
   const tOp = useSharedValue(1);
@@ -243,11 +239,22 @@ export default function ProfileScreen() {
     tSl.value = withTiming(6, { duration: 100 });
     setTimeout(() => {
       setActiveTab(tab);
+      if (tab === 'activity') {
+        // Show activity immediately without delay
+        setActivitySkeleton(false);
+        setActivityReady(true);
+      } else {
+        setActivityReady(false);
+        setActivitySkeleton(false);
+      }
       tOp.value = withTiming(1, { duration: 180 });
       tSl.value = withSpring(0, { damping: 20, stiffness: 300 });
     }, 110);
   }, [activeTab]);
   const tabCS = useAnimatedStyle(() => ({ opacity: tOp.value, transform: [{ translateY: tSl.value }] }));
+
+  const [inlineError, setInlineError] = useState<string | null>(null);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   /* ── Bio save ── */
   const saveBio = async () => {
@@ -259,8 +266,12 @@ export default function ProfileScreen() {
     setLocalBio(trimmed);
     const r = await updateProfile({ bio: trimmed });
     setSaving(false);
-    if (r.success) setEditingBio(false);
-    else Alert.alert('Error', r.message || 'Failed to save bio');
+    if (r.success) {
+      setEditingBio(false);
+      setInlineError(null);
+    } else {
+      setInlineError(r.message || 'Failed to save bio');
+    }
   };
 
   /* ── Data ── */
@@ -274,15 +285,12 @@ export default function ProfileScreen() {
   const pickAvatar = useCallback(async () => {
     try {
       if (Platform.OS === 'web') {
-        Alert.alert('Not supported', 'Changing your profile photo from web is not supported yet.');
+        setInlineError('Changing your profile photo from web is not supported yet.');
         return;
       }
 
       if (!ImagePicker) {
-        Alert.alert(
-          'Missing dependency',
-          'expo-image-picker is not installed yet. Run: npx expo install expo-image-picker'
-        );
+        setInlineError('expo-image-picker is not installed yet. Run: npx expo install expo-image-picker');
         return;
       }
 
@@ -290,7 +298,7 @@ export default function ProfileScreen() {
 
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('Permission needed', 'Please allow photo access to change your profile picture.');
+        setInlineError('Please allow photo access to change your profile picture.');
         return;
       }
 
@@ -306,7 +314,7 @@ export default function ProfileScreen() {
 
       const asset = result.assets?.[0];
       if (!asset?.base64) {
-        Alert.alert('Error', 'Could not read image data. Try another image.');
+        setInlineError('Could not read image data. Try another image.');
         return;
       }
 
@@ -315,10 +323,12 @@ export default function ProfileScreen() {
 
       const r = await updateProfile({ avatar: dataUri } as any);
       if (!r.success) {
-        Alert.alert('Upload failed', r.message || 'Could not update profile photo');
+        setInlineError(r.message || 'Could not update profile photo');
+      } else {
+        setInlineError(null);
       }
     } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Could not pick image');
+      setInlineError(e?.message || 'Could not pick image');
     } finally {
       setUploadingAvatar(false);
     }
@@ -342,17 +352,14 @@ export default function ProfileScreen() {
   const unlocked = achievements.filter(a => a.unlocked).length;
 
   const menuItems = [
-    { icon: 'notifications-outline', label: 'Notifications', color: '#f59e0b', onPress: () => Alert.alert('Notifications', 'Coming soon!') },
+    { icon: 'notifications-outline', label: 'Notifications', color: '#f59e0b', onPress: () => setInlineError('Notifications: coming soon') },
     { icon: 'settings-outline', label: 'Settings', color: '#8b5cf6', onPress: () => router.push('/(home)/settings') },
-    { icon: 'lock-closed-outline', label: 'Privacy', color: '#10b981', onPress: () => Alert.alert('Privacy', 'Coming soon!') },
-    { icon: 'help-circle-outline', label: 'Help & Support', color: '#ec4899', onPress: () => Alert.alert('Help', 'Coming soon!') },
+    { icon: 'lock-closed-outline', label: 'Privacy', color: '#10b981', onPress: () => setInlineError('Privacy: coming soon') },
+    { icon: 'help-circle-outline', label: 'Help & Support', color: '#ec4899', onPress: () => setInlineError('Help & Support: coming soon') },
   ];
 
   const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: async () => { await logout(); } },
-    ]);
+    setShowLogoutConfirm(true);
   };
 
   /* ── Tab renderers ── */
@@ -428,7 +435,10 @@ export default function ProfileScreen() {
 
   const renderActivity = () => (
     <LiquidCard w={cardW} h={210} dark={isDark} style={{ marginBottom: 16 }}>
-      <View style={st.cardInner}><ActivityHeatmap isDark={isDark} /></View>
+      <View style={st.cardInner}>
+        {/* Show activity heatmap immediately - no skeleton needed */}
+        <ActivityHeatmap isDark={isDark} />
+      </View>
     </LiquidCard>
   );
 
@@ -444,7 +454,7 @@ export default function ProfileScreen() {
         contentContainerStyle={{ paddingVertical: 8, paddingHorizontal: 4 }}>
         {achievements.map((b, i) => (
           <AchievementBadge key={i} icon={b.icon} title={b.title} description={b.description}
-            unlocked={b.unlocked} rarity={b.rarity} delay={i * 120} isDark={isDark} />
+            unlocked={b.unlocked} rarity={b.rarity} isDark={isDark} />
         ))}
       </ScrollView>
     </View>
@@ -452,7 +462,7 @@ export default function ProfileScreen() {
 
   /* ════════════════════════════════════════ RENDER ════════════════════════════════════════ */
   return (
-    <Animated.View style={entStyle}>
+    <View style={entStyle}>
       <View style={[st.root, { backgroundColor: C.bg }]}>
         {/* Background */}
         <LinearGradient
@@ -598,7 +608,7 @@ export default function ProfileScreen() {
           <Text style={[st.ver, { color: C.sec }]}>Krios v1.0.0</Text>
         </AnimatedScrollView>
       </View>
-    </Animated.View>
+    </View>
   );
 }
 
@@ -678,4 +688,22 @@ const st = StyleSheet.create({
 
   // Footer
   ver: { textAlign: 'center', fontSize: 11, marginBottom: 20 },
+  heatmapSkeleton: {
+    height: 140,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(148,163,184,0.35)',
+    padding: 12,
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+  },
+  heatmapSkeletonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 4,
+    flex: 1,
+    marginVertical: 2,
+    backgroundColor: 'rgba(148,163,184,0.15)',
+    borderRadius: 8,
+  },
 });

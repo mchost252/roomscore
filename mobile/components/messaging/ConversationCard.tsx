@@ -308,6 +308,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+    gap: 6,
   },
   requestDot: {
     width: 7, height: 7, borderRadius: 3.5,

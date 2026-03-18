@@ -1,6 +1,6 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Stack, usePathname } from 'expo-router';
-import { View, StyleSheet, Animated } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import SidebarNav from '../../components/SidebarNav';
 import BottomTabBar from '../../components/BottomTabBar';
@@ -17,22 +17,13 @@ export const HomeNavContext = React.createContext<{
   setOpenAddTask: () => {},
 });
 
-// Screen wrapper that fades in on mount
+// Screen wrapper - disabled animations for instant render
 function ScreenEntry({ children }: { children: React.ReactNode }) {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(16)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
-      Animated.spring(slideAnim, { toValue: 0, tension: 200, friction: 18, useNativeDriver: true }),
-    ]).start();
-  }, []);
-
+  // No animation - instant render for faster navigation
   return (
-    <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+    <View style={{ flex: 1 }}>
       {children}
-    </Animated.View>
+    </View>
   );
 }
 
@@ -79,6 +70,8 @@ export default function HomeLayout() {
           <Stack.Screen name="ai-chat" options={{ animation: 'slide_from_bottom', gestureEnabled: true, presentation: 'transparentModal' }} />
           <Stack.Screen name="messages" options={{ animation: 'none', presentation: 'card' }} />
           <Stack.Screen name="chat" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
+          <Stack.Screen name="create-room" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
+          <Stack.Screen name="room-detail" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
         </Stack>
 
         {/* Sidebar nav: show on home and messages only, hide on modals */}

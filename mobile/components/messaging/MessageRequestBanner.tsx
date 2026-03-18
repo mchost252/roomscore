@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -7,6 +7,7 @@ interface MessageRequestBannerProps {
   isDark: boolean;
   username: string;
   message?: string;
+  loading?: boolean;
   onAccept: () => void;
   onDecline: () => void;
   onBlock: () => void;
@@ -16,7 +17,7 @@ const ACCENT_COLOR = '#6366f1';
 const VIOLET_ACCENT = '#8b5cf6';
 
 function MessageRequestBanner({ 
-  isDark, username, message, onAccept, onDecline, onBlock 
+  isDark, username, message, loading, onAccept, onDecline, onBlock 
 }: MessageRequestBannerProps) {
   const bg = isDark ? 'rgba(139,92,246,0.1)' : 'rgba(139,92,246,0.06)';
   const borderColor = isDark ? 'rgba(139,92,246,0.2)' : 'rgba(139,92,246,0.12)';
@@ -24,7 +25,7 @@ function MessageRequestBanner({
   const subtextColor = isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)';
 
   return (
-    <View style={[styles.container, { backgroundColor: bg, borderColor }]}>
+    <View style={[styles.container, { backgroundColor: bg, borderColor, opacity: loading ? 0.7 : 1 }]}>
       <View style={styles.infoRow}>
         <View style={[styles.iconWrap, {
           backgroundColor: isDark ? 'rgba(139,92,246,0.15)' : 'rgba(139,92,246,0.1)'
@@ -47,10 +48,15 @@ function MessageRequestBanner({
           onPress={onAccept} 
           style={styles.acceptBtn} 
           activeOpacity={0.8}
+          disabled={loading}
         >
           <LinearGradient colors={[ACCENT_COLOR, VIOLET_ACCENT] as any} style={styles.acceptGrad}>
-            <Ionicons name="checkmark" size={15} color="#fff" />
-            <Text style={styles.acceptText}>Accept</Text>
+            {loading ? <ActivityIndicator size="small" color="#fff" /> : (
+              <>
+                <Ionicons name="checkmark" size={15} color="#fff" />
+                <Text style={styles.acceptText}>Accept</Text>
+              </>
+            )}
           </LinearGradient>
         </TouchableOpacity>
 
@@ -62,6 +68,7 @@ function MessageRequestBanner({
             borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
           }]}
           activeOpacity={0.8}
+          disabled={loading}
         >
           <Text style={[styles.secondaryText, { color: subtextColor }]}>Decline</Text>
         </TouchableOpacity>
@@ -74,6 +81,7 @@ function MessageRequestBanner({
             borderColor: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)',
           }]}
           activeOpacity={0.8}
+          disabled={loading}
         >
           <Text style={styles.blockText}>Block</Text>
         </TouchableOpacity>
