@@ -125,9 +125,11 @@ export default function ChatScreen() {
 
         // 1. Load from SQLite IMMEDIATELY (never stuck on spinner)
         const cached = await messageService.getMessages(friendId);
+        // Ensure messages are sorted chronologically (oldest first)
+        const sorted = cached.sort((a, b) => a.created_at - b.created_at);
         if (isSubscribed) {
-          setMessages(cached);
-          prevMessageCountRef.current = cached.length;
+          setMessages(sorted);
+          prevMessageCountRef.current = sorted.length;
         }
 
         // 2. Check local conversation for cached request status + presence
@@ -196,7 +198,9 @@ export default function ChatScreen() {
           setMessages(prev => {
             // Dedup by id AND local_id
             if (prev.some(m => m.id === msg.id || m.local_id === msg.local_id)) return prev;
-            return [...prev, msg];
+            // Add new message and sort chronologically
+            const updated = [...prev, msg];
+            return updated.sort((a, b) => a.created_at - b.created_at);
           });
 
           // Auto-scroll for sent messages
@@ -273,7 +277,9 @@ export default function ChatScreen() {
       messageService.on('messages_synced', async (syncedFriendId: string) => {
         if (syncedFriendId === friendId && user) {
           const fresh = await messageService.getMessages(friendId, undefined, { skipSync: true });
-          setMessages(fresh);
+          // Ensure messages are sorted chronologically (oldest first)
+          const sorted = fresh.sort((a, b) => a.created_at - b.created_at);
+          setMessages(sorted);
         }
       })
     );

@@ -239,7 +239,8 @@ class SQLiteService {
         (m.from_user_id === userId && m.to_user_id === friendId) ||
         (m.from_user_id === friendId && m.to_user_id === userId)
       );
-      const sorted = filtered.sort((a, b) => b.created_at - a.created_at);
+      // Sort by created_at ASCENDING (oldest first) to match SQLite behavior
+      const sorted = filtered.sort((a, b) => a.created_at - b.created_at);
       return sorted.slice(0, limit);
     }
     const query = before
@@ -254,6 +255,7 @@ class SQLiteService {
       ? [userId, friendId, friendId, userId, before, limit]
       : [userId, friendId, friendId, userId, limit];
     const rows = await this.db.getAllAsync(query, params) as any[];
+    // Reverse to get ASCENDING order (oldest first, newest last)
     return rows.reverse();
   }
 

@@ -18,6 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { imageStorageService } from '../../services/imageStorageService';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -321,6 +322,13 @@ export default function ProfileScreen() {
       const mime = (asset as any).mimeType || 'image/jpeg';
       const dataUri = `data:${mime};base64,${asset.base64}`;
 
+      // Save avatar locally first - this DELETES old avatar before saving new one
+      // ensuring only ONE avatar file exists per user
+      if (user?.id) {
+        await imageStorageService.saveAvatar(user.id, dataUri);
+      }
+
+      // Then update profile on server
       const r = await updateProfile({ avatar: dataUri } as any);
       if (!r.success) {
         setInlineError(r.message || 'Could not update profile photo');
@@ -332,7 +340,7 @@ export default function ProfileScreen() {
     } finally {
       setUploadingAvatar(false);
     }
-  }, [updateProfile]);
+  }, [updateProfile, user]);
 
   const stats = [
     { icon: 'checkmark-done', label: 'Tasks Done', value: total, color: '#10B981' },
