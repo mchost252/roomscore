@@ -1,14 +1,13 @@
-// Prisma Schema for Krios (PRODUCTION - RAILWAY)
+// Prisma Schema for Krios (LOCAL - SQLITE)
 
 generator client {
   provider = "prisma-client-js"
 }
 
-// === PostgreSQL (Production - Railway) ===
+// === SQLite (Local Development) ===
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_DATABASE_URL")
+  provider = "sqlite"  
+  url      = "file:./dev.db"
 }
 
 // ==================== USER ====================
