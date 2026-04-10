@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { View, Text, Image, StyleSheet, Pressable, TouchableOpacity, Dimensions } from 'react-native';
 import Animated, {
   useSharedValue, useAnimatedStyle, withSpring, withTiming,
@@ -36,9 +36,24 @@ export default function SidebarNav({ onAIPress, onAddTask }: Props) {
   const router   = useRouter();
   const pathname = usePathname();
 
-  const [open,   setOpen]   = useState(false);
+  // Use refs for state that persists across re-renders
+  const openRef = useRef(false);
+  const labeledRef = useRef(false);
+  // Mirror refs to state for rendering
+  const [open, setOpen] = useState(false);
   const [labeled, setLabeled] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+
+  // Sync refs and state
+  const setOpenWithRef = useCallback((value: boolean) => {
+    openRef.current = value;
+    setOpen(value);
+  }, []);
+
+  const setLabeledWithRef = useCallback((value: boolean) => {
+    labeledRef.current = value;
+    setLabeled(value);
+  }, []);
 
   const refreshUnread = useCallback(async () => {
     try {
@@ -88,12 +103,16 @@ export default function SidebarNav({ onAIPress, onAddTask }: Props) {
     bdAlpha.value = withTiming(0, { duration: 150 });
     labelsO.value = withTiming(0, { duration: 80 });
     itemsO.value  = withTiming(0, { duration: 100 });
-    runOnJS(setOpen)(false);
-    runOnJS(setLabeled)(false);
+    // Set refs and state directly (we're on JS thread, not a worklet)
+    // Using runOnJS was causing race conditions when modals open immediately after
+    openRef.current = false;
+    labeledRef.current = false;
+    setOpen(false);
+    setLabeled(false);
   }, []);
 
   const doOpen = useCallback(() => {
-    setOpen(true);
+    setOpenWithRef(true);
     const dH = OPEN_H - K_SIZE; // extra height gained
     pillW.value   = withSpring(OPEN_W, SPRING_OPEN);
     pillH.value   = withSpring(OPEN_H, SPRING_OPEN);
@@ -101,19 +120,19 @@ export default function SidebarNav({ onAIPress, onAddTask }: Props) {
     pillTY.value  = withSpring(-(dH / 2), SPRING_OPEN);
     bdAlpha.value = withTiming(0.42, { duration: 150 });
     itemsO.value  = withTiming(1, { duration: 220 });
-  }, []);
+  }, [setOpenWithRef]);
 
   const onKPress = useCallback(() => {
-    if (!open) {
+    if (!openRef.current) {
       doOpen();
-    } else if (!labeled) {
-      setLabeled(true);
+    } else if (!labeledRef.current) {
+      setLabeledWithRef(true);
       pillW.value   = withSpring(LABEL_W, SPRING_OPEN);
       labelsO.value = withTiming(1, { duration: 180 });
     } else {
       doClose();
     }
-  }, [open, labeled, doOpen, doClose]);
+  }, [doOpen, doClose, setLabeledWithRef]);
 
   const navigate = useCallback((route: string, isActive: boolean) => {
     if (isActive) {
@@ -135,42 +154,41 @@ export default function SidebarNav({ onAIPress, onAddTask }: Props) {
   const pillStyle = useAnimatedStyle(() => ({
     width:   pillW.value,
     height:  pillH.value,
-    opacity: opacity.value,
+    // NOTE: opacity removed - K icon should always stay visible
+    // The fade effect is applied to nav items via itemsStyle instead
     transform: [{ translateY: pillTY.value }],
   }));
 
   const bdStyle = useAnimatedStyle(() => ({
-    opacity:       bdAlpha.value,
-    pointerEvents: bdAlpha.value > 0.01 ? 'auto' : 'none',
-  } as any));
+    opacity: bdAlpha.value,
+  }));
 
   const itemsStyle  = useAnimatedStyle(() => ({ opacity: itemsO.value }));
   const labelStyle  = useAnimatedStyle(() => ({ opacity: labelsO.value }));
 
   return (
     <>
-      {/* Backdrop */}
-      <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, bdStyle]}>
+      {/* Backdrop - only capture events when open */}
+      <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, bdStyle]} pointerEvents={open ? 'auto' : 'none'} >
         <Pressable style={StyleSheet.absoluteFill} onPress={doClose} />
       </Animated.View>
 
       {/* Pill — anchored at vertical center via top:50% + marginTop:-K_SIZE/2, then translateY keeps it centred */}
       <Animated.View
         style={[styles.pill, { backgroundColor: bg, borderColor: border }, pillStyle]}
-        pointerEvents={shouldFade ? 'none' : 'auto'}
       >
-        {/* Logo button — always full-width of pill, centered */}
+        {/* Logo button — always visible, does NOT fade */}
         <TouchableOpacity style={styles.kBtn} onPress={onKPress} activeOpacity={0.75}>
           <View style={[styles.kCircle, {
             backgroundColor: isDark ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.1)',
             borderColor: P + '44',
             borderWidth: 1,
           }]}>
-            <Image source={require('../assets/krios-logo.png')} style={styles.kLogo} resizeMode="contain" />
+            <Ionicons name="key" size={22} color={P} />
           </View>
         </TouchableOpacity>
 
-        {/* Nav items */}
+        {/* Nav items — these DO fade on certain routes */}
         <Animated.View style={[styles.items, itemsStyle]}>
           {NAV_ITEMS.map((item, i) => {
             const isActive = item.active.some((a: string) => {

@@ -136,7 +136,6 @@ export default function AIClarificationSheet({
         {/* Backdrop */}
         <Animated.View
           style={[styles.backdrop, { opacity: backdropAnim }]}
-          pointerEvents={visible ? 'auto' : 'none'}
         >
           <Pressable style={StyleSheet.absoluteFillObject} onPress={onSkip} />
         </Animated.View>
@@ -144,8 +143,7 @@ export default function AIClarificationSheet({
         {/* Sheet */}
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.kvWrapper}
-          pointerEvents="box-none"
+          style={[styles.kvWrapper, { pointerEvents: 'box-none' }]}
         >
           <Animated.View
             style={[

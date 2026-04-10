@@ -79,13 +79,24 @@ export default function MessagesScreen() {
   }, []);
 
   // Register + button to open add friend modal (instead of task modal on home)
-  const { setOpenAddTask } = React.useContext(HomeNavContext);
+  const { setOpenAIChat, setOpenAddTask } = React.useContext(HomeNavContext);
   const openAddFriend = React.useCallback(() => {
     setAddFriendModalVisible(true);
   }, []);
-  React.useEffect(() => {
+  
+  // Register callbacks on mount
+  useEffect(() => {
+    setOpenAIChat(() => router.push('/(home)/ai-chat'));
     setOpenAddTask(openAddFriend);
-  }, [openAddFriend, setOpenAddTask]);
+  }, [openAddFriend, setOpenAIChat, setOpenAddTask]);
+
+  // Also re-register when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      setOpenAIChat(() => router.push('/(home)/ai-chat'));
+      setOpenAddTask(openAddFriend);
+    }, [openAddFriend, setOpenAIChat, setOpenAddTask, router])
+  );
 
   // ── Samsung-style scroll (same as profile.tsx) ───────────
   const scrollY = useSharedValue(0);
@@ -374,6 +385,7 @@ export default function MessagesScreen() {
         }]}>
           <Ionicons name="search-outline" size={15} color={textTert} />
           <TextInput
+            id="messages-search-input"
             style={[s.searchInput, { color: text }]}
             value={search}
             onChangeText={handleSearch}
@@ -382,6 +394,8 @@ export default function MessagesScreen() {
             placeholder="Search conversations..."
             placeholderTextColor={textTert}
             returnKeyType="search"
+            accessibilityLabel="messages-search-input"
+            testID="messages-search-input"
           />
           {search.length > 0 && (
             <TouchableOpacity onPress={() => handleSearch('')}>
@@ -620,12 +634,15 @@ export default function MessagesScreen() {
             }]}>
               <Ionicons name="search-outline" size={15} color={textTert} />
               <TextInput
+                id="friend-search-input"
                 style={[s.modalSearchInput, { color: text }]}
                 value={addFriendSearch}
                 onChangeText={handleAddFriendSearch}
                 placeholder="Search friends..."
                 placeholderTextColor={textTert}
                 returnKeyType="search"
+                accessibilityLabel="friend-search-input"
+                testID="friend-search-input"
               />
               {addFriendSearch.length > 0 && (
                 <TouchableOpacity onPress={() => handleAddFriendSearch('')}>
@@ -683,13 +700,7 @@ export default function MessagesScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── Nav bars ── */}
-      {navStyle === 'sidebar' && (
-        <SidebarNav
-          onAIPress={() => router.push('/(home)/ai-chat')}
-          onAddTask={() => router.push('/(home)/profile')}
-        />
-      )}
+      {/* SidebarNav is now rendered globally in _layout.tsx */}
     </View>
   );
 }

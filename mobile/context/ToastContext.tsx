@@ -95,9 +95,9 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
               transform: [{ translateY: slideAnim }],
               backgroundColor: isDark ? 'rgba(30, 30, 40, 0.95)' : 'rgba(255, 255, 255, 0.95)',
               borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+              pointerEvents: 'none',
             },
           ]}
-          pointerEvents="none"
         >
           <View style={[
             styles.iconContainer, 

@@ -8,8 +8,9 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StyleSheet } from 'react-native';
 
-// Error boundary for production crashes
+// Tactical UI components
 import { ErrorBoundary } from '../components/ErrorBoundary';
+// import TacticalTouchOverlay from '../components/TacticalTouchOverlay'; // <-- UNCOMMENT TO ACTIVATE TACTICAL TOUCH EFFECTS
 
 export default function RootLayout() {
   useEffect(() => {
@@ -30,6 +31,12 @@ export default function RootLayout() {
           <ToastProvider>
             <AuthProvider>
               <ErrorBoundary>
+                {/* ── TACTICAL TOUCH OVERLAY ───────────────────────────────────────────
+                    Uncomment the line below to activate global tactical touch pings.
+                    This uses Skia + Reanimated for zero-lag hardware accelerated feedback.
+                */}
+                {/* <TacticalTouchOverlay /> */}
+
                 <Stack screenOptions={{ headerShown: false }}>
                   <Stack.Screen name="index" />
                   <Stack.Screen name="(onboarding)" />

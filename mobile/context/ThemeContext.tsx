@@ -24,15 +24,18 @@ const DarkColors = {
   primary: '#6366f1',
   primaryLight: '#818cf8',
   primaryDark: '#4f46e5',
+  secondary: '#8b5cf6',       // Added for room-detail compatibility
+  accent: '#a78bfa',         // Already exists but duplicated for clarity
   text: '#ffffff',
   textSecondary: 'rgba(255,255,255,0.65)',
   textTertiary: 'rgba(255,255,255,0.35)',
   borderColor: 'rgba(255,255,255,0.08)',
   borderStrong: 'rgba(255,255,255,0.14)',
+  /** @deprecated use borderColor — flat border string (avoid name clash with nested `border` scale below) */
+  borderLine: 'rgba(255,255,255,0.08)',
   success: '#22c55e',
   warning: '#f59e0b',
   error: '#ef4444',
-  accent: '#a78bfa',
   card: 'rgba(255,255,255,0.06)',
   separator: 'rgba(255,255,255,0.06)',
   overlay: 'rgba(0,0,0,0.6)',
@@ -82,15 +85,17 @@ const LightColors = {
   primary: '#6366f1',
   primaryLight: '#818cf8',
   primaryDark: '#4f46e5',
+  secondary: '#8b5cf6',       // Added for room-detail compatibility
+  accent: '#7c3aed',         // Already exists but duplicated for clarity
   text: '#0f172a',
   textSecondary: 'rgba(15,23,42,0.65)',
   textTertiary: 'rgba(15,23,42,0.4)',
   borderColor: 'rgba(0,0,0,0.08)',
   borderStrong: 'rgba(0,0,0,0.14)',
+  borderLine: 'rgba(0,0,0,0.08)',
   success: '#16a34a',
   warning: '#d97706',
   error: '#dc2626',
-  accent: '#7c3aed',
   card: 'rgba(0,0,0,0.04)',
   separator: 'rgba(0,0,0,0.06)',
   overlay: 'rgba(0,0,0,0.4)',
@@ -148,6 +153,12 @@ const DarkGradients = {
   aurora: ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd'] as string[],
   danger: ['#ef4444', '#dc2626'] as string[],
   gold: ['#f59e0b', '#d97706'] as string[],
+  // Premium room card gradients
+  cardBorder: ['rgba(99,102,241,0.4)', 'rgba(139,92,246,0.2)', 'rgba(99,102,241,0.4)'] as string[],
+  cardAccent: ['rgba(99,102,241,0.15)', 'rgba(139,92,246,0.08)'] as string[],
+  success: ['#22c55e', '#16a34a'] as string[],
+  warning: ['#f59e0b', '#d97706'] as string[],
+  cyan: ['#06b6d4', '#0ea5e9'] as string[],
 } as const;
 
 const LightGradients = {
@@ -164,6 +175,12 @@ const LightGradients = {
   aurora: ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd'] as string[],
   danger: ['#ef4444', '#dc2626'] as string[],
   gold: ['#f59e0b', '#d97706'] as string[],
+  // Premium room card gradients
+  cardBorder: ['rgba(99,102,241,0.3)', 'rgba(139,92,246,0.15)', 'rgba(99,102,241,0.3)'] as string[],
+  cardAccent: ['rgba(99,102,241,0.1)', 'rgba(139,92,246,0.05)'] as string[],
+  success: ['#22c55e', '#16a34a'] as string[],
+  warning: ['#f59e0b', '#d97706'] as string[],
+  cyan: ['#06b6d4', '#0ea5e9'] as string[],
 } as const;
 
 const Spacing = {
@@ -203,6 +220,10 @@ const DarkShadows = {
   lg: { shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.55, shadowRadius: 20, elevation: 10 },
   glow: { shadowColor: '#6366f1', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 20, elevation: 8 },
   glowAccent: { shadowColor: '#a78bfa', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 16, elevation: 6 },
+  // Premium room card shadows
+  card: { shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 24, elevation: 8 },
+  cardPressed: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 4 },
+  cardGlow: { shadowColor: '#6366f1', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 6 },
 } as const;
 
 const LightShadows = {
@@ -211,6 +232,10 @@ const LightShadows = {
   lg: { shadowColor: '#0f172a', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.16, shadowRadius: 20, elevation: 8 },
   glow: { shadowColor: '#6366f1', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.25, shadowRadius: 16, elevation: 6 },
   glowAccent: { shadowColor: '#7c3aed', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 4 },
+  // Premium room card shadows
+  card: { shadowColor: '#0f172a', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 24, elevation: 8 },
+  cardPressed: { shadowColor: '#0f172a', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 },
+  cardGlow: { shadowColor: '#6366f1', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.15, shadowRadius: 16, elevation: 6 },
 } as const;
 
 // ─── Context Type ─────────────────────────────────────────────────────────────

@@ -14,13 +14,13 @@ export default function SettingsScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const { colors, gradients, isDark, setTheme } = useTheme();
-  const fadeAnim  = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(20)).current;
+  const fadeAnim  = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
   useLayoutEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim,  { toValue: 1, duration: 200, useNativeDriver: true }),
-      Animated.spring(slideAnim, { toValue: 0, tension: 220, friction: 18, useNativeDriver: true }),
-    ]).start();
+    // Start with visible content to prevent white flash
+    // Set to 1 immediately so there's no flash, skip animation entirely
+    fadeAnim.setValue(1);
+    slideAnim.setValue(0);
   }, []);
   const theme = {
     background: colors.background.primary,

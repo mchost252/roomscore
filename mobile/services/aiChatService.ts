@@ -10,6 +10,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../constants/config';
+import aiTaskParser from './aiTaskParser';
 
 const HISTORY_KEY = '@krios:chatHistory';
 const MAX_STORED = 50;   // keep last 50 messages in storage
@@ -90,6 +91,26 @@ export async function sendChatMessage(params: {
 }): Promise<ChatResponse> {
   const { message, history, token } = params;
 
+  // ── Try local AI first (no API cost, instant response) ──
+  try {
+    const localResult = await aiTaskParser.parseMessage(message);
+    if (localResult.isLocal || localResult.action !== 'unknown') {
+      // Local intent was matched - return immediately without hitting the API
+      return {
+        reply: localResult.response,
+        taskSuggestion: localResult.taskData ? {
+          title: localResult.taskData.title,
+          priority: localResult.taskData.priority || 'medium',
+          taskType: localResult.taskData.taskType || 'one-time',
+          dueDate: localResult.taskData.dueDate,
+        } : null,
+      };
+    }
+  } catch {
+    // If local parsing fails, fall through to API
+  }
+
+  // ── Fall through to remote API for conversational/creative requests ──
   // Send only last MAX_SENT messages as context
   const contextHistory = history.slice(-MAX_SENT).map(m => ({
     role: m.role,

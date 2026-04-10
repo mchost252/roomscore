@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react';
-import { View, Animated, Dimensions, StyleSheet } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import React, { useEffect, useRef, useCallback } from 'react';
+import { View, Animated, Dimensions, StyleSheet, Easing } from 'react-native';
+import * as Haptics from 'expo-haptics';
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -10,8 +10,10 @@ interface ConfettiPiece {
   y: Animated.Value;
   rotate: Animated.Value;
   scale: Animated.Value;
+  opacity: Animated.Value;
   color: string;
-  shape: 'circle' | 'square' | 'triangle';
+  shape: 'circle' | 'square' | 'line';
+  sway: Animated.Value;
 }
 
 interface Props {
@@ -20,89 +22,133 @@ interface Props {
   onComplete?: () => void;
 }
 
-const COLORS: Record<string, string[]> = {
-  urgent: ['#dc2626', '#ef4444', '#f97316', '#fbbf24'],
-  high:   ['#ef4444', '#f97316', '#fbbf24', '#facc15'],
-  medium: ['#3b82f6', '#6366f1', '#8b5cf6', '#a855f7'],
-  low:    ['#10b981', '#14b8a6', '#06b6d4', '#0ea5e9'],
+const KRIOS_COLORS = {
+  purple: '#8b5cf6',
+  indigo: '#6366f1',
+  gold: '#f59e0b',
+  emerald: '#10b981',
+  crimson: '#ef4444',
 };
 
-export default function ConfettiCelebration({ show, priority, onComplete }: Props) {
+const COLORS: Record<string, string[]> = {
+  urgent: [KRIOS_COLORS.crimson, KRIOS_COLORS.gold, '#f97316'],
+  high:   [KRIOS_COLORS.gold, KRIOS_COLORS.indigo, '#fb923c'],
+  medium: [KRIOS_COLORS.indigo, KRIOS_COLORS.purple, '#a78bfa'],
+  low:    [KRIOS_COLORS.emerald, '#06b6d4', '#14b8a6'],
+};
+
+const PIECE_COUNTS: Record<string, number> = {
+  urgent: 70,
+  high: 50,
+  medium: 35,
+  low: 20,
+};
+
+export default React.memo(function ConfettiCelebration({ show, priority, onComplete }: Props) {
   const confettiPieces = useRef<ConfettiPiece[]>([]);
   const [isVisible, setIsVisible] = React.useState(false);
+  const animationRef = useRef<Animated.CompositeAnimation | null>(null);
+  const shakeAnim = useRef(new Animated.Value(0)).current;
+
+  const cleanup = useCallback(() => {
+    if (animationRef.current) {
+      animationRef.current.stop();
+      animationRef.current = null;
+    }
+    confettiPieces.current = [];
+    shakeAnim.setValue(0);
+  }, []);
 
   useEffect(() => {
-    if (show) {
-      setIsVisible(true);
-      const pieceCount = priority === 'high' ? 50 : priority === 'medium' ? 30 : 15;
-      const colors = COLORS[priority];
+    if (!show) return;
 
-      // Generate confetti pieces
-      confettiPieces.current = Array.from({ length: pieceCount }, (_, i) => {
-        const startX = W / 2 + (Math.random() - 0.5) * 100;
-        const startY = H / 2;
-        return {
-          id: i,
-          x: new Animated.Value(startX),
-          y: new Animated.Value(startY),
-          rotate: new Animated.Value(0),
-          scale: new Animated.Value(1),
-          color: colors[Math.floor(Math.random() * colors.length)],
-          shape: ['circle', 'square', 'triangle'][Math.floor(Math.random() * 3)] as any,
-          startX,
-          startY,
-        };
+    cleanup();
+    setIsVisible(true);
+
+    const pieceCount = PIECE_COUNTS[priority] || 35;
+    const colors = COLORS[priority] || COLORS.medium;
+
+    confettiPieces.current = Array.from({ length: pieceCount }, (_, i) => ({
+      id: i,
+      x: new Animated.Value(Math.random() * W),
+      y: new Animated.Value(-100 - Math.random() * 200),
+      rotate: new Animated.Value(0),
+      scale: new Animated.Value(0.4 + Math.random() * 0.8),
+      opacity: new Animated.Value(0),
+      sway: new Animated.Value(0),
+      color: colors[Math.floor(Math.random() * colors.length)],
+      shape: (['circle', 'square', 'line'] as const)[Math.floor(Math.random() * 3)],
+    }));
+
+    // Impact Haptics
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    
+    const shake = Animated.sequence([
+      Animated.timing(shakeAnim, { toValue: 8, duration: 40, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -8, duration: 40, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0, duration: 40, useNativeDriver: true }),
+    ]);
+
+    const animations = confettiPieces.current.map((piece) => {
+      const duration = 2800 + Math.random() * 2000;
+      const swayAmount = 25 + Math.random() * 55;
+      const swayDuration = 700 + Math.random() * 700;
+      const iterations = Math.ceil(duration / (swayDuration * 2));
+
+      const fallAnim = Animated.timing(piece.y, {
+        toValue: H + 120,
+        duration,
+        easing: Easing.linear,
+        useNativeDriver: true,
       });
 
-      // Animate all pieces
-      const animations = confettiPieces.current.map((piece: any) => {
-        const angle = Math.random() * Math.PI * 2;
-        const velocity = 200 + Math.random() * 300;
-        const endX = piece.startX + Math.cos(angle) * velocity;
-        const endY = piece.startY + Math.sin(angle) * velocity + 400; // Gravity effect
+      // FINITE sway instead of infinite loop to prevent freezing
+      const swayAnim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(piece.sway, { toValue: swayAmount, duration: swayDuration, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+          Animated.timing(piece.sway, { toValue: -swayAmount, duration: swayDuration, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        ]),
+        { iterations }
+      );
 
-        return Animated.parallel([
-          Animated.timing(piece.x, {
-            toValue: endX,
-            duration: 1500 + Math.random() * 500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(piece.y, {
-            toValue: endY,
-            duration: 1500 + Math.random() * 500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(piece.rotate, {
-            toValue: Math.random() > 0.5 ? 360 : -360,
-            duration: 1000 + Math.random() * 1000,
-            useNativeDriver: true,
-          }),
-          Animated.sequence([
-            Animated.timing(piece.scale, {
-              toValue: 1.2,
-              duration: 200,
-              useNativeDriver: true,
-            }),
-            Animated.timing(piece.scale, {
-              toValue: 0,
-              duration: 1300,
-              useNativeDriver: true,
-            }),
-          ]),
-        ]);
+      const opacityAnim = Animated.sequence([
+        Animated.timing(piece.opacity, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.timing(piece.opacity, { toValue: 0, duration: 600, delay: duration - 1200, useNativeDriver: true }),
+      ]);
+
+      const rotateAnim = Animated.timing(piece.rotate, {
+        toValue: 1,
+        duration: duration * 0.9,
+        easing: Easing.linear,
+        useNativeDriver: true,
       });
 
-      Animated.stagger(20, animations).start(() => {
+      return Animated.parallel([fallAnim, swayAnim, opacityAnim, rotateAnim]);
+    });
+
+    const finalAnimation = Animated.parallel([
+      shake,
+      Animated.stagger(12, animations),
+    ]);
+
+    animationRef.current = finalAnimation;
+    finalAnimation.start(({ finished }) => {
+      if (finished) {
         setIsVisible(false);
         onComplete?.();
-      });
-    }
-  }, [show, priority]);
+      }
+    });
+
+    return cleanup;
+  }, [show, priority, cleanup, onComplete]);
 
   if (!isVisible) return null;
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+    <Animated.View 
+      style={[styles.container, { transform: [{ translateX: shakeAnim }] }]} 
+      pointerEvents="none"
+    >
       {confettiPieces.current.map((piece) => (
         <Animated.View
           key={piece.id}
@@ -110,30 +156,37 @@ export default function ConfettiCelebration({ show, priority, onComplete }: Prop
             styles.piece,
             {
               backgroundColor: piece.color,
-              width: piece.shape === 'circle' ? 12 : 10,
-              height: 10,
-              borderRadius: piece.shape === 'circle' ? 6 : piece.shape === 'triangle' ? 0 : 2,
+              width: piece.shape === 'line' ? 3 : 10,
+              height: piece.shape === 'line' ? 14 : 10,
+              borderRadius: piece.shape === 'circle' ? 5 : 1,
+              opacity: piece.opacity,
               transform: [
                 { translateX: piece.x },
                 { translateY: piece.y },
-                { rotate: piece.rotate.interpolate({ inputRange: [0, 360], outputRange: ['0deg', '360deg'] }) },
+                { translateX: piece.sway },
+                { rotate: piece.rotate.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['0deg', `${720 + Math.random() * 1440}deg`],
+                }) },
                 { scale: piece.scale },
               ],
             },
           ]}
         />
       ))}
-    </View>
+    </Animated.View>
   );
-}
+});
 
 const styles = StyleSheet.create({
+  container: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 99999,
+    elevation: 99999,
+  },
   piece: {
     position: 'absolute',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
+    top: 0,
+    left: 0,
   },
 });

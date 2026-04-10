@@ -82,41 +82,18 @@ export default function TaskThreadScreen() {
       if (!taskId) return;
       const threadMessages = await threadService.getThread(taskId as any);
       setMessages(threadMessages);
+      
+      // Map existing messages to thread entries for the UI
+      const mappedEntries: ThreadEntry[] = threadMessages.map(msg => ({
+        id: msg.id,
+        type: (msg.metadata?.action as any) || 'note',
+        text: msg.text,
+        timestamp: msg.timestamp instanceof Date ? msg.timestamp : new Date(msg.timestamp),
+      }));
+      setThread(mappedEntries);
     };
     loadThread();
   }, [taskId]);
-
-  // ── Load AI note ──────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!taskId || !params.taskTitle || !token) return;
-
-    const loadAINote = async () => {
-      setAiLoading(true);
-      setAiError(null);
-      try {
-        let clarifications: Record<string, string> = {};
-        if (params.clarifications) {
-          try { clarifications = JSON.parse(params.clarifications); } catch {}
-        }
-
-        const note = await fetchAINote({
-          taskId,
-          taskTitle: params.taskTitle as string,
-          taskType: params.taskType as string,
-          priority: params.taskPriority as string,
-          clarifications,
-          token,
-        });
-        setAiNote(note);
-      } catch (err) {
-        setAiError('AI note unavailable');
-      } finally {
-        setAiLoading(false);
-      }
-    };
-
-    loadAINote();
-  }, [taskId, token]);
 
   // ── Keyboard handling ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -144,6 +121,7 @@ export default function TaskThreadScreen() {
       taskId: taskId as any,
       text: noteInput.trim(),
       sender: 'user',
+      metadata: { action: 'note' as any }
     });
 
     const entry: ThreadEntry = {
@@ -157,15 +135,25 @@ export default function TaskThreadScreen() {
     setNoteInput('');
   }, [noteInput, taskId]);
 
-  const handleQuickAction = useCallback((action: string) => {
+  const handleQuickAction = useCallback(async (action: string) => {
+    const type = action.startsWith('Remind') ? 'reminder' : action.startsWith('Sno') ? 'snooze' : 'note';
+    
+    const newMessage = await threadService.addMessage(taskId as any, {
+      taskId: taskId as any,
+      text: action,
+      sender: 'user',
+      metadata: { action: type as any }
+    });
+
     const entry: ThreadEntry = {
-      id: `q${Date.now()}`,
-      type: action.startsWith('Remind') ? 'reminder' : action.startsWith('Sno') ? 'snooze' : 'note',
+      id: newMessage.id,
+      type: type as any,
       text: action,
       timestamp: new Date(),
     };
     setThread(prev => [...prev, entry]);
-  }, []);
+    setMessages(prev => [...prev, newMessage]);
+  }, [taskId]);
 
   const handleMilestonesChange = useCallback((milestones: AIMilestone[]) => {
     setAiNote(prev => prev ? { ...prev, milestones } : prev);

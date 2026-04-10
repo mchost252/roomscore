@@ -1,146 +1,79 @@
 import api from './api';
-import { Room, LeaderboardEntry, ChatMessage, PendingMember } from '../types';
+import { RoomDetail, RoomMember, AuraTier } from '../types/room';
 
-export interface CreateRoomData {
-  name: string;
-  description?: string;
-  isPublic: boolean;
-  maxMembers?: number;
-  duration?: '1_week' | '2_weeks' | '1_month';
-  chatRetentionDays?: number;
-  requireApproval?: boolean;
-  tasks?: Array<{
-    title: string;
-    description?: string;
-    taskType?: 'daily' | 'weekly' | 'custom';
-    daysOfWeek?: number[];
-    points?: number;
-  }>;
+function mapAura(raw: string | undefined): AuraTier {
+  const v = (raw || '').toLowerCase();
+  if (v === 'silver' || v === 'gold' || v === 'platinum') return v as AuraTier;
+  return 'bronze';
 }
 
-export interface UpdateRoomData {
-  name?: string;
-  description?: string;
-  isPublic?: boolean;
-  maxMembers?: number;
+function mapRoom(raw: any): RoomDetail {
+  const id = raw._id || raw.id;
+  const ownerId =
+    typeof raw.ownerId === 'object' && raw.ownerId
+      ? raw.ownerId._id || raw.ownerId.id
+      : raw.ownerId || raw.owner?._id || raw.owner?.id || '';
+
+  return {
+    id,
+    name: raw.name,
+    description: raw.description ?? '',
+    joinCode: raw.joinCode ?? '',
+    isPrivate: raw.isPrivate !== false && !raw.isPublic,
+    isPublic: raw.isPublic ?? !raw.isPrivate,
+    maxMembers: raw.maxMembers ?? 20,
+    chatRetentionDays: raw.chatRetentionDays ?? 3,
+    isPremium: !!raw.isPremium,
+    streak: raw.streak ?? 0,
+    ownerId,
+    isActive: raw.isActive !== false,
+    requireApproval: raw.requireApproval,
+    createdAt: raw.createdAt || new Date().toISOString(),
+    updatedAt: raw.updatedAt || new Date().toISOString(),
+    doomClockExpiry: raw.doomClockExpiry,
+    userRole: raw.userRole,
+    groupAura: raw.groupAura,
+    onlineCount: raw.onlineCount,
+    weeklyPoints: raw.weeklyPoints,
+  };
 }
 
-export interface RoomSettingsData {
-  isPublic?: boolean;
-  chatRetentionDays?: number;
-  requireApproval?: boolean;
+function mapMember(m: any): RoomMember {
+  const userObj = m.userId?.username != null ? m.userId : m.user;
+  const username = userObj?.username ?? 'Member';
+  const avatar = userObj?.avatar;
+
+  // Extract the actual user ID — may be a populated object or plain string
+  const userId =
+    typeof m.userId === 'object' && m.userId
+      ? m.userId._id || m.userId.id
+      : typeof m.userId === 'string'
+        ? m.userId
+        : m.user_id || userObj?._id || userObj?.id || undefined;
+
+  return {
+    id: m._id || m.id,
+    userId,
+    username,
+    avatar,
+    isOnline: !!m.isOnline,
+    aura: mapAura(userObj?.aura),
+    hasHeat: !!m.hasHeat,
+  };
 }
 
-class RoomService {
-  // ── Get user's rooms ──
-  async getMyRooms(): Promise<Room[]> {
-    const res = await api.get('/rooms');
-    return res.data.rooms || [];
-  }
-
-  // ── Get public/discoverable rooms ──
-  async getPublicRooms(): Promise<Room[]> {
-    const res = await api.get('/rooms', { params: { type: 'public' } });
-    return res.data.rooms || [];
-  }
-
-  // ── Get room details ──
-  async getRoom(roomId: string): Promise<Room> {
+export const RoomService = {
+  async getRoom(roomId: string): Promise<RoomDetail> {
     const res = await api.get(`/rooms/${roomId}`);
-    return res.data.room;
-  }
+    return mapRoom(res.data.room);
+  },
 
-  // ── Create room ──
-  async createRoom(data: CreateRoomData): Promise<Room> {
-    const res = await api.post('/rooms', data);
-    return res.data.room;
-  }
+  async getRoomMembers(roomId: string): Promise<RoomMember[]> {
+    const res = await api.get(`/rooms/${roomId}`);
+    const room = res.data.room;
+    const members = room?.members || [];
+    return members.map(mapMember);
+  },
+};
 
-  // ── Update room ──
-  async updateRoom(roomId: string, data: UpdateRoomData): Promise<Room> {
-    const res = await api.put(`/rooms/${roomId}`, data);
-    return res.data.room;
-  }
-
-  // ── Update room settings ──
-  async updateSettings(roomId: string, data: RoomSettingsData): Promise<Room> {
-    const res = await api.put(`/rooms/${roomId}/settings`, data);
-    return res.data.room;
-  }
-
-  // ── Delete room ──
-  async deleteRoom(roomId: string): Promise<void> {
-    await api.delete(`/rooms/${roomId}`);
-  }
-
-  // ── Join room by code ──
-  async joinRoom(joinCode: string): Promise<{ room?: Room; pending?: boolean; message?: string }> {
-    const res = await api.post('/rooms/join', { joinCode });
-    return res.data;
-  }
-
-  // ── Leave room ──
-  async leaveRoom(roomId: string): Promise<void> {
-    await api.delete(`/rooms/${roomId}/leave`);
-  }
-
-  // ── Remove member ──
-  async removeMember(roomId: string, userId: string): Promise<void> {
-    await api.delete(`/rooms/${roomId}/members/${userId}`);
-  }
-
-  // ── Get leaderboard ──
-  async getLeaderboard(roomId: string): Promise<LeaderboardEntry[]> {
-    const res = await api.get(`/rooms/${roomId}/leaderboard`);
-    return res.data.leaderboard || [];
-  }
-
-  // ── Chat: Get messages ──
-  async getMessages(roomId: string, opts?: { limit?: number; before?: string; lastId?: string }): Promise<{
-    messages: ChatMessage[];
-    retentionDays: number;
-    deltaSync: boolean;
-  }> {
-    const params: any = {};
-    if (opts?.limit) params.limit = opts.limit;
-    if (opts?.before) params.before = opts.before;
-    if (opts?.lastId) params.last_id = opts.lastId;
-    const res = await api.get(`/rooms/${roomId}/chat`, { params });
-    return res.data;
-  }
-
-  // ── Chat: Send message ──
-  async sendMessage(roomId: string, message: string, replyToId?: string, replyToText?: string): Promise<ChatMessage> {
-    const res = await api.post(`/rooms/${roomId}/chat`, { message, replyToId, replyToText });
-    return res.data.message;
-  }
-
-  // ── Pending members ──
-  async getPendingMembers(roomId: string): Promise<PendingMember[]> {
-    const res = await api.get(`/rooms/${roomId}/pending`);
-    return res.data.pendingMembers || [];
-  }
-
-  // ── Approve member ──
-  async approveMember(roomId: string, userId: string): Promise<void> {
-    await api.put(`/rooms/${roomId}/members/${userId}/approve`);
-  }
-
-  // ── Reject member ──
-  async rejectMember(roomId: string, userId: string): Promise<void> {
-    await api.delete(`/rooms/${roomId}/members/${userId}/reject`);
-  }
-
-  // ── Premium ──
-  async activatePremium(roomId: string, code: string): Promise<Room> {
-    const res = await api.put(`/rooms/${roomId}/premium`, { code });
-    return res.data.room;
-  }
-
-  async deactivatePremium(roomId: string): Promise<Room> {
-    const res = await api.put(`/rooms/${roomId}/premium`, { deactivate: true });
-    return res.data.room;
-  }
-}
-
-export default new RoomService();
+export default RoomService;

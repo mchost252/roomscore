@@ -97,22 +97,25 @@ class SQLiteService {
       CREATE INDEX IF NOT EXISTS idx_thread_messages_timestamp ON thread_messages(timestamp);
     `);
 
+    // Personal tasks table
     await this.db.execAsync(`
       CREATE TABLE IF NOT EXISTS tasks (
-        id INTEGER PRIMARY KEY,
+        id TEXT PRIMARY KEY NOT NULL,
         title TEXT NOT NULL,
-        due_date INTEGER,
-        priority TEXT,
-        bucket TEXT,
+        description TEXT DEFAULT '',
+        task_type TEXT DEFAULT 'daily',
+        room_id TEXT DEFAULT 'local',
+        points INTEGER DEFAULT 10,
+        is_active INTEGER DEFAULT 1,
         is_completed INTEGER DEFAULT 0,
-        created_at INTEGER,
-        updated_at INTEGER,
-        synced INTEGER DEFAULT 0,
-        local_changes TEXT,
-        UNIQUE(id)
+        due_date TEXT,
+        priority TEXT DEFAULT 'medium',
+        bucket TEXT,
+        created_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
       CREATE INDEX IF NOT EXISTS idx_tasks_is_completed ON tasks(is_completed);
+      CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
     `);
 
     await this.db.execAsync(`
@@ -495,6 +498,92 @@ class SQLiteService {
     return this.db.getAllAsync(
       `SELECT * FROM friends WHERE status = 'accepted' ORDER BY username ASC`
     ) as Promise<LocalFriend[]>;
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // PERSONAL TASKS
+  // ═══════════════════════════════════════════════════════════
+  async savePersonalTask(task: {
+    id: string;
+    title: string;
+    description?: string;
+    taskType?: string;
+    roomId?: string;
+    points?: number;
+    isActive?: boolean;
+    isCompleted?: boolean;
+    dueDate?: string;
+    priority?: string;
+    bucket?: string;
+    createdAt: string;
+  }): Promise<void> {
+    if (!this.db) return;
+    await this.db.runAsync(
+      `INSERT OR REPLACE INTO tasks
+       (id, title, description, task_type, room_id, points, is_active, is_completed, due_date, priority, bucket, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        task.id,
+        task.title,
+        task.description || '',
+        task.taskType || 'daily',
+        task.roomId || 'local',
+        task.points ?? 10,
+        task.isActive !== false ? 1 : 0,
+        task.isCompleted ? 1 : 0,
+        task.dueDate || null,
+        task.priority || 'medium',
+        task.bucket || null,
+        task.createdAt,
+      ]
+    );
+  }
+
+  async getAllPersonalTasks(): Promise<any[]> {
+    if (!this.db) return [];
+    return this.db.getAllAsync(
+      `SELECT * FROM tasks WHERE room_id = 'local' ORDER BY created_at DESC`
+    ) as Promise<any[]>;
+  }
+
+  async updatePersonalTask(id: string, patch: Record<string, any>): Promise<void> {
+    if (!this.db) return;
+    // Build SET clause dynamically from the patch keys
+    const columnMap: Record<string, string> = {
+      title: 'title',
+      description: 'description',
+      taskType: 'task_type',
+      points: 'points',
+      isActive: 'is_active',
+      isCompleted: 'is_completed',
+      dueDate: 'due_date',
+      priority: 'priority',
+      bucket: 'bucket',
+    };
+    const sets: string[] = [];
+    const values: any[] = [];
+    for (const [key, value] of Object.entries(patch)) {
+      const col = columnMap[key];
+      if (!col) continue;
+      sets.push(`${col} = ?`);
+      // Convert booleans to integers for SQLite
+      if (typeof value === 'boolean') {
+        values.push(value ? 1 : 0);
+      } else {
+        values.push(value ?? null);
+      }
+    }
+    if (sets.length === 0) return;
+    values.push(id);
+    await this.db.runAsync(
+      `UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`,
+      values
+    );
+  }
+
+  async deletePersonalTask(id: string): Promise<void> {
+    if (!this.db) return;
+    await this.db.runAsync('DELETE FROM tasks WHERE id = ?', [id]);
   }
 
   // ═══════════════════════════════════════════════════════════

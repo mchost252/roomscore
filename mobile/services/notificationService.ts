@@ -16,7 +16,7 @@ import { getTaskStatus } from '../utils/taskStatusConfig';
 
 // Configure notification handler
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
+  handleNotification: async (): Promise<any> => ({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
@@ -111,7 +111,7 @@ class NotificationService {
         data: { type: 'morning-digest' },
         badge: ongoingCount,
       },
-      trigger,
+      trigger: { date: trigger } as any,
       identifier: 'morning-digest',
     });
   }
@@ -148,7 +148,7 @@ class NotificationService {
         body: `You have ${upcomingCount} task${upcomingCount > 1 ? 's' : ''} scheduled for tomorrow`,
         data: { type: 'evening-preview' },
       },
-      trigger,
+      trigger: { date: trigger } as any,
       identifier: 'evening-preview',
     });
   }
@@ -192,7 +192,7 @@ class NotificationService {
         trigger: {
           seconds: this.preferences.dueReminderInterval * 60,
           repeats: true,
-        },
+        } as any,
         identifier: `due-reminder-${task.id}`,
       });
     }

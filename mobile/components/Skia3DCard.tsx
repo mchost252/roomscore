@@ -78,7 +78,7 @@ export default function Skia3DCard({
   // Native: full Skia 3D card
   return (
     <View style={[{ width, height }, style]}>
-      <SkiaCanvas style={StyleSheet.absoluteFill} pointerEvents="none">
+      <SkiaCanvas style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
         <SkiaRoundedRect
           x={config.depth}
           y={config.depth}
@@ -105,7 +105,7 @@ export default function Skia3DCard({
           />
         </SkiaRoundedRect>
       </SkiaCanvas>
-      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+      <View style={[StyleSheet.absoluteFill, { pointerEvents: 'box-none' }]}>
         {children}
       </View>
     </View>

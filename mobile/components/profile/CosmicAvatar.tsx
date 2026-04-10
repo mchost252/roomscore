@@ -11,7 +11,12 @@ import Animated, {
 } from 'react-native-reanimated';
 
 // Conditionally import Skia only on native platforms
-let Canvas, Circle, Group;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let Canvas: any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let Circle: any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let Group: any;
 if (Platform.OS !== 'web') {
   try {
     const Skia = require('@shopify/react-native-skia');

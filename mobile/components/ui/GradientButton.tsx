@@ -180,7 +180,7 @@ export default function GradientButton({
           style={StyleSheet.absoluteFillObject}
         />
         {/* Top-edge shine for depth */}
-        <View style={styles.shine} pointerEvents="none" />
+        <View style={[styles.shine, { pointerEvents: 'none' }]} />
         {loading ? (
           <ActivityIndicator size="small" color={labelColor} />
         ) : (

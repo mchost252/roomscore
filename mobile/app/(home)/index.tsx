@@ -208,9 +208,10 @@ export default function HomeScreen() {
   const [pendingTask, setPendingTask] = useState<PersonalTask | null>(null);
 
   const openAddTask = useCallback(()=>{
-    // Instant open - no animation for faster UX
+    // Instant open - reset animation value to 0 to prevent off-screen invisible modal freeze
+    addTaskAnim.setValue(0);
     setShowAddTask(true);
-  },[]);
+  },[addTaskAnim]);
 
   const closeAddTask = useCallback(()=>{
     setShowAddTask(false); 
@@ -239,7 +240,7 @@ export default function HomeScreen() {
     due.setHours(h, m, 0, 0);
 
     // Save task immediately (offline-first)
-    const task = await taskService.createTask({
+    const task = await taskService.createPersonalTask({
       title: newTaskTitle.trim(),
       bucket: newTaskBucket,
       priority: newTaskPriority,
@@ -354,7 +355,7 @@ export default function HomeScreen() {
   },[openAIChat,openAddTask,setOpenAIChat,setOpenAddTask]));
 
   const handleToggleComplete = useCallback(async(task:PersonalTask)=>{
-    const updated = await taskService.updateTask(task.id,{isCompleted:!task.isCompleted});
+    const updated = await taskService.updatePersonalTask(task.id,{isCompleted:!task.isCompleted});
     if (!updated) return;
     setTasks(prev=>prev.map(t=>t.id===task.id?updated:t));
     if (!task.isCompleted) {
@@ -387,7 +388,7 @@ export default function HomeScreen() {
   const handleDeleteTask = useCallback(async(id:string)=>{
     const taskToDelete = tasks.find(t=>t.id===id);
     closeTaskOptions();
-    await taskService.deleteTask(id);
+    await taskService.deletePersonalTask(id);
     setTasks(prev=>prev.filter(t=>t.id!==id));
     if (taskToDelete) {
       setUndoTask(taskToDelete);
@@ -970,7 +971,7 @@ export default function HomeScreen() {
           <Ionicons name="trash-outline" size={15} color="#ef4444"/>
           <Text style={[s.toastText,{color:t.text,flex:1}]} numberOfLines={1}>Deleted: {undoTask.title}</Text>
           <TouchableOpacity onPress={async()=>{
-            const restored = await taskService.createTask({title:undoTask.title,priority:undoTask.priority,dueDate:undoTask.dueDate});
+            const restored = await taskService.createPersonalTask({title:undoTask.title,priority:undoTask.priority,dueDate:undoTask.dueDate as string});
             setTasks(prev=>[restored,...prev]);
             setUndoTask(null);
             undoAnim.setValue(0);

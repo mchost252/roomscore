@@ -1,7 +1,7 @@
-﻿import taskService from './taskService';
+import taskService from './taskService';
 
 interface TaskIntent {
-  action: 'create' | 'list' | 'complete' | 'motivate' | 'priority' | 'unknown';
+  action: 'create' | 'list' | 'complete' | 'motivate' | 'priority' | 'count' | 'status' | 'summary' | 'unknown';
   taskData?: {
     title: string;
     description?: string;
@@ -11,6 +11,7 @@ interface TaskIntent {
   };
   response: string;
   suggestion?: boolean; // If true, ask for confirmation before creating
+  isLocal?: boolean; // If true, this was answered locally without API
 }
 
 class AITaskParser {
@@ -34,6 +35,19 @@ class AITaskParser {
     // ===== CREATE TASK PATTERNS =====
     if (this.isCreateTaskIntent(lowerMessage)) {
       return this.parseCreateTask(message);
+    }
+
+    // ===== COUNT/STATUS QUERIES (LOCAL - no API needed) =====
+    if (this.isCountIntent(lowerMessage)) {
+      return this.handleCount();
+    }
+
+    if (this.isStatusIntent(lowerMessage)) {
+      return this.handleStatus();
+    }
+
+    if (this.isSummaryIntent(lowerMessage)) {
+      return this.handleSummary();
     }
 
     // ===== LIST/QUERY PATTERNS =====
@@ -118,6 +132,57 @@ class AITaskParser {
       /^finish /,
       /mark.*complete/,
       /check off/,
+    ];
+    return patterns.some(p => p.test(message));
+  }
+
+  // ===== LOCAL QUERY INTENT DETECTION =====
+
+  private isCountIntent(message: string): boolean {
+    const patterns = [
+      /how many.*task/,
+      /how many.*left/,
+      /how many.*remaining/,
+      /how many.*pending/,
+      /how many.*incomplete/,
+      /how many.*todo/,
+      /number of.*task/,
+      /count.*task/,
+      /total.*task/,
+      /tasks? left/,
+      /tasks? remaining/,
+    ];
+    return patterns.some(p => p.test(message));
+  }
+
+  private isStatusIntent(message: string): boolean {
+    const patterns = [
+      /am i done/,
+      /am i finished/,
+      /what.s left/,
+      /anything left/,
+      /any.*tasks? left/,
+      /do i have.*tasks?/,
+      /have i finished/,
+      /all done\??/,
+      /how.*(am i|i'm) doing/,
+      /progress/,
+      /how.*(much|far)/,
+    ];
+    return patterns.some(p => p.test(message));
+  }
+
+  private isSummaryIntent(message: string): boolean {
+    const patterns = [
+      /task summary/,
+      /daily summary/,
+      /today.s summary/,
+      /overview/,
+      /recap/,
+      /breakdown/,
+      /report/,
+      /give me a summary/,
+      /summarize/,
     ];
     return patterns.some(p => p.test(message));
   }
@@ -344,6 +409,147 @@ class AITaskParser {
     };
   }
 
+  // ===== LOCAL QUERY HANDLERS (no API needed) =====
+
+  private async handleCount(): Promise<TaskIntent> {
+    const allTasks = await taskService.getLocalTasks();
+    const pending = allTasks.filter(t => !t.isCompleted);
+    const completed = allTasks.filter(t => t.isCompleted);
+    const todayTasks = await taskService.getTodayTasks();
+    const todayPending = todayTasks.filter(t => !t.isCompleted);
+
+    let response = `You have **${pending.length}** pending task${pending.length === 1 ? '' : 's'}`;
+    if (completed.length > 0) {
+      response += ` and **${completed.length}** completed`;
+    }
+    response += `.`;
+
+    if (todayPending.length > 0) {
+      response += `\n\n${todayPending.length} task${todayPending.length === 1 ? '' : 's'} due today:`;
+      todayPending.slice(0, 5).forEach(t => {
+        const p = t.priority === 'high' || t.priority === 'urgent' ? '!' : '';
+        response += `\n• ${t.title}${p}`;
+      });
+      if (todayPending.length > 5) {
+        response += `\n  ...and ${todayPending.length - 5} more`;
+      }
+    } else if (pending.length > 0) {
+      response += `\n\nNo tasks due today, but you have ${pending.length} pending overall.`;
+    }
+
+    return {
+      action: 'count',
+      response,
+      isLocal: true,
+    };
+  }
+
+  private async handleStatus(): Promise<TaskIntent> {
+    const allTasks = await taskService.getLocalTasks();
+    const pending = allTasks.filter(t => !t.isCompleted);
+    const completed = allTasks.filter(t => t.isCompleted);
+    const total = allTasks.length;
+
+    if (total === 0) {
+      return {
+        action: 'status',
+        response: "You haven't added any tasks yet. Tap + to create your first one!",
+        isLocal: true,
+      };
+    }
+
+    const completionRate = total > 0 ? Math.round((completed.length / total) * 100) : 0;
+
+    if (pending.length === 0) {
+      return {
+        action: 'status',
+        response: `You're all done! All ${completed.length} task${completed.length === 1 ? '' : 's'} completed. Great work!`,
+        isLocal: true,
+      };
+    }
+
+    // Categorize pending by priority
+    const urgent = pending.filter(t => t.priority === 'urgent' || t.priority === 'high');
+    const medium = pending.filter(t => t.priority === 'medium');
+    const low = pending.filter(t => t.priority === 'low');
+
+    let response = `**Progress: ${completionRate}%** (${completed.length}/${total} done)\n\n`;
+    response += `${pending.length} task${pending.length === 1 ? '' : 's'} remaining:`;
+
+    if (urgent.length > 0) {
+      response += `\n• ${urgent.length} high priority`;
+    }
+    if (medium.length > 0) {
+      response += `\n• ${medium.length} medium priority`;
+    }
+    if (low.length > 0) {
+      response += `\n• ${low.length} low priority`;
+    }
+
+    if (urgent.length > 0) {
+      response += `\n\nFocus on: **${urgent[0].title}**`;
+    }
+
+    return {
+      action: 'status',
+      response,
+      isLocal: true,
+    };
+  }
+
+  private async handleSummary(): Promise<TaskIntent> {
+    const allTasks = await taskService.getLocalTasks();
+    const todayTasks = await taskService.getTodayTasks();
+    const pending = allTasks.filter(t => !t.isCompleted);
+    const completed = allTasks.filter(t => t.isCompleted);
+    const todayCompleted = todayTasks.filter(t => t.isCompleted);
+    const todayPending = todayTasks.filter(t => !t.isCompleted);
+
+    // Overdue detection
+    const now = new Date();
+    const overdue = pending.filter(t => {
+      if (!t.dueDate) return false;
+      return new Date(t.dueDate) < now;
+    });
+
+    let response = `**Daily Summary**\n\n`;
+    response += `Total tasks: ${allTasks.length}\n`;
+    response += `Completed: ${completed.length}\n`;
+    response += `Remaining: ${pending.length}\n`;
+
+    if (todayTasks.length > 0) {
+      response += `\n**Today:** ${todayCompleted.length}/${todayTasks.length} done`;
+      if (todayPending.length > 0) {
+        response += `\nStill to do:`;
+        todayPending.slice(0, 4).forEach(t => {
+          response += `\n• ${t.title}`;
+        });
+      }
+    }
+
+    if (overdue.length > 0) {
+      response += `\n\n**Overdue (${overdue.length}):**`;
+      overdue.slice(0, 3).forEach(t => {
+        response += `\n• ${t.title}`;
+      });
+    }
+
+    const completionRate = allTasks.length > 0 ? Math.round((completed.length / allTasks.length) * 100) : 0;
+    if (completionRate >= 80) {
+      response += `\n\nYou're doing amazing — ${completionRate}% completion rate!`;
+    } else if (completionRate >= 50) {
+      response += `\n\nGood progress — ${completionRate}% there. Keep pushing!`;
+    } else if (allTasks.length > 0) {
+      response += `\n\n${completionRate}% done so far. Small wins add up!`;
+    }
+
+    return {
+      action: 'summary',
+      response,
+      isLocal: true,
+    };
+  }
+
   // ===== TASK COMPLETION =====
 
   private async handleCompleteTask(message: string): Promise<TaskIntent> {
@@ -365,7 +571,7 @@ class AITaskParser {
     );
 
     if (matchedTask) {
-      await taskService.completeTask(matchedTask.id);
+      await taskService.updatePersonalTask(matchedTask.id, { isCompleted: true });
       return {
         action: 'complete',
         response: `🎉 Awesome! Marked "${matchedTask.title}" as complete!`,

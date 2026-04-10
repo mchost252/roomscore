@@ -331,7 +331,6 @@ export default function AIChatSheet({ visible, onClose, tasks, userName, onAddTa
       {/* Backdrop */}
       <Animated.View
         style={[styles.backdrop, { opacity: backdropAnim }]}
-        pointerEvents="box-none"
       >
         <TouchableOpacity style={StyleSheet.absoluteFill} onPress={handleClose} activeOpacity={1} />
       </Animated.View>

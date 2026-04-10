@@ -77,14 +77,16 @@ function roomReducer(state: RoomState, action: RoomAction): RoomState {
     
     case 'UPDATE_TASK': {
       const newTasks = new Map(state.tasks);
-      const roomTasks = newTasks.get(action.payload.roomId) || [];
+      const rid = action.payload.room_id ?? action.payload.roomId;
+      if (!rid) return state;
+      const roomTasks = newTasks.get(rid) || [];
       const index = roomTasks.findIndex(t => t.id === action.payload.id);
       if (index >= 0) {
         roomTasks[index] = action.payload;
       } else {
         roomTasks.push(action.payload);
       }
-      newTasks.set(action.payload.roomId, [...roomTasks]);
+      newTasks.set(rid, [...roomTasks]);
       return { ...state, tasks: newTasks };
     }
     
@@ -96,7 +98,11 @@ function roomReducer(state: RoomState, action: RoomAction): RoomState {
     
     case 'SET_SPRINT': {
       const newSprints = new Map(state.sprints);
-      newSprints.set(action.payload.id, action.payload);
+      const sprint = action.payload;
+      const key =
+        sprint.id ||
+        `sprint_${sprint.user_id}_${sprint.week_start}`;
+      newSprints.set(key, { ...sprint, id: key });
       return { ...state, sprints: newSprints };
     }
     

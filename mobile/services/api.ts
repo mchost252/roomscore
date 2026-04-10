@@ -73,9 +73,14 @@ api.interceptors.request.use(
       const token = await secureStorage.getItem(TOKEN_KEY);
       if (token && config.headers) {
         config.headers.Authorization = `Bearer ${token}`;
+      } else if (!token) {
+        console.warn(
+          `[API] No auth token found for ${config.method?.toUpperCase()} ${config.url} — request will be sent without Authorization header. ` +
+          'If this is not a public endpoint, expect a 401.'
+        );
       }
     } catch (error) {
-      console.error('Error reading token from secure store:', error);
+      console.error('[API] Failed to read token from secure store:', error);
     }
     
     return config;
@@ -163,7 +168,8 @@ api.interceptors.response.use(
     }
 
     // Transform error for better handling
-    let errorMessage = error.response?.data?.message || error.message || 'An error occurred';
+    const data = error.response?.data as { message?: string } | undefined;
+    let errorMessage = data?.message || error.message || 'An error occurred';
     
     // Handle rate limiting with friendly message
     if (error.response?.status === 429) {

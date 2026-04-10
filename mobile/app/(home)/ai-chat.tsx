@@ -178,7 +178,7 @@ export default function AIChatScreen() {
         dueDate = d.toISOString();
       }
 
-      await taskService.createTask({
+      await taskService.createPersonalTask({
         title: suggestion.title,
         priority: suggestion.priority || 'medium',
         taskType: suggestion.taskType || 'one-time',

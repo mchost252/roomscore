@@ -4,6 +4,8 @@ import { View, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import SidebarNav from '../../components/SidebarNav';
 import BottomTabBar from '../../components/BottomTabBar';
+import { NotificationProvider } from '../../context/NotificationContext';
+
 // Context so index.tsx can register its openAIChat / openAddTask handlers
 export const HomeNavContext = React.createContext<{
   openAIChat: () => void;
@@ -39,7 +41,8 @@ export default function HomeLayout() {
       if (v === 'sidebar' || v === 'bottom') setNavStyle(v);
     };
     load();
-    const id = setInterval(load, 500);
+    // Poll infrequently — nav style rarely changes (only from settings)
+    const id = setInterval(load, 5000);
     return () => clearInterval(id);
   }, []);
 
@@ -54,9 +57,10 @@ export default function HomeLayout() {
   }), [aiChatFn, addTaskFn, setOpenAIChatStable, setOpenAddTaskStable]);
 
   return (
-    <HomeNavContext.Provider value={ctxValue}>
-      <View style={styles.root}>
-        <Stack screenOptions={{ 
+    <NotificationProvider>
+      <HomeNavContext.Provider value={ctxValue}>
+        <View style={styles.root}>
+          <Stack screenOptions={{ 
          headerShown: false, 
          animation: 'slide_from_bottom',
          contentStyle: { backgroundColor: 'transparent' },
@@ -64,14 +68,14 @@ export default function HomeLayout() {
        }}>
           <Stack.Screen name="index" options={{ animation: 'none', presentation: 'card' }} />
           <Stack.Screen name="rooms" options={{ animation: 'none', presentation: 'card' }} />
+          <Stack.Screen name="room-detail" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
           <Stack.Screen name="profile" options={{ animation: 'none', presentation: 'card' }} />
           <Stack.Screen name="settings" options={{ animation: 'none', presentation: 'card' }} />
-          <Stack.Screen name="task-thread" options={{ animation: 'slide_from_bottom', gestureEnabled: true, presentation: 'transparentModal' }} />
-          <Stack.Screen name="ai-chat" options={{ animation: 'slide_from_bottom', gestureEnabled: true, presentation: 'transparentModal' }} />
+          <Stack.Screen name="task-thread" options={{ animation: 'slide_from_bottom', gestureEnabled: true, presentation: 'modal' }} />
+          <Stack.Screen name="room-task-thread" options={{ animation: 'slide_from_bottom', gestureEnabled: true, presentation: 'modal' }} />
+          <Stack.Screen name="ai-chat" options={{ animation: 'slide_from_bottom', gestureEnabled: true, presentation: 'modal' }} />
           <Stack.Screen name="messages" options={{ animation: 'none', presentation: 'card' }} />
           <Stack.Screen name="chat" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
-          <Stack.Screen name="create-room" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
-          <Stack.Screen name="room-detail" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
         </Stack>
 
         {/* Sidebar nav: show on home and messages only, hide on modals */}
@@ -97,6 +101,7 @@ export default function HomeLayout() {
         )}
       </View>
     </HomeNavContext.Provider>
+    </NotificationProvider>
   );
 }
 
