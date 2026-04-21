@@ -3,7 +3,9 @@ const Joi = require('joi');
 // Validate request body against schema
 const validate = (schema) => {
   return (req, res, next) => {
-    const { error } = schema.validate(req.body, { abortEarly: false });
+    // stripUnknown removes properties not defined in the schema (like 'id' sent by the frontend)
+    // Coerced values (like '10' -> 10) are returned in the 'value' object.
+    const { error, value } = schema.validate(req.body, { abortEarly: false, stripUnknown: true });
     
     if (error) {
       const errors = error.details.map(detail => ({
@@ -18,6 +20,8 @@ const validate = (schema) => {
       });
     }
     
+    // Crucial: overwrite req.body with the sanitized and type-cast values
+    req.body = value;
     next();
   };
 };
@@ -93,24 +97,24 @@ exports.joinRoomSchema = Joi.object({
 // Task schemas
 exports.createTaskSchema = Joi.object({
   title: Joi.string().min(3).max(100).required(),
-  description: Joi.string().max(500).allow(''),
+  description: Joi.string().max(500).allow('', null),
   points: Joi.number().min(1).max(10).required(), // Points limited to 1-10
-  category: Joi.string().valid('health', 'productivity', 'learning', 'social', 'finance', 'other'),
-  frequency: Joi.string().valid('daily', 'weekly', 'custom').required(),
-  taskType: Joi.string().valid('daily', 'weekly', 'custom'),
-  daysOfWeek: Joi.array().items(Joi.number().min(0).max(6)), // For custom frequency
-  deadline: Joi.date().iso()
-});
+  category: Joi.string().valid('health', 'productivity', 'learning', 'social', 'finance', 'other').allow('', null),
+  frequency: Joi.string().valid('daily', 'weekly', 'custom').allow('', null),
+  taskType: Joi.string().valid('daily', 'weekly', 'custom').allow('', null),
+  daysOfWeek: Joi.array().items(Joi.number().min(0).max(6)).allow(null), // For custom frequency
+  deadline: Joi.date().iso().allow('', null)
+}).or('frequency', 'taskType'); // At least one of frequency or taskType must be present
 
 exports.updateTaskSchema = Joi.object({
   title: Joi.string().min(3).max(100),
-  description: Joi.string().max(500).allow(''),
+  description: Joi.string().max(500).allow('', null),
   points: Joi.number().min(1).max(10), // Points limited to 1-10
-  category: Joi.string().valid('health', 'productivity', 'learning', 'social', 'finance', 'other'),
-  frequency: Joi.string().valid('daily', 'weekly', 'custom'),
-  taskType: Joi.string().valid('daily', 'weekly', 'custom'),
-  daysOfWeek: Joi.array().items(Joi.number().min(0).max(6)), // For custom frequency
-  deadline: Joi.date().iso(),
+  category: Joi.string().valid('health', 'productivity', 'learning', 'social', 'finance', 'other').allow('', null),
+  frequency: Joi.string().valid('daily', 'weekly', 'custom').allow('', null),
+  taskType: Joi.string().valid('daily', 'weekly', 'custom').allow('', null),
+  daysOfWeek: Joi.array().items(Joi.number().min(0).max(6)).allow(null), // For custom frequency
+  deadline: Joi.date().iso().allow('', null),
   isActive: Joi.boolean()
 });
 
