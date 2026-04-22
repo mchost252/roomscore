@@ -3313,7 +3313,7 @@ const RoomDetailPage = () => {
                   const taskData = {
                     ...newTask,
                     taskType: newTask.frequency,
-                    daysOfWeek: newTask.frequency === 'custom' ? newTask.daysOfWeek : []
+                    daysOfWeek: newTask.frequency === 'custom' ? newTask.daysOfWeek : null
                   };
                   const response = await api.post(`/rooms/${roomId}/tasks`, taskData);
                   setSuccess('Task added successfully!');
