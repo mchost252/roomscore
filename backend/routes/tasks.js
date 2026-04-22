@@ -15,6 +15,10 @@ const getTodayString = () => new Date().toISOString().split('T')[0];
 // @access  Private (must be member)
 router.get('/:roomId/tasks', protect, isRoomMember, async (req, res, next) => {
   try {
+    if (!prisma) {
+      return res.status(500).json({ success: false, message: 'Database not initialized' });
+    }
+    
     const todayStr = getTodayString();
 
     // Get all active tasks for this room
@@ -47,21 +51,45 @@ router.get('/:roomId/tasks', protect, isRoomMember, async (req, res, next) => {
 
     const completedTaskIds = new Set(userCompletions.map(c => c.taskId));
 
-    // Mark tasks as completed and add completion info
+    // Get ALL task assignments for these tasks
+    let allAssignments = [];
+    if (tasks.length > 0) {
+      allAssignments = await prisma.roomTaskAssignment.findMany({
+        where: {
+          taskId: { in: tasks.map(t => t.id) }
+        },
+        include: {
+          user: { select: { id: true, username: true, avatar: true } }
+        }
+      });
+    }
+
+    // Mark tasks as completed and add completion info + join status
     const tasksWithStatus = tasks.map(task => {
       const taskCompletions = allCompletions.filter(c => c.taskId === task.id);
+      const taskAssignments = allAssignments.filter(a => a.taskId === task.id);
+      const userAssignment = taskAssignments.find(a => a.userId === req.user.id);
       
       return {
         ...task,
         _id: task.id,
         isCompleted: completedTaskIds.has(task.id),
         completionId: userCompletions.find(c => c.taskId === task.id)?.id,
+        // User's join status
+        isJoined: userAssignment?.status === 'accepted',
+        status: userAssignment?.status === 'accepted' ? 'accepted' : 'spectator',
         completedBy: taskCompletions.map(c => ({
           userId: c.user.id,
           _id: c.user.id,
           username: c.user.username,
           avatar: c.user.avatar,
           completedAt: c.completedAt
+        })),
+        assignments: taskAssignments.map(a => ({
+          userId: a.user.id,
+          username: a.user.username,
+          avatar: a.user.avatar,
+          status: a.status
         }))
       };
     });
@@ -103,13 +131,19 @@ router.post('/:roomId/tasks', protect, isRoomMember, validate(createTaskSchema),
       finalDaysOfWeek = daysOfWeek.filter(d => d >= 0 && d <= 6);
     }
 
+    // Convert daysOfWeek array to comma-separated string for Prisma
+    let daysOfWeekString = null;
+    if (finalDaysOfWeek && finalDaysOfWeek.length > 0) {
+      daysOfWeekString = finalDaysOfWeek.join(',');
+    }
+
     const task = await prisma.roomTask.create({
       data: {
         roomId: req.params.roomId,
         title,
         description: description || null,
         taskType: finalTaskType,
-        daysOfWeek: finalDaysOfWeek,
+        daysOfWeek: daysOfWeekString,
         points: points || 10,
         isActive: true
       }
@@ -246,8 +280,10 @@ router.delete('/:roomId/tasks/:taskId', protect, isRoomMember, async (req, res, 
       });
     }
 
-    await prisma.roomTask.delete({
-      where: { id: req.params.taskId }
+    // Soft delete - set isActive to false (preserves history)
+    await prisma.roomTask.update({
+      where: { id: req.params.taskId },
+      data: { isActive: false }
     });
 
     // Emit socket event
@@ -646,6 +682,713 @@ router.delete('/:roomId/tasks/:taskId/complete', protect, isRoomMember, async (r
     res.json({
       success: true,
       message: 'Task completion removed'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   POST /api/rooms/:roomId/tasks/:taskId/join
+// @desc    Join a task (become participant)
+// @access  Private (must be room member)
+router.post('/:roomId/tasks/:taskId/join', protect, isRoomMember, async (req, res, next) => {
+  try {
+    const task = await prisma.roomTask.findUnique({
+      where: { id: req.params.taskId }
+    });
+
+    if (!task || task.roomId !== req.params.roomId) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+
+    if (!task.isActive) {
+      return res.status(400).json({
+        success: false,
+        message: 'Task is not active'
+      });
+    }
+
+    // Check if already joined (has an assignment)
+    const existingAssignment = await prisma.roomTaskAssignment.findUnique({
+      where: {
+        taskId_userId: {
+          taskId: req.params.taskId,
+          userId: req.user.id
+        }
+      }
+    });
+
+    if (existingAssignment) {
+      if (existingAssignment.status === 'accepted') {
+        return res.status(400).json({
+          success: false,
+          message: 'Already joined this task'
+        });
+      }
+      // Re-apply if previously rejected or pending
+      if (existingAssignment.status === 'rejected') {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot rejoin - was previously removed. Contact room owner.'
+        });
+      }
+    }
+
+    // Create assignment
+    const assignment = await prisma.roomTaskAssignment.upsert({
+      where: {
+        taskId_userId: {
+          taskId: req.params.taskId,
+          userId: req.user.id
+        }
+      },
+      create: {
+        taskId: req.params.taskId,
+        userId: req.user.id,
+        status: 'accepted',
+        assignedBy: req.user.id
+      },
+      update: {
+        status: 'accepted'
+      }
+    });
+
+    // Emit socket event
+    const io = req.app.get('io');
+    io.to(req.params.roomId).emit('task:joined', {
+      roomId: req.params.roomId,
+      taskId: req.params.taskId,
+      userId: req.user.id,
+      username: req.user.username
+    });
+
+    logger.info(`User ${req.user.email} joined task: ${task.title}`);
+    res.status(201).json({
+      success: true,
+      message: 'Joined task successfully',
+      assignment: { ...assignment, _id: assignment.id }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   POST /api/rooms/:roomId/tasks/:taskId/leave
+// @desc    Leave a task (remove participation)
+// @access  Private (must be room member)
+router.post('/:roomId/tasks/:taskId/leave', protect, isRoomMember, async (req, res, next) => {
+  try {
+    const task = await prisma.roomTask.findUnique({
+      where: { id: req.params.taskId }
+    });
+
+    if (!task || task.roomId !== req.params.roomId) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+
+    // Check if joined
+    const existingAssignment = await prisma.roomTaskAssignment.findUnique({
+      where: {
+        taskId_userId: {
+          taskId: req.params.taskId,
+          userId: req.user.id
+        }
+      }
+    });
+
+    if (!existingAssignment || existingAssignment.status !== 'accepted') {
+      return res.status(400).json({
+        success: false,
+        message: 'Not a participant of this task'
+      });
+    }
+
+    // Update assignment status to rejected (soft delete - prevents rejoin)
+    await prisma.roomTaskAssignment.update({
+      where: { id: existingAssignment.id },
+      data: { status: 'rejected' }
+    });
+
+    // Emit socket event
+    const io = req.app.get('io');
+    io.to(req.params.roomId).emit('task:left', {
+      roomId: req.params.roomId,
+      taskId: req.params.taskId,
+      userId: req.user.id,
+      username: req.user.username
+    });
+
+    logger.info(`User ${req.user.email} left task: ${task.title}`);
+    res.json({
+      success: true,
+      message: 'Left task successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   POST /api/rooms/:roomId/tasks/:taskId/assign
+// @desc    Assign task to user
+// @access  Private (must be member)
+router.post('/:roomId/tasks/:taskId/assign', protect, isRoomMember, async (req, res, next) => {
+  try {
+    const { userId } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required'
+      });
+    }
+
+    const task = await prisma.roomTask.findUnique({
+      where: { id: req.params.taskId }
+    });
+
+    if (!task || task.roomId !== req.params.roomId) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+
+    // Check if user is a room member
+    const roomMember = await prisma.roomMember.findUnique({
+      where: {
+        roomId_userId: {
+          roomId: req.params.roomId,
+          userId: userId
+        }
+      }
+    });
+
+    if (!roomMember) {
+      return res.status(404).json({
+        success: false,
+        message: 'User is not a member of this room'
+      });
+    }
+
+    // Check if already assigned
+    const existingAssignment = await prisma.roomTaskAssignment.findUnique({
+      where: {
+        taskId_userId: {
+          taskId: req.params.taskId,
+          userId: userId
+        }
+      }
+    });
+
+    if (existingAssignment) {
+      return res.status(400).json({
+        success: false,
+        message: 'Task already assigned to this user'
+      });
+    }
+
+    // Create assignment
+    const assignment = await prisma.roomTaskAssignment.create({
+      data: {
+        taskId: req.params.taskId,
+        userId: userId,
+        assignedBy: req.user.id
+      }
+    });
+
+    // Emit socket event
+    const io = req.app.get('io');
+    io.to(req.params.roomId).emit('task:assigned', {
+      roomId: req.params.roomId,
+      taskId: req.params.taskId,
+      userId: userId,
+      assignedBy: req.user.id
+    });
+
+    res.status(201).json({
+      success: true,
+      assignment: { ...assignment, _id: assignment.id }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   PUT /api/rooms/:roomId/tasks/:taskId/assign/:userId
+// @desc    Update task assignment status
+// @access  Private (must be member)
+router.put('/:roomId/tasks/:taskId/assign/:userId', protect, isRoomMember, async (req, res, next) => {
+  try {
+    const { status } = req.body;
+    
+    if (!status || !['pending', 'accepted', 'rejected'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Must be pending, accepted, or rejected'
+      });
+    }
+
+    const assignment = await prisma.roomTaskAssignment.findUnique({
+      where: {
+        taskId_userId: {
+          taskId: req.params.taskId,
+          userId: req.params.userId
+        }
+      }
+    });
+
+    if (!assignment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Assignment not found'
+      });
+    }
+
+    // Only the assigned user can update their status, or owner can update any
+    const isOwner = req.room.ownerId === req.user.id;
+    const isAssignedUser = req.user.id === req.params.userId;
+
+    if (!isOwner && !isAssignedUser) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to update this assignment'
+      });
+    }
+
+    const updatedAssignment = await prisma.roomTaskAssignment.update({
+      where: { id: assignment.id },
+      data: { status: status }
+    });
+
+    // Update task status if all assignments are accepted
+    const task = await prisma.roomTask.findUnique({
+      where: { id: req.params.taskId }
+    });
+
+    const allAssignments = await prisma.roomTaskAssignment.findMany({
+      where: { taskId: req.params.taskId }
+    });
+
+    if (allAssignments.length > 0) {
+      const allAccepted = allAssignments.every(a => a.status === 'accepted');
+      const hasRunning = allAssignments.some(a => a.status === 'accepted');
+
+      let newTaskStatus = task.status;
+      if (allAccepted) {
+        newTaskStatus = 'completed';
+      } else if (hasRunning) {
+        newTaskStatus = 'running';
+      } else {
+        newTaskStatus = 'upcoming';
+      }
+
+      if (newTaskStatus !== task.status) {
+        await prisma.roomTask.update({
+          where: { id: req.params.taskId },
+          data: { status: newTaskStatus }
+        });
+      }
+    }
+
+    // Emit socket event
+    const io = req.app.get('io');
+    io.to(req.params.roomId).emit('task:assignment_updated', {
+      roomId: req.params.roomId,
+      taskId: req.params.taskId,
+      userId: req.params.userId,
+      status: status,
+      taskStatus: newTaskStatus || task.status
+    });
+
+    res.json({
+      success: true,
+      assignment: { ...updatedAssignment, _id: updatedAssignment.id }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /api/rooms/:roomId/tasks/calendar
+// @desc    Get tasks organized by date for calendar view
+// @access  Private (must be member)
+router.get('/:roomId/tasks/calendar', protect, isRoomMember, async (req, res, next) => {
+  try {
+    const { startDate, endDate } = req.query;
+    
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Start date and end date are required'
+      });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+
+    // Get all tasks for the room
+    const tasks = await prisma.roomTask.findMany({
+      where: {
+        roomId: req.params.roomId,
+        isActive: true
+      }
+    });
+
+    // Get all completions in the date range
+    const completions = await prisma.taskCompletion.findMany({
+      where: {
+        roomId: req.params.roomId,
+        completedAt: {
+          gte: start,
+          lte: end
+        }
+      },
+      include: {
+        user: { select: { id: true, username: true, avatar: true } }
+      }
+    });
+
+    // Get all assignments
+    const assignments = await prisma.roomTaskAssignment.findMany({
+      where: {
+        taskId: { in: tasks.map(t => t.id) }
+      },
+      include: {
+        user: { select: { id: true, username: true, avatar: true } }
+      }
+    });
+
+    // Organize tasks by date
+    const tasksByDate = {};
+    const currentDate = new Date(start);
+    
+    while (currentDate <= end) {
+      const dateStr = currentDate.toISOString().split('T')[0];
+      tasksByDate[dateStr] = [];
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    // Helper to check if task should appear on a specific date
+    const shouldTaskAppearOnDate = (task, date) => {
+      const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, etc.
+      
+      if (task.taskType === 'daily') {
+        return true;
+      } else if (task.taskType === 'weekly') {
+        return dayOfWeek === 1; // Every Monday
+      } else if (task.taskType === 'custom' && task.daysOfWeek) {
+        const days = task.daysOfWeek.split(',').map(d => parseInt(d));
+        return days.includes(dayOfWeek);
+      }
+      return false;
+    };
+
+    // Add tasks to appropriate dates
+    tasks.forEach(task => {
+      const currentDate = new Date(start);
+      while (currentDate <= end) {
+        if (shouldTaskAppearOnDate(task, currentDate)) {
+          const dateStr = currentDate.toISOString().split('T')[0];
+          
+          // Get completions for this task and date
+          const taskCompletions = completions.filter(c => 
+            c.taskId === task.id && 
+            c.completionDate === dateStr
+          );
+
+          // Get assignments for this task
+          const taskAssignments = assignments.filter(a => a.taskId === task.id);
+
+          tasksByDate[dateStr].push({
+            ...task,
+            _id: task.id,
+            completions: taskCompletions.map(c => ({
+              userId: c.user.id,
+              username: c.user.username,
+              avatar: c.user.avatar,
+              completedAt: c.completedAt
+            })),
+            assignments: taskAssignments.map(a => ({
+              userId: a.user.id,
+              username: a.user.username,
+              avatar: a.user.avatar,
+              status: a.status,
+              assignedAt: a.assignedAt
+            }))
+          });
+        }
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+    });
+
+    res.json({
+      success: true,
+      startDate: startDate,
+      endDate: endDate,
+      tasksByDate: tasksByDate
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /api/rooms/:roomId/tasks/:taskId/nodes
+// @desc    Get all nodes for a room task (timeline/proof/messages)
+// @access  Private (must be member)
+router.get('/:roomId/tasks/:taskId/nodes', protect, isRoomMember, async (req, res, next) => {
+  try {
+    const nodes = await prisma.roomTaskNode.findMany({
+      where: {
+        taskId: req.params.taskId,
+        roomId: req.params.roomId
+      },
+      include: {
+        user: { select: { id: true, username: true, avatar: true } }
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    res.json({
+      success: true,
+      count: nodes.length,
+      nodes: nodes.map(n => ({
+        ...n,
+        _id: n.id
+      }))
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   POST /api/rooms/:roomId/tasks/:taskId/nodes
+// @desc    Create a new node (PROOF, MESSAGE, SYSTEM_ALERT)
+// @access  Private (must be member)
+router.post('/:roomId/tasks/:taskId/nodes', protect, isRoomMember, async (req, res, next) => {
+  try {
+    const { type, content, mediaUrl, status, clientReferenceId } = req.body;
+
+    // Validate task belongs to room
+    const task = await prisma.roomTask.findUnique({
+      where: { id: req.params.taskId }
+    });
+
+    if (!task || task.roomId !== req.params.roomId) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+
+    const node = await prisma.roomTaskNode.create({
+      data: {
+        roomId: req.params.roomId,
+        taskId: req.params.taskId,
+        userId: req.user.id,
+        type: type || 'MESSAGE',
+        content: content || null,
+        mediaUrl: mediaUrl || null,
+        status: status || 'PENDING'
+      },
+      include: {
+        user: { select: { id: true, username: true, avatar: true } }
+      }
+    });
+
+    // Echo back the clientReferenceId if provided
+    const safeNode = { ...node, _id: node.id };
+    if (clientReferenceId) safeNode.clientReferenceId = clientReferenceId;
+
+    // Emit socket event for real-time sync
+    const io = req.app.get('io');
+    io.to(req.params.roomId).emit('thread:node_created', {
+      roomId: req.params.roomId,
+      taskId: req.params.taskId,
+      node: safeNode
+    });
+
+    logger.info(`Task node created by ${req.user.email}: ${node.type}`);
+    res.status(201).json({
+      success: true,
+      node: safeNode
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   PUT /api/rooms/:roomId/tasks/:taskId/nodes/:nodeId
+// @desc    Update node (vouch, approve, update content)
+// @access  Private (must be member)
+router.put('/:roomId/tasks/:taskId/nodes/:nodeId', protect, isRoomMember, async (req, res, next) => {
+  try {
+    const { content, status, vouch } = req.body;
+
+    // Find existing node
+    const existingNode = await prisma.roomTaskNode.findUnique({
+      where: { id: req.params.nodeId }
+    });
+
+    if (!existingNode || existingNode.taskId !== req.params.taskId) {
+      return res.status(404).json({
+        success: false,
+        message: 'Node not found'
+      });
+    }
+
+    const updateData = {};
+    if (content !== undefined) updateData.content = content;
+    if (status !== undefined) updateData.status = status;
+    if (vouch === true) {
+      updateData.vouchCount = { increment: 1 };
+    }
+
+    const updatedNode = await prisma.roomTaskNode.update({
+      where: { id: req.params.nodeId },
+      data: updateData,
+      include: {
+        user: { select: { id: true, username: true, avatar: true } }
+      }
+    });
+
+    // Prepare safe patch object to send to clients
+    const safePatch = {};
+    if (content !== undefined) safePatch.content = updatedNode.content;
+    if (status !== undefined) safePatch.status = updatedNode.status;
+    if (vouch === true) safePatch.vouchCount = updatedNode.vouchCount;
+
+    // Emit socket event
+    const io = req.app.get('io');
+    io.to(req.params.roomId).emit('thread:node_updated', {
+      roomId: req.params.roomId,
+      taskId: req.params.taskId,
+      nodeId: req.params.nodeId,
+      patch: safePatch
+    });
+
+    res.json({
+      success: true,
+      node: { ...updatedNode, _id: updatedNode.id }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   DELETE /api/rooms/:roomId/tasks/:taskId/nodes/:nodeId
+// @desc    Delete a node
+// @access  Private (owner only - node owner or room owner)
+router.delete('/:roomId/tasks/:taskId/nodes/:nodeId', protect, isRoomMember, async (req, res, next) => {
+  try {
+    const node = await prisma.roomTaskNode.findUnique({
+      where: { id: req.params.nodeId }
+    });
+
+    if (!node || node.taskId !== req.params.taskId) {
+      return res.status(404).json({
+        success: false,
+        message: 'Node not found'
+      });
+    }
+
+    // Only node owner or room owner can delete
+    const isNodeOwner = node.userId === req.user.id;
+    const isRoomOwner = req.room.ownerId === req.user.id;
+
+    if (!isNodeOwner && !isRoomOwner) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to delete this node'
+      });
+    }
+
+    await prisma.roomTaskNode.delete({
+      where: { id: req.params.nodeId }
+    });
+
+    // Emit socket event
+    const io = req.app.get('io');
+    io.to(req.params.roomId).emit('thread:node_deleted', {
+      roomId: req.params.roomId,
+      taskId: req.params.taskId,
+      nodeId: req.params.nodeId
+    });
+
+    res.json({
+      success: true,
+      message: 'Node deleted'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /api/rooms/:roomId/tasks/status
+// @desc    Get tasks grouped by status
+// @access  Private (must be member)
+router.get('/:roomId/tasks/status', protect, isRoomMember, async (req, res, next) => {
+  try {
+    const tasks = await prisma.roomTask.findMany({
+      where: {
+        roomId: req.params.roomId,
+        isActive: true
+      },
+      include: {
+        assignments: {
+          include: {
+            user: { select: { id: true, username: true, avatar: true } }
+          }
+        },
+        completions: {
+          where: {
+            completionDate: getTodayString()
+          },
+          include: {
+            user: { select: { id: true, username: true, avatar: true } }
+          }
+        }
+      }
+    });
+
+    // Group tasks by status
+    const groupedTasks = {
+      completed: [],
+      running: [],
+      upcoming: [],
+      rejected: []
+    };
+
+    tasks.forEach(task => {
+      const status = task.status || 'upcoming';
+      groupedTasks[status].push({
+        ...task,
+        _id: task.id,
+        completions: task.completions.map(c => ({
+          userId: c.user.id,
+          username: c.user.username,
+          avatar: c.user.avatar,
+          completedAt: c.completedAt
+        })),
+        assignments: task.assignments.map(a => ({
+          userId: a.user.id,
+          username: a.user.username,
+          avatar: a.user.avatar,
+          status: a.status,
+          assignedAt: a.assignedAt
+        }))
+      });
+    });
+
+    res.json({
+      success: true,
+      tasks: groupedTasks
     });
   } catch (error) {
     next(error);

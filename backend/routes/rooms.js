@@ -260,15 +260,16 @@ router.post('/', protect, validate(createRoomSchema), async (req, res, next) => 
         tasks: tasks && tasks.length > 0 ? {
           create: tasks.map(task => {
             const taskType = task.taskType || task.frequency || 'daily';
-            let daysOfWeek = [];
+            let daysOfWeek = '';
             if (taskType === 'custom' && Array.isArray(task.daysOfWeek)) {
-              daysOfWeek = task.daysOfWeek.filter(d => d >= 0 && d <= 6);
+              const validDays = task.daysOfWeek.filter(d => d >= 0 && d <= 6);
+              daysOfWeek = validDays.join(',');
             }
             return {
               title: task.title,
               description: task.description || null,
               taskType: taskType,
-              daysOfWeek: daysOfWeek,
+              daysOfWeek: daysOfWeek || null,
               points: Math.min(10, Math.max(1, task.points || 5)) // Clamp points to 1-10
             };
           })
