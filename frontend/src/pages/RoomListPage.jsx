@@ -232,15 +232,24 @@ const RoomListPage = () => {
     }
   };
 
-  const filteredMyRooms = myRooms.filter(room =>
-    room.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    room.description?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const isRoomActive = (room) => {
+    if (!room.endDate) return true;
+    return new Date(room.endDate) > new Date();
+  };
 
-  const filteredPublicRooms = publicRooms.filter(room =>
-    room.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    room.description?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredMyRooms = myRooms
+    .filter(isRoomActive)
+    .filter(room =>
+      room.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      room.description?.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+  const filteredPublicRooms = publicRooms
+    .filter(isRoomActive)
+    .filter(room =>
+      room.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      room.description?.toLowerCase().includes(searchQuery.toLowerCase())
+    );
 
   const RoomCard = ({ room, isMember = false }) => {
     const isOwner = room.owner._id === user?.id || room.owner === user?.id;

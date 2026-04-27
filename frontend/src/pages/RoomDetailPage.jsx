@@ -1976,11 +1976,15 @@ const RoomDetailPage = () => {
                   if (!t.isActive) return false;
                   // Daily tasks always show
                   if (t.taskType === 'daily' || !t.taskType) return true;
-                  // Weekly tasks show every day (or could be specific day)
+                  // Weekly tasks show every day (usually filtered on server, but safety first)
                   if (t.taskType === 'weekly') return true;
-                  // Custom tasks only show on selected days
-                  if (t.taskType === 'custom' && Array.isArray(t.daysOfWeek)) {
-                    return t.daysOfWeek.includes(today);
+                  
+                  // Custom tasks: Handle both string (from DB) and array (optimistic local state)
+                  if (t.taskType === 'custom') {
+                    const days = Array.isArray(t.daysOfWeek) 
+                      ? t.daysOfWeek 
+                      : (typeof t.daysOfWeek === 'string' ? t.daysOfWeek.split(',').map(Number) : []);
+                    return days.includes(today);
                   }
                   return true;
                 });

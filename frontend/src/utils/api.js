@@ -2,18 +2,20 @@ import axios from 'axios';
 import cacheManager from './cache';
 
 // Production API URL
-const PRODUCTION_API_URL = 'https://roomscore-production.up.railway.app';
+const PRODUCTION_API_URL = 'https://roomscore-backend.onrender.com'; // Update this to your new Render URL
 
 // Use environment variable if available, otherwise use production URL
 const getApiUrl = () => {
+  // Priority 1: Vercel environment variable
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl) return envUrl;
   
-  // Check if we're in a browser dev environment
+  // Priority 2: Localhost for development
   if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
     return 'http://localhost:5000';
   }
   
+  // Priority 3: Hardcoded production fallback
   return PRODUCTION_API_URL;
 };
 

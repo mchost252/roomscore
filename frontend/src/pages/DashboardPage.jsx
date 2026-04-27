@@ -749,13 +749,14 @@ const DashboardPage = () => {
         return;
       }
       
-      setRooms(freshRooms);
+      const activeRooms = freshRooms.filter(r => !r.endDate || new Date(r.endDate) > new Date());
+      setRooms(activeRooms);
       setIsStaleData(false);
 
       setStats(prev => ({
         ...prev,
-        roomsJoined: freshRooms.length || 0,
-        totalPoints: computeTotalPoints(freshRooms)
+        roomsJoined: activeRooms.length || 0,
+        totalPoints: computeTotalPoints(activeRooms)
       }));
     } catch (err) {
       console.error('Error loading dashboard:', err);
