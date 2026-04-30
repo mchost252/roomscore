@@ -1974,18 +1974,29 @@ const RoomDetailPage = () => {
                 const today = new Date().getDay(); // 0 = Sunday, 1 = Monday, etc.
                 const todaysTasks = (room.tasks || []).filter(t => {
                   if (!t.isActive) return false;
-                  // Daily tasks always show
-                  if (t.taskType === 'daily' || !t.taskType) return true;
-                  // Weekly tasks show every day (usually filtered on server, but safety first)
-                  if (t.taskType === 'weekly') return true;
                   
-                  // Custom tasks: Handle both string (from DB) and array (optimistic local state)
-                  if (t.taskType === 'custom') {
-                    const days = Array.isArray(t.daysOfWeek) 
-                      ? t.daysOfWeek 
-                      : (typeof t.daysOfWeek === 'string' ? t.daysOfWeek.split(',').map(Number) : []);
+                  // Use both taskType and frequency (compat for older tasks)
+                  const type = t.taskType || t.frequency || 'daily';
+
+                  // 1. Daily tasks: Always visible
+                  if (type === 'daily') return true;
+
+                  // 2. Weekly tasks: Currently hardcoded to Monday (1) in backend, so sync frontend
+                  if (type === 'weekly') return today === 1;
+
+                  // 3. Custom tasks: Robust parsing for String or Array
+                  if (type === 'custom') {
+                    // Convert "0,2,4" or [0, 2, 4] or ["0", "2"] into [0, 2, 4]
+                    let days = [];
+                    if (Array.isArray(t.daysOfWeek)) {
+                      days = t.daysOfWeek.map(Number);
+                    } else if (typeof t.daysOfWeek === 'string' && t.daysOfWeek.trim() !== '') {
+                      days = t.daysOfWeek.split(',').map(s => Number(s.trim()));
+                    }
+                    
                     return days.includes(today);
                   }
+                  
                   return true;
                 });
                 
