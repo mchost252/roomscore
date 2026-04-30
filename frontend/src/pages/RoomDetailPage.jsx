@@ -3263,7 +3263,6 @@ const RoomDetailPage = () => {
                 SelectProps={{ native: true }}
               >
                 <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
                 <option value="custom">Custom Days</option>
               </TextField>
             </Box>

@@ -421,9 +421,8 @@ const CreateRoomPage = () => {
                   SelectProps={{ native: true }}
                   sx={{ flex: 1 }}
                 >
-                  <option value="daily">Daily</option>
-                  <option value="weekly">Weekly</option>
-                  <option value="custom">Custom Days</option>
+                <option value="daily">Daily</option>
+                <option value="custom">Custom Days</option>
                 </TextField>
               </Box>
 
