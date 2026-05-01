@@ -63,24 +63,24 @@ const MobileAppBanner = () => {
           left: 0,
           right: 0,
           background: 'linear-gradient(transparent, rgba(0,0,0,0.85))',
-          p: { xs: 2, sm: 3 },
+          p: { xs: 1.5, sm: 2 }, // Reduced padding
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          gap: 2,
+          gap: 1.5, // Reduced gap
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <PhoneIphone sx={{ color: '#A78BFA', fontSize: 28, animation: `${subtleFloat} 3s ease-in-out infinite` }} />
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <PhoneIphone sx={{ color: '#A78BFA', fontSize: 22, animation: `${subtleFloat} 3s ease-in-out infinite` }} /> {/* Reduced icon size from 28 to 22 */}
           <Box>
             <Typography
               variant="body2"
               sx={{
                 color: 'rgba(255,255,255,0.7)',
                 fontWeight: 600,
-                fontSize: { xs: '0.7rem', sm: '0.8rem' },
+                fontSize: { xs: '0.6rem', sm: '0.65rem' }, // Reduced from 0.7/0.8
                 textTransform: 'uppercase',
-                letterSpacing: 1.5,
+                letterSpacing: 1.2,
               }}
             >
               Coming Soon
@@ -90,7 +90,7 @@ const MobileAppBanner = () => {
               sx={{
                 color: '#fff',
                 fontWeight: 700,
-                fontSize: { xs: '0.85rem', sm: '1rem' },
+                fontSize: { xs: '0.75rem', sm: '0.85rem' }, // Reduced from 0.85/1.0
               }}
             >
               Krios Mobile App
@@ -101,7 +101,7 @@ const MobileAppBanner = () => {
         <Button
           variant="contained"
           size="small"
-          endIcon={<ArrowForward sx={{ fontSize: '16px !important' }} />}
+          endIcon={<ArrowForward sx={{ fontSize: '14px !important' }} />} // Reduced from 16px
           onClick={(e) => {
             e.stopPropagation();
             handleJoinWaitlist();
@@ -110,12 +110,12 @@ const MobileAppBanner = () => {
             background: 'linear-gradient(135deg, #7B61FF 0%, #A78BFA 100%)',
             color: '#fff',
             fontWeight: 700,
-            fontSize: { xs: '0.7rem', sm: '0.8rem' },
+            fontSize: { xs: '0.6rem', sm: '0.65rem' }, // Reduced from 0.7/0.8
             textTransform: 'uppercase',
-            letterSpacing: 1,
-            borderRadius: '10px',
-            px: { xs: 2, sm: 3 },
-            py: 1,
+            letterSpacing: 0.5,
+            borderRadius: '8px', // Reduced from 10px
+            px: { xs: 1.5, sm: 2 }, // Reduced padding
+            py: 0.5, // Reduced padding
             whiteSpace: 'nowrap',
             boxShadow: `0 4px 15px ${alpha('#7B61FF', 0.4)}`,
             // Shimmer effect on button
