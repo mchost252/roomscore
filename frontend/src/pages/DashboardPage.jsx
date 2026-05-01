@@ -36,6 +36,8 @@ import api, { invalidateCache, prefetch } from '../utils/api';
 import cacheManager from '../utils/cache';
 import OnboardingModal from '../components/OnboardingModal';
 import PremiumPromptModal from '../components/PremiumPromptModal';
+import MobileAppPromoModal from '../components/MobileAppPromoModal';
+import MobileAppBanner from '../components/MobileAppBanner';
 import { getErrorMessage } from '../utils/errorMessages';
 import WhatsNewCard from '../components/WhatsNewCard';
 import useVisibilityRefresh from '../hooks/useVisibilityRefresh';
@@ -495,6 +497,7 @@ const DashboardPage = () => {
   const [loading, setLoading] = useState(true); // Start with loading true
   const [error, setError] = useState(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showMobilePromo, setShowMobilePromo] = useState(false);
   const [showPremiumPrompt, setShowPremiumPrompt] = useState(false);
   const [isStaleData, setIsStaleData] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false); // Track background refresh
@@ -527,6 +530,12 @@ const DashboardPage = () => {
       
       if (!hasCompletedOnboarding) {
         setShowOnboarding(true);
+      } else {
+        // Existing user who already completed onboarding - show promo if not seen
+        const promoKey = `mobilePromoSeen_${user.id}`;
+        if (!localStorage.getItem(promoKey)) {
+          setTimeout(() => setShowMobilePromo(true), 1500);
+        }
       }
 
       setStats({
@@ -545,6 +554,18 @@ const DashboardPage = () => {
     // Account-specific key so each user gets their own onboarding
     if (user?.id) {
       localStorage.setItem(`onboardingCompleted_${user.id}`, 'true');
+    }
+    // Show mobile app promo after onboarding if first time
+    const promoKey = `mobilePromoSeen_${user?.id}`;
+    if (!localStorage.getItem(promoKey)) {
+      setTimeout(() => setShowMobilePromo(true), 600);
+    }
+  };
+
+  const handleMobilePromoClose = () => {
+    setShowMobilePromo(false);
+    if (user?.id) {
+      localStorage.setItem(`mobilePromoSeen_${user.id}`, 'true');
     }
   };
 
@@ -798,6 +819,9 @@ const DashboardPage = () => {
       {/* Onboarding Modal */}
       <OnboardingModal open={showOnboarding} onClose={handleOnboardingClose} />
 
+      {/* Mobile App Promo - game-ad style popup (first login only) */}
+      <MobileAppPromoModal open={showMobilePromo} onClose={handleMobilePromoClose} />
+
       {/* Header Section */}
       <Box sx={{ mb: { xs: 2, md: 4 } }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
@@ -879,6 +903,9 @@ const DashboardPage = () => {
           />
         </Grid>
       </Grid>
+
+      {/* Krios Mobile App Banner */}
+      <MobileAppBanner />
 
       {/* What's New */}
       <WhatsNewCard />
