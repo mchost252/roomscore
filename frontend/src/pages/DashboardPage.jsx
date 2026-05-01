@@ -37,7 +37,8 @@ import cacheManager from '../utils/cache';
 import OnboardingModal from '../components/OnboardingModal';
 import PremiumPromptModal from '../components/PremiumPromptModal';
 import MobileAppPromoModal from '../components/MobileAppPromoModal';
-import MobileAppBanner from '../components/MobileAppBanner';
+import RebrandPromoModal from '../components/RebrandPromoModal';
+import DashboardBannerSlideshow from '../components/DashboardBannerSlideshow';
 import { getErrorMessage } from '../utils/errorMessages';
 import WhatsNewCard from '../components/WhatsNewCard';
 import useVisibilityRefresh from '../hooks/useVisibilityRefresh';
@@ -498,6 +499,7 @@ const DashboardPage = () => {
   const [error, setError] = useState(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showMobilePromo, setShowMobilePromo] = useState(false);
+  const [showRebrandPromo, setShowRebrandPromo] = useState(false);
   const [showPremiumPrompt, setShowPremiumPrompt] = useState(false);
   const [isStaleData, setIsStaleData] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false); // Track background refresh
@@ -531,9 +533,13 @@ const DashboardPage = () => {
       if (!hasCompletedOnboarding) {
         setShowOnboarding(true);
       } else {
-        // Existing user who already completed onboarding - show promo if not seen
-        const promoKey = `mobilePromoSeen_${user.id}`;
-        if (!localStorage.getItem(promoKey)) {
+        // Existing user who already completed onboarding - check promo modals
+        const rebrandKey = `rebrandPromoSeen_${user.id}`;
+        const mobileKey = `mobilePromoSeen_${user.id}`;
+        
+        if (!localStorage.getItem(rebrandKey)) {
+          setTimeout(() => setShowRebrandPromo(true), 1500);
+        } else if (!localStorage.getItem(mobileKey)) {
           setTimeout(() => setShowMobilePromo(true), 1500);
         }
       }
@@ -555,10 +561,20 @@ const DashboardPage = () => {
     if (user?.id) {
       localStorage.setItem(`onboardingCompleted_${user.id}`, 'true');
     }
-    // Show mobile app promo after onboarding if first time
-    const promoKey = `mobilePromoSeen_${user?.id}`;
-    if (!localStorage.getItem(promoKey)) {
-      setTimeout(() => setShowMobilePromo(true), 600);
+    // Show rebrand promo after onboarding if first time
+    const rebrandKey = `rebrandPromoSeen_${user?.id}`;
+    if (!localStorage.getItem(rebrandKey)) {
+      setTimeout(() => setShowRebrandPromo(true), 600);
+    }
+  };
+
+  const handleRebrandPromoClose = () => {
+    setShowRebrandPromo(false);
+    if (user?.id) {
+      localStorage.setItem(`rebrandPromoSeen_${user.id}`, 'true');
+      
+      // Optionally show mobile promo right after, or leave it for next session
+      // We will leave it for next session so we don't bombard them with modals
     }
   };
 
@@ -822,6 +838,9 @@ const DashboardPage = () => {
       {/* Mobile App Promo - game-ad style popup (first login only) */}
       <MobileAppPromoModal open={showMobilePromo} onClose={handleMobilePromoClose} />
 
+      {/* Rebrand Promo - game-ad style popup */}
+      <RebrandPromoModal open={showRebrandPromo} onClose={handleRebrandPromoClose} />
+
       {/* Header Section */}
       <Box sx={{ mb: { xs: 2, md: 4 } }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
@@ -904,8 +923,8 @@ const DashboardPage = () => {
         </Grid>
       </Grid>
 
-      {/* Krios Mobile App Banner */}
-      <MobileAppBanner />
+      {/* Krios Promo Slideshow Banner */}
+      <DashboardBannerSlideshow />
 
       {/* What's New */}
       <WhatsNewCard />

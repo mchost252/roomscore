@@ -222,7 +222,7 @@ const AppLayout = ({ children }) => {
           >
             <Box
               component="img"
-              src="/icon-192x192.png"
+              src="/krios-logo-transparent.png"
               alt="Krios"
               sx={{
                 width: '100%',
