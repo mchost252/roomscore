@@ -7,6 +7,8 @@ import {
   Fade,
   Zoom,
   keyframes,
+  useTheme,
+  useMediaQuery,
 } from '@mui/material';
 import { Close as CloseIcon } from '@mui/icons-material';
 
