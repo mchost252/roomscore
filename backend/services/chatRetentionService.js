@@ -34,6 +34,7 @@ async function runChatRetentionCleanup() {
 
       const cutoff = getCutoffDate(days);
 
+      // 1. Standard Room Chat Messages
       const result = await prisma.chatMessage.deleteMany({
         where: {
           roomId: room.id,
@@ -41,7 +42,15 @@ async function runChatRetentionCleanup() {
         }
       });
 
-      totalDeleted += result.count || 0;
+      // 2. Room Task Nodes (Subway Mission Logs & Proofs)
+      const resultNodes = await prisma.roomTaskNode.deleteMany({
+        where: {
+          roomId: room.id,
+          createdAt: { lt: cutoff }
+        }
+      });
+
+      totalDeleted += (result.count || 0) + (resultNodes.count || 0);
     }
 
     if (totalDeleted > 0) {

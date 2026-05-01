@@ -565,12 +565,14 @@ const DashboardPage = () => {
     const cachedRooms = Array.isArray(cached.data?.rooms) ? cached.data.rooms : null;
     
     if (cachedRooms && cachedRooms.length > 0) {
+      // Filter out expired rooms from cache (same filter as loadDashboardData)
+      const activeRooms = cachedRooms.filter(r => !r.endDate || new Date(r.endDate) > new Date());
       // Show cached data immediately
-      setRooms(cachedRooms);
+      setRooms(activeRooms);
       setStats(prev => ({
         ...prev,
-        roomsJoined: cachedRooms.length || 0,
-        totalPoints: computeTotalPoints(cachedRooms)
+        roomsJoined: activeRooms.length || 0,
+        totalPoints: computeTotalPoints(activeRooms)
       }));
       setLoading(false); // Stop loading immediately when we have cache
       setIsStaleData(cached.isStale);
@@ -685,10 +687,18 @@ const DashboardPage = () => {
       // If current user left, remove room from dashboard
       if (data.userId === user?.id) {
         setRooms(prevRooms => prevRooms.filter(room => room._id !== data.roomId));
+        invalidateCache('/rooms');
       } else if (data.roomId) {
         // Otherwise just update member count
         loadDashboardData(true);
       }
+    };
+
+    const handleRoomDeleted = (data) => {
+      // Remove deleted room from dashboard immediately
+      setRooms(prevRooms => prevRooms.filter(room => room._id !== data.roomId));
+      // Clear persistent cache so it doesn't come back
+      invalidateCache('/rooms');
     };
 
     const handleJoinApproved = (data) => {
@@ -705,6 +715,7 @@ const DashboardPage = () => {
     socket.on('task:created', handleTaskCreated);
     socket.on('member:joined', handleMemberJoined);
     socket.on('member:left', handleMemberLeft);
+    socket.on('room:deleted', handleRoomDeleted);
     socket.on('room:joinApproved', handleJoinApproved);
 
     return () => {
@@ -713,6 +724,7 @@ const DashboardPage = () => {
       socket.off('task:created', handleTaskCreated);
       socket.off('member:joined', handleMemberJoined);
       socket.off('member:left', handleMemberLeft);
+      socket.off('room:deleted', handleRoomDeleted);
       socket.off('room:joinApproved', handleJoinApproved);
     };
   }, [socket, user?._id, user?.id]);

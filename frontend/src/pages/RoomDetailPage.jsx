@@ -491,16 +491,9 @@ const RoomDetailPage = () => {
     }
   };
 
-  // Listen for app foreground event to refresh data (mobile sync)
-  useEffect(() => {
-    const handleForeground = () => {
-      console.log('App came to foreground, refreshing room data...');
-      loadRoomDetails(true); // silent refresh
-    };
-    
-    window.addEventListener('app:foreground', handleForeground);
-    return () => window.removeEventListener('app:foreground', handleForeground);
-  }, [roomId]);
+  // Removed app:foreground handler - it was causing tasks to uncheck by doing
+  // a full state replacement (loadRoomDetails) that overwrites optimistic completion
+  // state before the POST resolves. Room data is kept in sync via socket events only.
 
   // Load pending members when room data is available and user is owner
   useEffect(() => {
@@ -798,10 +791,26 @@ const RoomDetailPage = () => {
         
         // Handle tasks data
         if (tasksResponse.status === 'fulfilled') {
-          // Merge room data with tasks that have completion status
-          setRoom({
-            ...roomData,
-            tasks: tasksResponse.value.data.tasks
+          // Merge room data with tasks, preserving optimistic completion state
+          // This prevents loadRoomDetails from overwriting tasks the user just completed
+          setRoom(prev => {
+            const serverTasks = tasksResponse.value.data.tasks;
+            if (prev?.tasks) {
+              const mergedTasks = serverTasks.map(serverTask => {
+                const localTask = prev.tasks.find(t => t._id === serverTask._id);
+                // If local says completed but server doesn't yet, keep local optimistic state
+                if (localTask?.isCompleted && !serverTask.isCompleted) {
+                  return { ...serverTask, isCompleted: true, completedAt: localTask.completedAt, completedBy: localTask.completedBy };
+                }
+                // If local says uncompleted but server still says completed, keep local optimistic state
+                if (localTask && !localTask.isCompleted && serverTask.isCompleted) {
+                  return { ...serverTask, isCompleted: false, completedAt: null, completedBy: localTask.completedBy };
+                }
+                return serverTask;
+              });
+              return { ...roomData, tasks: mergedTasks };
+            }
+            return { ...roomData, tasks: serverTasks };
           });
         } else {
           // Fallback to room tasks without completion status
@@ -886,6 +895,12 @@ const RoomDetailPage = () => {
       setSuccess(`+${pts} points added • Room notified`);
       setTimeout(() => setSuccess(null), 3000);
       
+      // IMMEDIATELY invalidate cache so any remount fetches fresh data
+      // (prevents stale cache from overwriting optimistic state)
+      invalidateCache(`/rooms/${roomId}`);
+      invalidateCache(`/rooms/${roomId}/tasks`);
+      invalidateCache('/rooms');
+      
       // Trigger premium animations if room premium is active
       if (roomHasPremium) {
         setShowTaskCompleteAnimation(true);
@@ -895,9 +910,6 @@ const RoomDetailPage = () => {
       // API call in background (no await - non-blocking)
       api.post(`/rooms/${roomId}/tasks/${taskId}/complete`)
         .then(() => {
-          // Invalidate cache for fresh data next time
-          invalidateCache(`/rooms/${roomId}`);
-          invalidateCache('/rooms');
           // Refresh nudge status - user can now nudge after completing a task
           refreshNudgeStatus();
         })
@@ -978,6 +990,11 @@ const RoomDetailPage = () => {
         
         return { ...prev, tasks: updatedTasks, members: updatedMembers };
       });
+
+      // Invalidate cache IMMEDIATELY after optimistic update (before API call)
+      // This prevents stale cached data from overwriting the optimistic state
+      invalidateCache(`/rooms/${roomId}`);
+      invalidateCache('/rooms');
       
       setSuccess('Task unmarked. Points deducted.');
       setTimeout(() => setSuccess(null), 3000);
@@ -985,9 +1002,7 @@ const RoomDetailPage = () => {
       // API call in background (non-blocking for faster UI)
       api.delete(`/rooms/${roomId}/tasks/${taskId}/complete`)
         .then(() => {
-          // Invalidate cache
-          invalidateCache(`/rooms/${roomId}`);
-          invalidateCache('/rooms');
+          // Cache already invalidated above
         })
         .catch(err => {
           // Rollback on error
@@ -1028,7 +1043,7 @@ const RoomDetailPage = () => {
     }
   };
 
-  const handleSendMessageFromDrawer = async (messageText, replyTo = null) => {
+  const handleSendMessageFromDrawer = (messageText, replyTo = null) => {
     if (!messageText.trim()) return;
     
     // OPTIMISTIC UPDATE - Add message to UI immediately with correct user data
@@ -1052,34 +1067,35 @@ const RoomDetailPage = () => {
     
     setChatMessages(prev => [...prev, optimisticMessage]);
 
-    // API call in background
-    try {
-      const response = await api.post(`/rooms/${roomId}/chat`, {
-        message: messageText,
-        replyToId: replyTo?._id || replyTo?.messageId || null,
-        replyToText: replyTo?.message || null
+    // Fire and forget API call - don't await, matches handleSendMessage pattern
+    api.post(`/rooms/${roomId}/chat`, {
+      message: messageText,
+      replyToId: replyTo?._id || replyTo?.messageId || null,
+      replyToText: replyTo?.message || null
+    })
+      .then(response => {
+        // Replace optimistic message with real one
+        setChatMessages(prev => 
+          prev.map(msg => 
+            msg._id === optimisticMessage._id 
+              ? { ...response.data.message, sending: false }
+              : msg
+          )
+        );
+        // Invalidate chat cache
+        invalidateCache(`/rooms/${roomId}/chat`);
+      })
+      .catch(err => {
+        console.error('Error sending message:', err);
+        // Mark message as failed instead of removing
+        setChatMessages(prev => 
+          prev.map(msg => 
+            msg._id === optimisticMessage._id 
+              ? { ...msg, sending: false, failed: true }
+              : msg
+          )
+        );
       });
-      
-      // Replace optimistic message with real one
-      setChatMessages(prev => 
-        prev.map(msg => 
-          msg._id === optimisticMessage._id 
-            ? { ...response.data.message, sending: false }
-            : msg
-        )
-      );
-      
-      // Invalidate chat cache
-      invalidateCache(`/rooms/${roomId}/chat`);
-    } catch (err) {
-      console.error('Error sending message:', err);
-      
-      // Remove optimistic message and show error
-      setChatMessages(prev => prev.filter(msg => msg._id !== optimisticMessage._id));
-      const { icon, message } = getErrorMessage(err);
-      setError(`${icon} ${message}`);
-      setTimeout(() => setError(null), 5000);
-    }
   };
 
   const handleSendMessage = async () => {
@@ -3147,6 +3163,9 @@ const RoomDetailPage = () => {
             onClick={async () => {
               try {
                 await api.delete(`/rooms/${roomId}`);
+                // Clear rooms cache so deleted room doesn't flash on next page load
+                invalidateCache('/rooms');
+                invalidateCache(`/rooms/${roomId}`);
                 setSuccess('Room disbanded successfully');
                 setTimeout(() => {
                   navigate('/rooms');

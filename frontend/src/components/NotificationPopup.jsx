@@ -109,7 +109,7 @@ const NotificationPopup = () => {
 
   const handleViewAll = () => {
     handleClose();
-    navigate('/notifications');
+    navigate('/profile');
   };
 
   const getNotificationIcon = (type) => {

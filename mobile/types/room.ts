@@ -88,6 +88,7 @@ export interface RoomTaskNode {
   userId?: string;
   type: RoomTaskNodeType;
   content?: string;
+  caption?: string;            // User caption for images
   status: RoomGhostStatus;
   vouchCount: number;
   mediaUrl?: string;

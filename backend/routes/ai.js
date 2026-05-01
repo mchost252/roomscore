@@ -212,7 +212,7 @@ router.post('/chat', protect, async (req, res) => {
     try {
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { username: true, name: true, aiProfile: true },
+        select: { username: true, aiProfile: true },
       });
       if (user) {
         userName = user.name || user.username || 'there';

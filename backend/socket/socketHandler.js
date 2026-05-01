@@ -106,6 +106,12 @@ module.exports = (io) => {
   io.on('connection', (socket) => {
     logger.info(`User connected: ${socket.username} (${socket.userId})`);
 
+    // Join a room for receiving room-specific events
+    socket.on('join_room', (roomId) => {
+      socket.join(roomId);
+      logger.info(`User ${socket.username} joined room: ${roomId}`);
+    });
+
     // Track online status
     if (!onlineUsers.has(socket.userId)) {
       onlineUsers.set(socket.userId, new Set());
@@ -233,12 +239,28 @@ module.exports = (io) => {
       });
     });
 
-    // Mark messages as read - notify sender
-    socket.on('dm:read', ({ senderId, messageIds }) => {
+    // Mark messages as read - persist to DB + notify sender
+    socket.on('dm:read', async ({ senderId, messageIds }) => {
+      const readAt = new Date().toISOString();
+      
+      // Persist read status to database (idempotent)
+      try {
+        await prisma.directMessage.updateMany({
+          where: {
+            fromUserId: senderId,
+            toUserId: socket.userId,
+            read: false
+          },
+          data: { read: true }
+        });
+      } catch (err) {
+        logger.error('[dm:read] DB persist failed:', err.message);
+      }
+
+      // Notify sender so their UI updates check marks
       socket.to(`user:${senderId}`).emit('dm:read', {
         readBy: socket.userId,
-        messageIds,
-        readAt: new Date().toISOString()
+        readAt
       });
     });
 

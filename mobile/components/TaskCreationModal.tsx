@@ -11,7 +11,6 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
 import { useTheme } from '../context/ThemeContext';
 import type { Task } from '../types/room';
 
@@ -66,53 +65,98 @@ export function TaskCreationModal({
     });
   };
 
+  // Solid opaque backgrounds
+  const sheetBg = isDark ? '#141424' : '#ffffff';
+
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.backdrop}
       >
-        <BlurView intensity={isDark ? 80 : 30} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFillObject} />
-        <TouchableOpacity style={styles.scrim} activeOpacity={1} onPress={onClose} />
-        <View style={[styles.sheet, { backgroundColor: isDark ? 'rgba(20,20,30,0.85)' : 'rgba(255,255,255,0.95)', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}>
+        {/* Proper overlay scrim */}
+        <TouchableOpacity
+          style={[styles.scrim, { backgroundColor: colors.overlay }]}
+          activeOpacity={1}
+          onPress={onClose}
+        />
+        <View
+          style={[
+            styles.sheet,
+            {
+              backgroundColor: sheetBg,
+              borderColor: colors.borderColor,
+            },
+          ]}
+        >
           <View style={styles.handleRow}>
-            <Text style={[styles.title, { color: isDark ? '#fff' : '#000' }]}>
+            <Text style={[styles.title, { color: colors.text }]}>
               {isEditMode ? 'Edit task' : 'New task'}
             </Text>
             <TouchableOpacity onPress={onClose}>
-              <Ionicons name="close" size={24} color={isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)'} />
+              <Ionicons name="close" size={24} color={colors.icon} />
             </TouchableOpacity>
           </View>
           <ScrollView keyboardShouldPersistTaps="handled">
-            <Text style={[styles.label, { color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)' }]}>Title</Text>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>
+              Title
+            </Text>
             <TextInput
               value={title}
               onChangeText={setTitle}
               placeholder="Task title"
-              placeholderTextColor={isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'}
-              style={[styles.input, { color: isDark ? '#fff' : '#000', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', backgroundColor: isDark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.05)' }]}
+              placeholderTextColor={colors.placeholder}
+              style={[
+                styles.input,
+                {
+                  color: colors.text,
+                  borderColor: colors.borderColor,
+                  backgroundColor: colors.inputBg,
+                },
+              ]}
             />
-            <Text style={[styles.label, { color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)' }]}>Description</Text>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>
+              Description
+            </Text>
             <TextInput
               value={description}
               onChangeText={setDescription}
               placeholder="Optional"
-              placeholderTextColor={isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'}
+              placeholderTextColor={colors.placeholder}
               multiline
-              style={[styles.input, styles.area, { color: isDark ? '#fff' : '#000', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', backgroundColor: isDark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.05)' }]}
+              style={[
+                styles.input,
+                styles.area,
+                {
+                  color: colors.text,
+                  borderColor: colors.borderColor,
+                  backgroundColor: colors.inputBg,
+                },
+              ]}
             />
-            <Text style={[styles.label, { color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)' }]}>Points</Text>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>
+              Points
+            </Text>
             <TextInput
               value={points}
               onChangeText={setPoints}
               keyboardType="number-pad"
-              style={[styles.input, { color: isDark ? '#fff' : '#000', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', backgroundColor: isDark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.05)' }]}
+              style={[
+                styles.input,
+                {
+                  color: colors.text,
+                  borderColor: colors.borderColor,
+                  backgroundColor: colors.inputBg,
+                },
+              ]}
             />
             <TouchableOpacity
               style={[styles.primary, { backgroundColor: colors.primary }]}
               onPress={submit}
             >
-              <Text style={styles.primaryTxt}>{isEditMode ? 'Save' : 'Create'}</Text>
+              <Text style={styles.primaryTxt}>
+                {isEditMode ? 'Save' : 'Create'}
+              </Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
@@ -123,7 +167,9 @@ export function TaskCreationModal({
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'flex-end' },
-  scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.1)' },
+  scrim: {
+    ...StyleSheet.absoluteFillObject,
+  },
   sheet: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,

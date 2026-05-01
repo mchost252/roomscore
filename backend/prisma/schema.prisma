@@ -22,7 +22,7 @@ model User {
   bio                   String?
   timezone              String    @default("UTC")
   onboardingCompleted   Boolean   @default(false)
-  pushSubscription      String?   // SQLite: stored as JSON string
+  pushSubscription      Json?     // Push subscription object (endpoint + keys)
   aiProfile             String?   // JSON string — learned AI preferences
   lastActive            DateTime  @default(now())
   streak                Int       @default(0)
@@ -258,7 +258,7 @@ model Notification {
   type      String   // friend_request, room_invite, nudge, appreciation, system
   title     String
   message   String
-  data      String?   // SQLite: stored as JSON string
+  data      Json?     // Notification metadata (roomId, senderId, etc.)
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
 

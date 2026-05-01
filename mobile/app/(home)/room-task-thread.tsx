@@ -6,7 +6,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   View, Text, StyleSheet, TouchableOpacity, StatusBar, 
-  TextInput, KeyboardAvoidingView, Platform, Keyboard 
+  TextInput, KeyboardAvoidingView, Platform, Keyboard,
+  RefreshControl
 } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -27,12 +28,12 @@ import { roomStorage } from '../../db/roomDb';
 import { roomTaskNodeService } from '../../services/roomTaskNodeService';
 
 import { 
-  HeroBriefNode, PinWallNode, ProofNode, ChatNode, DateDividerNode, checkIsAutoApproved
+  HeroBriefNode, PinWallNode, ProofNode, ChatNode, DateDividerNode, SystemAlertNode, checkIsAutoApproved
 } from '../../components/room-task-thread/SubwayNodes';
 import ProofUploadModal from '../../components/room-task-thread/ProofUploadModal';
 import Animated, { FadeIn, FadeOut, useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 
-type NodeType = 'date_divider' | 'proof_node' | 'chat_node';
+type NodeType = 'date_divider' | 'proof_node' | 'chat_node' | 'system_alert_node';
 
 interface FlattenedNode {
   id: string;
@@ -43,29 +44,37 @@ interface FlattenedNode {
 
 const updateTaskCache = (roomId: string, taskId: string, isCompleted: boolean, user: any) => {
   try {
-    const raw = roomStorage.getString(`tasks_${roomId}`);
+    const key = `tasks_${roomId}`;
+    const raw = roomStorage.getString(key);
     if (raw) {
       const tasks: Task[] = JSON.parse(raw);
+      let changed = false;
       const updated = tasks.map(t => {
         if (t.id === taskId) {
+          changed = true;
           const completions = t.completions || [];
-          if (isCompleted && !completions.some(c => c.userId === user.id)) {
-            completions.push({
-              id: `c_${Date.now()}`,
-              taskId,
-              userId: user.id,
-              completedAt: new Date().toISOString(),
-              user: { username: user.username, avatar: user.avatar }
-            });
-          }
-          return { ...t, isCompleted, completions };
+          const newCompletions = isCompleted 
+            ? (!completions.some(c => c.userId === user.id) 
+                ? [...completions, {
+                    id: `c_${Date.now()}`,
+                    taskId,
+                    userId: user.id,
+                    completedAt: new Date().toISOString(),
+                    user: { username: user.username, avatar: user.avatar }
+                  }]
+                : completions)
+            : completions.filter(c => c.userId !== user.id);
+            
+          return { ...t, isCompleted, completions: newCompletions };
         }
         return t;
       });
-      roomStorage.set(`tasks_${roomId}`, JSON.stringify(updated));
+      if (changed) {
+        roomStorage.set(key, JSON.stringify(updated));
+      }
     }
   } catch (e) {
-    console.error('Failed to update task cache:', e);
+    console.error('[RoomTaskThread] Cache Update Failed:', e);
   }
 };
 
@@ -96,9 +105,10 @@ export default function RoomTaskThread() {
   const taskDueDate = params.dueDate || '';
   const isRoomOwner = params.isOwner === 'true';
 
-  const [nodes, setNodes] = useState<RoomTaskNode[]>([]);
+  const [nodes, setNodes] = useState<RoomTaskNode[]>(() => roomTaskNodeService.getCachedNodes(taskId) || []);
   const [inputText, setInputText] = useState('');
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadMode, setUploadMode] = useState<'proof' | 'chat'>('proof');
   const [isTaskCompleted, setIsTaskCompleted] = useState(false);
   
   const [roomMembers, setRoomMembers] = useState<RoomMember[]>([]);
@@ -108,26 +118,68 @@ export default function RoomTaskThread() {
   const isScrolling = useSharedValue(0);
 
   const listRef = useRef<FlashList<FlattenedNode>>(null);
-  const scrollTimeout = useRef<NodeJS.Timeout | null>(null);
   const processedNodeIds = useRef<Set<string>>(new Set());
+  const [hasScrolledInit, setHasScrolledInit] = useState(false);
+
+  // ── Pagination State ──
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMoreNodes, setHasMoreNodes] = useState(true);
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const refreshAll = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      const apiTasks = await taskService.getTasks(roomId);
+      roomStorage.set(`tasks_${roomId}`, JSON.stringify(apiTasks));
+      const t = apiTasks.find(x => x.id === taskId);
+      if (t) {
+        setIsTaskCompleted(!!t.isCompleted);
+        setCompletions(t.completions || []);
+        setTaskParticipants(t.participants || []);
+      }
+
+      const apiNodes = await taskService.getRoomTaskNodes(roomId, taskId);
+      if (apiNodes && apiNodes.length > 0) {
+        let chatRetentionDays = 5;
+        try {
+          const rawRoom = roomStorage.getString(`room_${roomId}`);
+          if (rawRoom) chatRetentionDays = JSON.parse(rawRoom).chatRetentionDays || 5;
+        } catch {}
+        const cutoffTime = Date.now() - chatRetentionDays * 24 * 60 * 60 * 1000;
+        const validApiNodes = apiNodes.filter(n => new Date(n.createdAt).getTime() >= cutoffTime);
+
+        setNodes(validApiNodes);
+        validApiNodes.forEach(node => roomTaskNodeService.addNode(taskId, node).catch(() => {}));
+      }
+    } catch (e) {
+      console.error('[RoomTaskThread] Refresh Failed:', e);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [roomId, taskId]);
 
   // ── Load Data ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!taskId) return;
-    roomTaskNodeService.getNodes(taskId).then(setNodes);
-    roomTaskNodeService.purgeOldNodes(taskId, 5);
+    
+    let chatRetentionDays = 5;
+    try {
+      const rawRoom = roomStorage.getString(`room_${roomId}`);
+      if (rawRoom) {
+        chatRetentionDays = JSON.parse(rawRoom).chatRetentionDays || 5;
+      }
+    } catch {}
+    const cutoffTime = Date.now() - chatRetentionDays * 24 * 60 * 60 * 1000;
 
-    taskService.getRoomTaskNodes(roomId, taskId)
-      .then(apiNodes => {
-        if (apiNodes && apiNodes.length > 0) {
-          setNodes(prev => {
-            const existingIds = new Set(prev.map(n => n.id || n._id));
-            const newNodes = apiNodes.filter(n => !existingIds.has(n.id || n._id));
-            return [...prev, ...newNodes];
-          });
-          apiNodes.forEach(node => roomTaskNodeService.addNode(taskId, node).catch(() => {}));
-        }
-      });
+    roomTaskNodeService.getNodes(taskId, 50).then(initialNodes => {
+      const validNodes = initialNodes.filter(n => new Date(n.createdAt).getTime() >= cutoffTime);
+      setNodes(validNodes);
+      if (initialNodes.length < 50 || validNodes.length < 50) setHasMoreNodes(false);
+    });
+    roomTaskNodeService.purgeOldNodes(taskId, chatRetentionDays);
+
+    refreshAll(); // Use the common refresh logic on mount
 
     try {
       const rawTasks = roomStorage.getString(`tasks_${roomId}`);
@@ -145,15 +197,18 @@ export default function RoomTaskThread() {
     } catch {}
 
     RoomService.getRoomMembers(roomId).then(setRoomMembers).catch(() => {});
-  }, [taskId, roomId]);
+  }, [taskId, roomId, refreshAll]);
 
   // ── WebSocket ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!taskId || !roomId) return;
+    
+    // Always ensure we are connected to the correct room room
+    webSocketManager.connect(roomId);
 
     const updateStatus = () => setCommsStatus(webSocketManager.isConnectedToServer() ? 'online' : 'connecting');
-    if (!webSocketManager.isConnectedToServer()) webSocketManager.connect(roomId);
     updateStatus();
+
 
     const handleNodeCreated = (data: any) => {
       if (data.taskId === taskId && data.node) {
@@ -162,13 +217,24 @@ export default function RoomTaskThread() {
         const clientRef = node.clientReferenceId;
 
         setNodes(prev => {
-          const exists = prev.some(n => 
+          let matchedNode = prev.find(n => 
             (nodeId && (n.id === nodeId || n._id === nodeId)) || 
             (clientRef && n.clientReferenceId === clientRef)
           );
           
-          if (exists) {
-            return prev.map(n => (clientRef && n.clientReferenceId === clientRef) ? { ...n, ...node, isOptimistic: false } : n);
+          const isMe = node.userId === user?.id || node.user?.id === user?.id;
+          if (!matchedNode && isMe) {
+            matchedNode = prev.find(n => 
+              n.type === node.type && 
+              n.content === node.content && 
+              (n.id?.startsWith('chat_') || n.id?.startsWith('proof_') || n.id?.startsWith('media_') || n.id?.startsWith('client_'))
+            );
+          }
+          
+          if (matchedNode) {
+            const next = prev.map(n => n.id === matchedNode!.id ? { ...n, ...node, isOptimistic: false } : n);
+            roomTaskNodeService.updateNode(taskId, matchedNode!.id, node).catch(() => {});
+            return next;
           }
           
           if (nodeId) processedNodeIds.current.add(nodeId);
@@ -189,26 +255,152 @@ export default function RoomTaskThread() {
       }
     };
 
+    const handleTaskCompleted = (data: any) => {
+      if (data.taskId === taskId) {
+        setCompletions(prev => {
+          if (prev.some(c => c.userId === data.userId)) return prev;
+          return [...prev, { id: `c_${Date.now()}`, taskId, userId: data.userId, user: { username: data.username, avatar: data.avatar }, completedAt: new Date().toISOString() }];
+        });
+        if (data.userId === user?.id) setIsTaskCompleted(true);
+      }
+    };
+
+    const handleTaskUncompleted = (data: any) => {
+      if (data.taskId === taskId) {
+        const targetId = data.userId || data.oderId; // Handles backend typo
+        setCompletions(prev => prev.filter(c => c.userId !== targetId));
+        if (targetId === user?.id) setIsTaskCompleted(false);
+      }
+    };
+
+    const handleTaskUpdated = (data: any) => {
+      if (data.task && data.task.id === taskId) {
+        if (data.task.participants) {
+          setTaskParticipants(data.task.participants);
+        }
+      }
+    };
+
+    const handleTaskJoined = (data: any) => {
+      if (data.taskId === taskId && data.userId) {
+        setTaskParticipants(prev => {
+          if (!prev.some(p => (p.userId || p.id) === data.userId)) {
+            return [...prev, { id: data.userId, userId: data.userId, username: data.username, isOnline: false, aura: 'bronze' as any, hasHeat: false }];
+          }
+          return prev;
+        });
+      }
+    };
+
+    const handleTaskLeft = (data: any) => {
+      if (data.taskId === taskId && data.userId) {
+        setTaskParticipants(prev => prev.filter(p => (p.userId || p.id) !== data.userId));
+      }
+    };
+
+    const handleMemberJoined = (data: any) => {
+      if (data.roomId === roomId && data.member) {
+        setRoomMembers(prev => prev.find(m => m.id === data.member.id) ? prev : [...prev, data.member]);
+      }
+    };
+
+    const handleTaskDeleted = (data: any) => {
+      if (data.taskId === taskId) {
+        showToast({ message: 'This task has been deleted by an admin', type: 'info' });
+        router.back();
+      }
+    };
+
     webSocketManager.on('connect', updateStatus);
     webSocketManager.on('disconnect', () => setCommsStatus('offline'));
     webSocketManager.on('node:created', handleNodeCreated);
     webSocketManager.on('thread:node_created', handleNodeCreated);
     webSocketManager.on('node:updated', handleNodeUpdated);
+    webSocketManager.on('thread:node_updated', handleNodeUpdated);
+    webSocketManager.on('task:completed', handleTaskCompleted);
+    webSocketManager.on('task:uncompleted', handleTaskUncompleted);
+    webSocketManager.on('task:updated', handleTaskUpdated);
+    webSocketManager.on('task:deleted', handleTaskDeleted);
+    webSocketManager.on('task:joined', handleTaskJoined);
+    webSocketManager.on('task:left', handleTaskLeft);
+    webSocketManager.on('member:joined', handleMemberJoined);
 
     return () => {
       webSocketManager.off('connect', updateStatus);
       webSocketManager.off('node:created', handleNodeCreated);
       webSocketManager.off('thread:node_created', handleNodeCreated);
       webSocketManager.off('node:updated', handleNodeUpdated);
+      webSocketManager.off('thread:node_updated', handleNodeUpdated);
+      webSocketManager.off('task:completed', handleTaskCompleted);
+      webSocketManager.off('task:uncompleted', handleTaskUncompleted);
+      webSocketManager.off('task:updated', handleTaskUpdated);
+      webSocketManager.off('task:deleted', handleTaskDeleted);
+      webSocketManager.off('task:joined', handleTaskJoined);
+      webSocketManager.off('task:left', handleTaskLeft);
+      webSocketManager.off('member:joined', handleMemberJoined);
     };
-  }, [taskId, roomId]);
+  }, [taskId, roomId, user]);
+
+  const handleLoadMore = async () => {
+    if (loadingMore || !hasMoreNodes || nodes.length === 0) return;
+    setLoadingMore(true);
+    try {
+      let chatRetentionDays = 5;
+      try {
+        const rawRoom = roomStorage.getString(`room_${roomId}`);
+        if (rawRoom) chatRetentionDays = JSON.parse(rawRoom).chatRetentionDays || 5;
+      } catch {}
+      const cutoffTime = Date.now() - chatRetentionDays * 24 * 60 * 60 * 1000;
+
+      // Get the oldest node's date to fetch before it
+      const oldestDate = nodes.reduce((oldest, current) => {
+        return new Date(current.createdAt).getTime() < new Date(oldest).getTime() ? current.createdAt : oldest;
+      }, nodes[0].createdAt);
+
+      if (new Date(oldestDate).getTime() < cutoffTime) {
+        setHasMoreNodes(false);
+        setLoadingMore(false);
+        return;
+      }
+
+      const olderNodes = await roomTaskNodeService.getNodes(taskId, 50, oldestDate);
+      const validOlderNodes = olderNodes.filter(n => new Date(n.createdAt).getTime() >= cutoffTime);
+
+      if (olderNodes.length < 50 || validOlderNodes.length === 0) setHasMoreNodes(false);
+      
+      setNodes(prev => {
+        const existingIds = new Set(prev.map(n => n.id || n._id || n.clientReferenceId));
+        const filtered = validOlderNodes.filter(n => !existingIds.has(n.id || n._id || n.clientReferenceId));
+        return [...prev, ...filtered];
+      });
+    } catch (e) {
+      console.error('Failed to load older nodes:', e);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  const activeParticipantIds = useMemo(() => new Set(taskParticipants.map(p => p.userId || p.id)), [taskParticipants]);
+  const activeMembersCount = useMemo(() => {
+    return activeParticipantIds.size > 0 ? roomMembers.filter(m => activeParticipantIds.has(m.userId || m.id)).length : 1;
+  }, [activeParticipantIds, roomMembers]);
+  const completionProgress = useMemo(() => {
+    const cIds = new Set(completions.map(c => c.userId));
+    if (activeMembersCount === 0) return 0;
+    // count how many of the active members have completed it
+    const completedCount = roomMembers.filter(m => activeParticipantIds.has(m.userId || m.id) && cIds.has(m.userId || m.id)).length;
+    return Math.min(1, completedCount / activeMembersCount);
+  }, [completions, activeParticipantIds, roomMembers, activeMembersCount]);
 
   const pinProofs = useMemo(() => {
-    return nodes.filter(n => n.type === 'PROOF' && (n.status === 'GHOST_APPROVED' || checkIsAutoApproved(n.createdAt) || (n.vouchCount || 0) >= 3));
+    return nodes.filter(n => 
+      n.type === 'PROOF' || n.isPinned === true
+    );
   }, [nodes]);
 
   const flattenedData = useMemo(() => {
     const arr: FlattenedNode[] = [];
+    const seenIds = new Set<string>();
     let lastDateStr = '';
     const sortedNodes = [...nodes].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
@@ -223,15 +415,30 @@ export default function RoomTaskThread() {
       const isSameUser = prevNode && (prevNode.userId === node.userId || prevNode.user?.id === node.user?.id) && prevNode.type === node.type;
       const isGroupStart = !isSameUser;
 
+      const nodeKey = node.clientReferenceId || node.id || node._id || `temp_${index}`;
+      if (seenIds.has(nodeKey)) return;
+      seenIds.add(nodeKey);
+
+      let itemType = 'chat_node';
+      if (node.type === 'PROOF') itemType = 'proof_node';
+      if (node.type === 'SYSTEM_ALERT') itemType = 'system_alert_node';
+
       arr.push({
-        id: node.id || node._id || node.clientReferenceId || `temp_${index}`,
-        type: node.type === 'PROOF' ? 'proof_node' : 'chat_node',
+        id: nodeKey,
+        type: itemType as any,
         data: { ...node, isGroupStart },
         isLast: index === sortedNodes.length - 1,
       });
     });
     return arr;
   }, [nodes]);
+
+    useEffect(() => {
+    if (flattenedData.length > 0 && !hasScrolledInit) {
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 200);
+      setHasScrolledInit(true);
+    }
+  }, [flattenedData.length, hasScrolledInit]);
 
   const handleVouch = useCallback(async (id: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -250,7 +457,7 @@ export default function RoomTaskThread() {
     await roomTaskNodeService.updateNode(taskId, id, patch);
 
     try {
-      await taskService.addRoomTaskNode(roomId, taskId, { type: 'VOUCH', content: id, clientReferenceId: `vouch_${id}_${Date.now()}` });
+      await taskService.updateRoomTaskNode(roomId, taskId, id, { vouch: true });
     } catch {}
     showToast({ message: newVouchCount >= 3 ? 'Auto-approved! 3 vouches reached' : '+1 Vouch awarded', type: 'success' });
   }, [taskId, roomId, showToast]);
@@ -260,7 +467,7 @@ export default function RoomTaskThread() {
     setNodes(prev => prev.map(n => n.id === id ? { ...n, status: 'GHOST_APPROVED' } : n));
     await roomTaskNodeService.updateNode(taskId, id, { status: 'GHOST_APPROVED' });
     try {
-      await taskService.addRoomTaskNode(roomId, taskId, { type: 'APPROVE', content: id, clientReferenceId: `approve_${id}_${Date.now()}` });
+      await taskService.updateRoomTaskNode(roomId, taskId, id, { status: 'GHOST_APPROVED' });
     } catch {}
     showToast({ message: 'Proof Approved', type: 'success' });
   }, [taskId, roomId, showToast]);
@@ -291,45 +498,53 @@ export default function RoomTaskThread() {
     } catch {}
   };
 
-  const handleUploadProof = async (uri: string) => {
+  const handleUploadProof = async (uri: string, caption: string) => {
     setShowUploadModal(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const clientRefId = `client_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    const newProof: RoomTaskNode = {
-      id: `proof_${Date.now()}`, clientReferenceId: clientRefId, roomId, taskId, type: 'PROOF', status: 'PENDING',
+    const isProof = uploadMode === 'proof';
+    const type = isProof ? 'PROOF' : 'MESSAGE';
+    
+    const newMediaNode: RoomTaskNode = {
+      id: `media_${Date.now()}`, clientReferenceId: clientRefId, roomId, taskId, type, status: 'PENDING',
       mediaUrl: uri, vouchCount: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       user: { id: user?.id || 'u1', username: user?.username || 'Me', avatar: user?.avatar }, heatLevel: 0,
-      content: inputText.trim() || 'Completed the mission.', 
+      content: isProof ? (caption || 'Completed the mission.') : caption,
+      caption: caption || undefined,
     } as any;
     
     processedNodeIds.current.add(clientRefId);
-    setNodes(prev => [...prev, newProof]);
+    setNodes(prev => [...prev, newMediaNode]);
     setInputText('');
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 300);
-    await roomTaskNodeService.addNode(taskId, newProof);
+    await roomTaskNodeService.addNode(taskId, newMediaNode);
 
     try {
-      const serverNode = await taskService.uploadProofWithImage(roomId, taskId, uri, newProof.content || '', clientRefId);
+      const serverNode = await taskService.uploadProofWithImage(roomId, taskId, uri, newMediaNode.content || '', clientRefId, type);
       if (serverNode) {
         const sid = serverNode._id || serverNode.id;
         const sMedia = serverNode.mediaUrl || uri;
         setNodes(prev => prev.map(n => n.clientReferenceId === clientRefId ? { ...n, id: sid, mediaUrl: sMedia } : n));
-        roomTaskNodeService.updateNode(taskId, newProof.id, { id: sid, mediaUrl: sMedia });
+        roomTaskNodeService.updateNode(taskId, newMediaNode.id, { id: sid, mediaUrl: sMedia });
       }
     } catch {}
   };
 
   const renderAvatars = () => {
-    const pIds = new Set(taskParticipants.map(p => p.userId || p.id));
-    const active = pIds.size > 0 ? roomMembers.filter(m => pIds.has(m.userId || m.id)) : [];
+    const active = activeParticipantIds.size > 0 ? roomMembers.filter(m => activeParticipantIds.has(m.userId || m.id)) : [];
     const cIds = new Set(completions.map(c => c.userId));
     const done = active.filter(m => cIds.has(m.userId || m.id));
     const pend = active.filter(m => !cIds.has(m.userId || m.id));
     if (active.length === 0) return null;
     return (
       <View style={styles.headerAvatars}>
-        {pend.slice(0, 3).map(m => <View key={m.id} style={[styles.avatarCircle, { opacity: 0.3 }]}><Text style={styles.avatarInit}>{m.username.charAt(0)}</Text></View>)}
-        {done.slice(0, 3).map(m => <View key={m.id} style={[styles.avatarCircle, { borderColor: '#22c55e', borderWidth: 1 }]}><Text style={[styles.avatarInit, { color: '#22c55e' }]}>{m.username.charAt(0)}</Text></View>)}
+        {pend.slice(0, 3).map(m => <View key={m.id} style={[styles.avatarCircle, { opacity: 0.3 }]}><Text style={styles.avatarInit}>{m.username.charAt(0).toUpperCase()}</Text></View>)}
+        {done.slice(0, 3).map(m => <View key={m.id} style={[styles.avatarCircle, { borderColor: '#22c55e', borderWidth: 1 }]}><Text style={[styles.avatarInit, { color: '#22c55e' }]}>{m.username.charAt(0).toUpperCase()}</Text></View>)}
+        {active.length > 6 && (
+          <View style={[styles.avatarCircle, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}>
+            <Text style={{ fontSize: 6, fontWeight: '800', color: isDark ? '#fff' : '#000' }}>+{active.length - 6}</Text>
+          </View>
+        )}
       </View>
     );
   };
@@ -338,6 +553,7 @@ export default function RoomTaskThread() {
     switch (item.type) {
       case 'date_divider': return <DateDividerNode dateLabel={item.data} />;
       case 'proof_node': return <ProofNode node={item.data} currentUserId={user?.id || ''} isOwner={isRoomOwner} isLast={item.isLast} onVouch={handleVouch} onApprove={handleApprove} />;
+      case 'system_alert_node': return <SystemAlertNode node={item.data} isLast={item.isLast} />;
       case 'chat_node': return <ChatNode node={item.data} isLast={item.isLast} currentUserId={user?.id || ''} />;
       default: return null;
     }
@@ -370,13 +586,30 @@ export default function RoomTaskThread() {
           setIsTaskCompleted(next);
           if (next && user) {
             setCompletions(prev => [...prev, { userId: user.id }]);
+            setUploadMode('proof');
             setShowUploadModal(true);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           } else if (user) {
             setCompletions(prev => prev.filter(c => c.userId !== user.id));
           }
           updateTaskCache(roomId, taskId, next, user);
-          try { await (next ? taskService.completeTask(roomId, taskId) : taskService.uncompleteTask(roomId, taskId)); } catch {}
+          
+          try { 
+            if (next) {
+              await taskService.completeTask(roomId, taskId);
+              const alertRef = `sys_${Date.now()}`;
+              const alertMsg: RoomTaskNode = {
+                id: `chat_${Date.now()}`, clientReferenceId: alertRef, roomId, taskId, type: 'SYSTEM_ALERT', status: 'PENDING',
+                content: `${user?.username || 'Someone'} completed the mission.`, vouchCount: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+                heatLevel: 0,
+              } as any;
+              setNodes(prev => [...prev, alertMsg]);
+              roomTaskNodeService.addNode(taskId, alertMsg).catch(() => {});
+              taskService.addRoomTaskNode(roomId, taskId, { type: 'SYSTEM_ALERT', content: alertMsg.content, clientReferenceId: alertRef }).catch(() => {});
+            } else {
+              await taskService.uncompleteTask(roomId, taskId);
+            }
+          } catch {}
         }} style={[styles.doneTickBtn, isTaskCompleted && styles.doneTickActive]}>
           <Ionicons name={isTaskCompleted ? "checkmark-circle" : "ellipse-outline"} size={28} color={isTaskCompleted ? "#22c55e" : (isDark ? "#fff" : "#000")} />
         </TouchableOpacity>
@@ -387,7 +620,7 @@ export default function RoomTaskThread() {
       </View>
 
       <View style={styles.stickyTopZone}>
-        <HeroBriefNode title={taskTitle} description="Implementation Mission" points={taskPoints} dueDate={taskDueDate} />
+        <HeroBriefNode title={taskTitle} description="Implementation Mission" points={taskPoints} dueDate={taskDueDate} progress={completionProgress} />
         <PinWallNode proofs={pinProofs} onDateChangePress={() => showToast({ message: 'Filter active' })} />
       </View>
 
@@ -395,6 +628,8 @@ export default function RoomTaskThread() {
         <FlashList
           ref={listRef} data={flattenedData} renderItem={renderItem} keyExtractor={i => i.id} getItemType={i => i.type} estimatedItemSize={120}
           contentContainerStyle={{ paddingBottom: 140, paddingHorizontal: 16 }} showsVerticalScrollIndicator={false}
+          onEndReached={handleLoadMore} onEndReachedThreshold={0.5}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refreshAll} tintColor={isDark ? '#fff' : '#000'} />}
           onViewableItemsChanged={({ viewableItems }) => {
             const top = viewableItems.find(v => v.item.type !== 'date_divider');
             if (top) setFloatingDate(new Date(top.item.data.createdAt).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }));
@@ -406,7 +641,7 @@ export default function RoomTaskThread() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <BlurView intensity={isDark ? 90 : 60} tint={isDark ? "dark" : "light"} style={[styles.inputBarBlur, { paddingBottom: insets.bottom || 16, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }]}>
           <View style={styles.inputRow}>
-            <TouchableOpacity style={[styles.mediaBtn, { backgroundColor: isDark ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.1)' }]} onPress={() => setShowUploadModal(true)}>
+            <TouchableOpacity style={[styles.mediaBtn, { backgroundColor: isDark ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.1)' }]} onPress={() => { setUploadMode('chat'); setShowUploadModal(true); }}>
               <Ionicons name="camera-outline" size={22} color={isDark ? "#a5b4fc" : "#6366f1"} />
             </TouchableOpacity>
             <View style={[styles.inputContainer, { backgroundColor: isDark ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.8)', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}>
@@ -417,7 +652,7 @@ export default function RoomTaskThread() {
         </BlurView>
       </KeyboardAvoidingView>
 
-      <ProofUploadModal visible={showUploadModal} onClose={() => setShowUploadModal(false)} onSkip={() => setShowUploadModal(false)} onUpload={handleUploadProof} />
+      <ProofUploadModal visible={showUploadModal} mode={uploadMode} onClose={() => setShowUploadModal(false)} onSkip={() => setShowUploadModal(false)} onUpload={handleUploadProof} />
     </View>
   );
 }
@@ -432,8 +667,8 @@ const styles = StyleSheet.create({
   headerSubRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
   headerSubtitle: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   headerAvatars: { flexDirection: 'row', alignItems: 'center' },
-  avatarCircle: { width: 16, height: 16, borderRadius: 8, backgroundColor: 'rgba(99,102,241,0.2)', alignItems: 'center', justifyContent: 'center', marginLeft: -4 },
-  avatarInit: { fontSize: 8, fontWeight: '800', color: '#a5b4fc' },
+  avatarCircle: { width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(99,102,241,0.2)', alignItems: 'center', justifyContent: 'center', marginLeft: -4, borderWidth: 1, borderColor: '#000' },
+  avatarInit: { fontSize: 9, fontWeight: '800', color: '#a5b4fc' },
   doneTickBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   doneTickActive: { opacity: 0.8 },
   stickyTopZone: { paddingTop: 12, zIndex: 10 },

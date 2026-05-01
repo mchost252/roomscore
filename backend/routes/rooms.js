@@ -829,6 +829,17 @@ router.post('/:id/chat', protect, isRoomMember, validate(sendMessageSchema), asy
       replyTo: chatMessage.replyToText ? { _id: chatMessage.replyToId, message: chatMessage.replyToText } : null
     };
 
+    // Emit socket event IMMEDIATELY (don't wait for notifications)
+    const io = req.app.get('io');
+    io.to(req.params.id).emit('chat:message', { message: formattedMessage });
+
+    // Send HTTP response IMMEDIATELY (don't wait for notifications)
+    res.status(201).json({
+      success: true,
+      message: formattedMessage
+    });
+
+    // --- Everything below is non-blocking (fire-and-forget) ---
     // Get room members (exclude sender)
     const roomMembers = req.room.members
       .filter(m => m.userId !== req.user.id)
@@ -837,22 +848,20 @@ router.post('/:id/chat', protect, isRoomMember, validate(sendMessageSchema), asy
     // Truncate message for notification preview
     const messagePreview = message.length > 50 ? message.substring(0, 50) + '...' : message;
 
-    // Create notifications for all members
-    for (const memberId of roomMembers) {
-      try {
-        await NotificationService.createNotification({
+    // Create notifications for all members (non-blocking, parallel)
+    Promise.allSettled(
+      roomMembers.map(memberId =>
+        NotificationService.createNotification({
           recipientId: memberId,
           type: 'new_chat',
           title: `${req.user.username} in ${req.room.name}`,
           message: messagePreview,
           roomId: req.params.id
-        });
-      } catch (err) {
-        logger.error('Error creating notification:', err);
-      }
-    }
+        })
+      )
+    ).catch(err => logger.error('Error creating notifications:', err));
 
-    // Send push notifications
+    // Send push notifications (already non-blocking)
     if (roomMembers.length > 0) {
       PushNotificationService.notifyNewChat(
         roomMembers,
@@ -862,15 +871,6 @@ router.post('/:id/chat', protect, isRoomMember, validate(sendMessageSchema), asy
         req.params.id
       ).catch(err => logger.error('Push notification error:', err));
     }
-
-    // Emit socket event
-    const io = req.app.get('io');
-    io.to(req.params.id).emit('chat:message', { message: formattedMessage });
-
-    res.status(201).json({
-      success: true,
-      message: formattedMessage
-    });
   } catch (error) {
     next(error);
   }

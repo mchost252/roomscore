@@ -10,15 +10,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
-import taskService from '../../services/taskService';
-import { secureStorage } from '../../services/storage';
-import { TOKEN_KEY } from '../../constants/config';
-import {
-  ChatMessage, TaskSuggestion,
-  loadHistory, saveHistory, clearHistory,
-  makeMessage, sendChatMessage,
-} from '../../services/aiChatService';
-import TaskPreviewCard from '../../components/TaskPreviewCard';
+import { useTacticalCommander, getMessageText } from '../../hooks/ai/useTacticalCommander';
+import { UIMessage } from '@ai-sdk/react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const HISTORY_KEY = '@krios:chatHistory_v2'; // New key for Groq history
 
 // ── Theme helper ─────────────────────────────────────────────────────────────
 function useT() {
@@ -63,18 +59,11 @@ function TypingDots({ color }: { color: string }) {
 
 // ── Quick replies ─────────────────────────────────────────────────────────────
 const QUICK_REPLIES = [
-  'What are my tasks?',
-  'Add a task for me',
-  'How am I doing?',
-  'Motivate me',
-  'Help me prioritize',
+  'Show my personal tasks',
+  'Add a task: Workout at 6pm',
+  'Give me a status report',
+  'How do I earn ghost points?',
 ];
-
-// ── Extended message type (includes task suggestion UI) ───────────────────────
-interface UIMessage extends ChatMessage {
-  taskSuggestion?: TaskSuggestion | null;
-  taskConfirmed?: boolean;
-}
 
 export default function AIChatScreen() {
   const router = useRouter();
@@ -83,24 +72,15 @@ export default function AIChatScreen() {
   const { user } = useAuth();
 
   const flatListRef = useRef<FlatList>(null);
-  const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<UIMessage[]>([]);
-  const [typing, setTyping] = useState(false);
-  const [token, setToken] = useState<string | null>(null);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [initialMessages, setInitialMessages] = useState<UIMessage[]>([]);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
-  // Load token + history on mount
+  // Load history on mount
   useEffect(() => {
-    secureStorage.getItem(TOKEN_KEY).then(setToken);
-    loadHistory().then(history => {
-      if (history.length > 0) {
-        setMessages(history as UIMessage[]);
-      } else {
-        const welcome = makeMessage('assistant',
-          `Hey${user?.username ? ' ' + user.username : ''}! ✦ I'm Krios — your personal AI assistant.\n\nI know your tasks, your patterns, and I'm here to help. What's on your mind?`
-        );
-        setMessages([{ ...welcome }]);
-      }
+    AsyncStorage.getItem(HISTORY_KEY).then(raw => {
+      if (raw) setInitialMessages(JSON.parse(raw));
+      setHistoryLoaded(true);
     });
   }, []);
 
@@ -117,102 +97,36 @@ export default function AIChatScreen() {
     return () => { show.remove(); hide.remove(); };
   }, []);
 
-  const scrollToBottom = useCallback(() => {
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 120);
-  }, []);
+  const {
+    commanderMessages,
+    commanderInput,
+    updateCommanderInput,
+    sendCommanderCommand,
+    isCommanderLoading,
+    commanderError,
+    deployQuery,
+  } = useTacticalCommander(undefined, user?.id, initialMessages);
 
-  useEffect(() => { scrollToBottom(); }, [messages, typing]);
-
-  // ── Send message ────────────────────────────────────────────────────────────
-  const handleSend = useCallback(async (text?: string) => {
-    const msg = (text || input).trim();
-    if (!msg || typing) return;
-    setInput('');
-
-    const userMsg: UIMessage = makeMessage('user', msg);
-    const updated = [...messages, userMsg];
-    setMessages(updated);
-    setTyping(true);
-
-    // Save user message immediately
-    await saveHistory(updated.map(m => ({ id: m.id, role: m.role, text: m.text, timestamp: m.timestamp })));
-
-    try {
-      const response = await sendChatMessage({
-        message: msg,
-        history: updated.map(m => ({ id: m.id, role: m.role, text: m.text, timestamp: m.timestamp })),
-        token: token || '',
-      });
-
-      const aiMsg: UIMessage = {
-        ...makeMessage('assistant', response.reply),
-        taskSuggestion: response.taskSuggestion,
-        taskConfirmed: false,
-      };
-
-      const withAI = [...updated, aiMsg];
-      setMessages(withAI);
-      await saveHistory(withAI.map(m => ({ id: m.id, role: m.role, text: m.text, timestamp: m.timestamp })));
-    } catch {
-      const errMsg: UIMessage = makeMessage('assistant', "Couldn't reach the server — check your connection.");
-      setMessages(prev => [...prev, errMsg]);
-    } finally {
-      setTyping(false);
+  // Save history whenever messages change
+  useEffect(() => {
+    if (commanderMessages.length > 0) {
+      AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(commanderMessages));
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 150);
     }
-  }, [input, messages, token, typing]);
+  }, [commanderMessages]);
 
-  // ── Confirm task from preview card ─────────────────────────────────────────
-  const handleConfirmTask = useCallback(async (suggestion: TaskSuggestion, messageId: string) => {
-    try {
-      // Build due date with time
-      let dueDate: string | undefined = suggestion.dueDate;
-      if (suggestion.dueTime && dueDate) {
-        const d = new Date(dueDate);
-        const [h, m] = suggestion.dueTime.split(':').map(Number);
-        d.setHours(h, m, 0, 0);
-        dueDate = d.toISOString();
-      } else if (suggestion.dueTime && !dueDate) {
-        const d = new Date();
-        const [h, m] = suggestion.dueTime.split(':').map(Number);
-        d.setHours(h, m, 0, 0);
-        dueDate = d.toISOString();
-      }
+  const handleClearChat = useCallback(async () => {
+    await AsyncStorage.removeItem(HISTORY_KEY);
+    router.replace('/(home)/ai-chat');
+  }, [router]);
 
-      await taskService.createPersonalTask({
-        title: suggestion.title,
-        priority: suggestion.priority || 'medium',
-        taskType: suggestion.taskType || 'one-time',
-        bucket: suggestion.bucket || 'inbox',
-        dueDate,
-      });
-
-      // Mark card as confirmed in UI
-      setMessages(prev => prev.map(m =>
-        m.id === messageId ? { ...m, taskConfirmed: true } : m
-      ));
-
-      // AI confirms
-      const confirmMsg: UIMessage = makeMessage('assistant',
-        `Done ✦ "${suggestion.title}" is in your tasks. Head to your task thread for a full plan on it!`
-      );
-      setMessages(prev => [...prev, confirmMsg]);
-      await saveHistory([...messages, confirmMsg].map(m => ({ id: m.id, role: m.role, text: m.text, timestamp: m.timestamp })));
-    } catch {
-      const errMsg = makeMessage('assistant', "Couldn't save the task right now — try again.");
-      setMessages(prev => [...prev, errMsg]);
-    }
-  }, [messages]);
-
-  const handleDismissTask = useCallback((messageId: string) => {
-    setMessages(prev => prev.map(m =>
-      m.id === messageId ? { ...m, taskSuggestion: null } : m
-    ));
-  }, []);
-
-  // ── Render message ──────────────────────────────────────────────────────────
   const renderMessage = useCallback(({ item }: { item: UIMessage }) => {
     const isUser = item.role === 'user';
-    const time = new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const timestamp = (item as any).createdAt || new Date();
+    const time = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    // In v3 AI SDK, tool invocations might be on the message object directly
+    const toolInvocations = (item as any).toolInvocations as any[] | undefined;
 
     return (
       <View style={[styles.row, isUser ? styles.rowRight : styles.rowLeft]}>
@@ -228,37 +142,31 @@ export default function AIChatScreen() {
               ? { backgroundColor: 'rgba(99,102,241,0.18)', borderColor: '#6366f133', alignSelf: 'flex-end' }
               : { backgroundColor: `rgba(${t.surfRgb},0.92)`, borderColor: t.border, alignSelf: 'flex-start' },
           ]}>
-            <Text style={{ fontSize: 14, color: t.text, lineHeight: 21 }}>{item.text}</Text>
+            <Text style={{ 
+              fontSize: 14, 
+              color: t.text, 
+              lineHeight: 21,
+              fontFamily: !isUser ? (Platform.OS === 'ios' ? 'Menlo' : 'monospace') : undefined 
+            }}>
+              {getMessageText(item)}
+            </Text>
           </View>
 
-          {/* Task preview card */}
-          {!isUser && item.taskSuggestion && !item.taskConfirmed && (
-            <TaskPreviewCard
-              suggestion={item.taskSuggestion}
-              onConfirm={s => handleConfirmTask(s, item.id)}
-              onDismiss={() => handleDismissTask(item.id)}
-            />
-          )}
-
-          {/* Confirmed task badge */}
-          {!isUser && item.taskConfirmed && (
-            <View style={[styles.confirmedBadge, { backgroundColor: 'rgba(34,197,94,0.12)', borderColor: 'rgba(34,197,94,0.25)' }]}>
-              <Ionicons name="checkmark-circle" size={13} color={t.success} />
-              <Text style={{ fontSize: 12, color: t.success, fontWeight: '600' }}>Task added</Text>
+          {/* Tool execution badge */}
+          {item.parts?.filter(p => p.type === 'tool-invocation').map((part: any, idx: number) => (
+            <View key={`tool-${idx}`} style={styles.toolBadge}>
+              <Ionicons name="construct-outline" size={10} color="#22d3ee" />
+              <Text style={styles.toolText}>EXECUTING: {part.toolName?.toUpperCase() || 'TOOL'}</Text>
             </View>
-          )}
+          ))}
 
           <Text style={[styles.timeLabel, { color: t.textSub, textAlign: isUser ? 'right' : 'left' }]}>{time}</Text>
         </View>
       </View>
     );
-  }, [t, handleConfirmTask, handleDismissTask]);
+  }, [t]);
 
-  const handleClearChat = useCallback(async () => {
-    await clearHistory();
-    const welcome = makeMessage('assistant', "Fresh start! ✦ What would you like to work on?");
-    setMessages([{ ...welcome }]);
-  }, []);
+  if (!historyLoaded) return null;
 
   return (
     <View style={[styles.root, { backgroundColor: t.bg }]}>
@@ -277,14 +185,15 @@ export default function AIChatScreen() {
         </View>
 
         <View style={{ flex: 1, marginLeft: 10 }}>
-          <Text style={[styles.headerTitle, { color: t.text }]}>Krios AI</Text>
+          <Text style={[styles.headerTitle, { color: t.text }]}>Krios Assistant</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#22c55e' }} />
-            <Text style={[styles.headerSub, { color: t.textSub }]}>Your personal assistant</Text>
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: isCommanderLoading ? '#22d3ee' : '#22c55e' }} />
+            <Text style={[styles.headerSub, { color: t.textSub }]}>
+              {isCommanderLoading ? 'Thinking...' : 'Groq L4 Powered'}
+            </Text>
           </View>
         </View>
 
-        {/* Clear chat */}
         <TouchableOpacity
           onPress={handleClearChat}
           style={[styles.iconBtn, { backgroundColor: `rgba(${t.surfRgb},0.7)`, borderColor: t.border }]}
@@ -296,13 +205,13 @@ export default function AIChatScreen() {
       {/* ── Messages ── */}
       <FlatList
         ref={flatListRef}
-        data={messages}
-        keyExtractor={m => m.id}
+        data={commanderMessages}
+        keyExtractor={(m, i) => (m as any).id || i.toString()}
         renderItem={renderMessage}
         contentContainerStyle={[styles.list, { paddingBottom: 12 }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        ListFooterComponent={typing ? (
+        ListFooterComponent={isCommanderLoading ? (
           <View style={[styles.row, styles.rowLeft]}>
             <View style={[styles.avatarSmall, { backgroundColor: t.primary }]}>
               <Image source={require('../../assets/krios-logo.png')} style={{ width: 14, height: 14 }} resizeMode="contain" />
@@ -315,7 +224,7 @@ export default function AIChatScreen() {
       />
 
       {/* ── Quick replies ── */}
-      {messages.length <= 2 && (
+      {commanderMessages.length <= 1 && (
         <FlatList
           data={QUICK_REPLIES}
           keyExtractor={r => r}
@@ -325,7 +234,7 @@ export default function AIChatScreen() {
           renderItem={({ item }) => (
             <TouchableOpacity
               style={[styles.chip, { backgroundColor: `rgba(${t.surfRgb},0.8)`, borderColor: t.border }]}
-              onPress={() => handleSend(item)}
+              onPress={() => deployQuery(item)}
             >
               <Text style={{ fontSize: 12, color: t.textSub, fontWeight: '500' }}>{item}</Text>
             </TouchableOpacity>
@@ -334,41 +243,50 @@ export default function AIChatScreen() {
       )}
 
       {/* ── Input bar ── */}
-      <View style={[styles.inputBar, {
-        backgroundColor: t.isDark ? 'rgba(10,10,22,0.98)' : 'rgba(252,252,255,0.98)',
-        borderTopColor: t.border,
-        paddingBottom: insets.bottom + (keyboardHeight > 0 ? 8 : 20),
-        marginBottom: keyboardHeight > 0 ? keyboardHeight : 0,
-      }]}>
-        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
-          <TextInput
-            style={[styles.input, {
-              backgroundColor: `rgba(${t.surfRgb},0.6)`,
-              borderColor: t.border,
-              color: t.text,
-              flex: 1,
-            }]}
-            value={input}
-            onChangeText={setInput}
-            placeholder="Message Krios..."
-            placeholderTextColor={t.textSub}
-            onSubmitEditing={() => handleSend()}
-            returnKeyType="send"
-            multiline
-            maxLength={600}
-          />
-          <TouchableOpacity
-            onPress={() => handleSend()}
-            disabled={typing || !input.trim()}
-            style={[styles.sendBtn, { backgroundColor: input.trim() && !typing ? t.primary : t.border }]}
-          >
-            {typing
-              ? <ActivityIndicator size={14} color={t.textSub} />
-              : <Ionicons name="send" size={15} color={input.trim() ? '#fff' : t.textSub} />
-            }
-          </TouchableOpacity>
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 60 : 0}
+      >
+        <View style={[styles.inputBar, {
+          backgroundColor: t.isDark ? 'rgba(10,10,22,0.98)' : 'rgba(252,252,255,0.98)',
+          borderTopColor: t.border,
+          paddingBottom: insets.bottom + 12,
+        }]}>
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
+            <TextInput
+              style={[styles.input, {
+                backgroundColor: `rgba(${t.surfRgb},0.6)`,
+                borderColor: t.border,
+                color: t.text,
+                flex: 1,
+              }]}
+              value={commanderInput}
+              onChangeText={updateCommanderInput}
+              placeholder="Message Krios..."
+              placeholderTextColor={t.textSub}
+              autoCapitalize="none"
+              multiline
+              maxLength={600}
+            />
+            <TouchableOpacity
+              onPress={() => sendCommanderCommand()}
+              disabled={isCommanderLoading || !commanderInput.trim()}
+              style={[styles.sendBtn, { backgroundColor: commanderInput.trim() && !isCommanderLoading ? t.primary : t.border }]}
+            >
+              {isCommanderLoading
+                ? <ActivityIndicator size={14} color={t.textSub} />
+                : <Ionicons name="send" size={15} color={commanderInput.trim() ? '#fff' : t.textSub} />
+              }
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
+
+      {commanderError && (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorText}>COMM_LINK_FAILURE: {commanderError.message}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -386,11 +304,38 @@ const styles = StyleSheet.create({
   rowLeft:       { alignSelf: 'flex-start', maxWidth: '88%' },
   rowRight:      { alignSelf: 'flex-end', maxWidth: '88%', flexDirection: 'row-reverse' },
   bubble:        { borderRadius: 18, padding: 12, borderWidth: StyleSheet.hairlineWidth, flexShrink: 1 },
-  confirmedBadge:{ flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5, marginTop: 4, alignSelf: 'flex-start' },
   timeLabel:     { fontSize: 10, marginTop: 4, paddingHorizontal: 4 },
-  quickRow:      { paddingHorizontal: 16, paddingVertical: 8, gap: 8 },
-  chip:          { borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, paddingVertical: 7 },
+  quickRow:      { paddingHorizontal: 16, paddingVertical: 8, gap: 8, height: 50 },
+  chip:          { borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, paddingVertical: 7, height: 34 },
   inputBar:      { borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16, paddingTop: 12 },
   input:         { borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16, paddingVertical: 10, fontSize: 14, maxHeight: 100 },
   sendBtn:       { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  toolBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(34,211,238,0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  toolText: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#22d3ee',
+  },
+  errorBanner: {
+    backgroundColor: '#ef4444',
+    padding: 8,
+    alignItems: 'center',
+  },
+  errorText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '800',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
 });

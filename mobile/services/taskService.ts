@@ -2,6 +2,8 @@ import api from './api';
 import sqliteService from './sqliteService';
 import { roomStorage } from '../db/roomDb';
 import { Task, TaskCompletion } from '../types/room';
+import * as FileSystem from 'expo-file-system';
+import { Platform } from 'react-native';
 
 const PERSONAL_TASKS_CACHE_KEY = 'krios_personal_tasks_cache';
 
@@ -27,7 +29,20 @@ function mapTask(raw: any): Task {
       }))
     : [];
 
-  // Extract creator ID — API may send createdBy as string or populated object
+  const participants = Array.isArray(raw.assignments)
+    ? raw.assignments.map((a: any) => ({
+        id: a.userId || a.id,
+        userId: a.userId || a.id,
+        username: a.username || 'User',
+        avatar: a.avatar,
+        isOnline: false,
+        aura: 'bronze',
+        hasHeat: false,
+        status: a.status
+      }))
+    : [];
+
+  // Extract creator ID
   const createdBy =
     typeof raw.createdBy === 'object' && raw.createdBy
       ? raw.createdBy._id || raw.createdBy.id
@@ -43,9 +58,12 @@ function mapTask(raw: any): Task {
     points: raw.points ?? 10,
     isActive: raw.isActive !== false,
     isCompleted: !!raw.isCompleted,
+    isJoined: !!raw.isJoined,
+    status: raw.status,
     createdAt: raw.createdAt || new Date().toISOString(),
     createdBy,
     completions,
+    participants,
   };
 }
 
@@ -248,9 +266,14 @@ class TaskService {
     return res.data?.node;
   }
 
+  async updateRoomTaskNode(roomId: string, taskId: string, nodeId: string, data: { content?: string; status?: string; vouch?: boolean }): Promise<any> {
+    const res = await api.put(`/rooms/${roomId}/tasks/${taskId}/nodes/${nodeId}`, data);
+    return res.data?.node;
+  }
+
   /**
-   * Upload proof image via FormData (multipart) — for real file uploads.
-   * Falls back to addRoomTaskNode with mediaUrl if upload endpoint doesn't exist.
+   * Upload proof image via JSON payload.
+   * Converts local URI to Base64 to bypass multipart parsing issues.
    */
   async uploadProofWithImage(
     roomId: string,
@@ -258,38 +281,42 @@ class TaskService {
     imageUri: string,
     content: string,
     clientReferenceId: string,
+    type: string = 'PROOF'
   ): Promise<any> {
     try {
-      const formData = new FormData();
-      // React Native FormData accepts file:// URIs directly
-      const filename = imageUri.split('/').pop() || `proof_${Date.now()}.jpg`;
-      const ext = filename.split('.').pop()?.toLowerCase() || 'jpg';
-      const mimeType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
-      
-      formData.append('image', {
-        uri: imageUri,
-        type: mimeType,
-        name: filename,
-      } as any);
-      formData.append('type', 'PROOF');
-      formData.append('status', 'PENDING');
-      formData.append('content', content || 'Completed the mission.');
-      formData.append('clientReferenceId', clientReferenceId);
+      let mediaUrl = imageUri;
 
-      const res = await api.post(
-        `/rooms/${roomId}/tasks/${taskId}/nodes`,
-        formData,
-        { headers: { 'Content-Type': 'multipart/form-data' } }
-      );
-      return res.data?.node;
+      if (Platform.OS !== 'web' && !imageUri.startsWith('data:')) {
+        const base64Data = await FileSystem.readAsStringAsync(imageUri, {
+          encoding: 'base64',
+        });
+        const ext = imageUri.split('.').pop()?.toLowerCase() || 'jpg';
+        const mimeType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
+        mediaUrl = `data:${mimeType};base64,${base64Data}`;
+      } else if (Platform.OS === 'web' && imageUri.startsWith('blob:')) {
+        const response = await fetch(imageUri);
+        const blob = await response.blob();
+        mediaUrl = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+      }
+
+      return await this.addRoomTaskNode(roomId, taskId, {
+        type,
+        status: 'PENDING',
+        mediaUrl,
+        content: type === 'PROOF' ? (content || 'Completed the mission.') : (content || ''),
+        clientReferenceId,
+      });
     } catch (uploadError: any) {
-      // If multipart fails (415, 400), fall back to JSON with local URI
-      console.warn('[taskService] FormData upload failed, falling back to JSON:', uploadError?.response?.status);
+      console.warn('[taskService] Base64 upload failed, falling back to JSON:', uploadError?.message);
       return this.addRoomTaskNode(roomId, taskId, {
-        type: 'PROOF',
+        type,
         status: 'PENDING',
         mediaUrl: imageUri,
-        content: content || 'Completed the mission.',
+        content: type === 'PROOF' ? (content || 'Completed the mission.') : (content || ''),
         clientReferenceId,
       });
     }

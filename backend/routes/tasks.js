@@ -649,6 +649,26 @@ router.delete('/:roomId/tasks/:taskId/complete', protect, isRoomMember, async (r
       }
     });
 
+    // Decrement UserRoomProgress points and task count
+    const existingProgress = await prisma.userRoomProgress.findUnique({
+      where: {
+        userId_roomId: {
+          userId: req.user.id,
+          roomId: req.params.roomId
+        }
+      }
+    });
+
+    if (existingProgress) {
+      await prisma.userRoomProgress.update({
+        where: { id: existingProgress.id },
+        data: {
+          totalPoints: { decrement: completion.pointsAwarded },
+          tasksCompletedToday: { decrement: 1 }
+        }
+      });
+    }
+
     // Delete completion
     await prisma.taskCompletion.delete({
       where: { id: completion.id }
@@ -668,10 +688,10 @@ router.delete('/:roomId/tasks/:taskId/complete', protect, isRoomMember, async (r
     io.to(req.params.roomId).emit('task:uncompleted', {
       roomId: req.params.roomId,
       taskId: req.params.taskId,
-      oderId: req.user.id,
+      userId: req.user.id,
       leaderboard: leaderboard.map(m => ({
         _id: m.id,
-        oderId: m.userId,
+        userId: m.userId,
         user: { ...m.user, _id: m.user.id },
         points: m.points,
         role: m.role

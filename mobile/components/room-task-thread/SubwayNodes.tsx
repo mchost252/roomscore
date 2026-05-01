@@ -84,14 +84,17 @@ export const HeroBriefNode: React.FC<{
   points: number;
   dueDate?: string;
   taskType?: string;
-}> = ({ title, description, points, dueDate, taskType }) => {
+  progress?: number;
+}> = ({ title, description, points, dueDate, taskType, progress = 0 }) => {
   const { isDark } = useTheme();
   
   return (
     <Animated.View entering={FadeIn.duration(300)} style={[styles.heroCard, { 
       backgroundColor: isDark ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.04)',
-      borderColor: isDark ? 'rgba(99,102,241,0.2)' : 'rgba(99,102,241,0.1)'
+      borderColor: isDark ? 'rgba(99,102,241,0.2)' : 'rgba(99,102,241,0.1)',
+      overflow: 'hidden',
     }]}>
+      <View style={[StyleSheet.absoluteFill, { width: `${progress * 100}%`, backgroundColor: isDark ? 'rgba(34,211,238,0.1)' : 'rgba(34,211,238,0.15)' }]} />
       <View style={styles.heroRow}>
         <View style={styles.heroLeft}>
           <Text style={[styles.heroTitle, { color: isDark ? '#fff' : '#0f172a' }]} numberOfLines={1}>{title}</Text>
@@ -102,12 +105,16 @@ export const HeroBriefNode: React.FC<{
           <View style={styles.pointsBadge}>
             <Text style={styles.pointsText}>{points} PTS</Text>
           </View>
-          {dueDate ? (
-            <View style={styles.deadlineRow}>
-              <Ionicons name="time-outline" size={10} color="#f59e0b" />
-              <Text style={styles.deadlineText}>{dueDate}</Text>
-            </View>
-          ) : null}
+          <View style={styles.deadlineRow}>
+            {dueDate ? (
+              <>
+                <Ionicons name="time-outline" size={10} color="#f59e0b" />
+                <Text style={styles.deadlineText}>{dueDate}</Text>
+              </>
+            ) : (
+              <Text style={styles.deadlineText}>{Math.round(progress * 100)}% DONE</Text>
+            )}
+          </View>
         </View>
       </View>
     </Animated.View>
@@ -310,7 +317,14 @@ export const ChatNode: React.FC<{
         marginTop: showHeader ? 4 : 2,
       }]}>
         {showHeader && (
-          <View style={styles.chatHeader}>
+          <View style={[styles.chatHeader, { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }]}>
+            {!isMyMessage && (
+              <View style={[styles.avatarMock, { width: 18, height: 18, borderRadius: 9, backgroundColor: isDark ? 'rgba(99,102,241,0.2)' : 'rgba(99,102,241,0.1)' }]}>
+                <Text style={{ fontSize: 9, fontWeight: '800', color: isDark ? '#c4b5fd' : '#6366f1' }}>
+                  {node.user?.username?.charAt(0) || 'U'}
+                </Text>
+              </View>
+            )}
             <Text style={[styles.chatUsername, { color: isMyMessage ? '#a5b4fc' : (isDark ? '#fff' : '#0f172a') }]}>
               {isMyMessage ? 'Me' : (node.user?.username || 'User')}
             </Text>
@@ -319,7 +333,28 @@ export const ChatNode: React.FC<{
             </Text>
           </View>
         )}
-        <Text style={[styles.chatText, { color: isDark ? 'rgba(255,255,255,0.85)' : 'rgba(15,23,42,0.85)' }]}>{node.content}</Text>
+
+        {node.mediaUrl && (
+          <View style={{ marginTop: showHeader ? 2 : 0, marginBottom: node.content || node.caption ? 8 : 0 }}>
+            <FastProofImage mediaUrl={node.mediaUrl} blurHash={node.blurHash} height={180} width={220} borderRadius={8} />
+          </View>
+        )}
+
+        {(node.content || node.caption) ? (
+          <Text style={[styles.chatText, { color: isDark ? 'rgba(255,255,255,0.85)' : 'rgba(15,23,42,0.85)' }]}>{node.caption || node.content}</Text>
+        ) : null}
+      </Animated.View>
+    </SubwayTrack>
+  );
+};
+
+export const SystemAlertNode: React.FC<{ node: RoomTaskNode; isLast?: boolean }> = ({ node, isLast }) => {
+  const { isDark, colors } = useTheme();
+  return (
+    <SubwayTrack isLast={isLast} dotColor={colors.primary} lineColor={isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"} icon="sparkles" isDark={isDark}>
+      <Animated.View entering={ZoomIn.duration(400)} style={{ alignSelf: 'center', marginVertical: 8, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 16, backgroundColor: isDark ? 'rgba(99,102,241,0.1)' : 'rgba(99,102,241,0.05)', borderWidth: 1, borderColor: isDark ? 'rgba(99,102,241,0.2)' : 'rgba(99,102,241,0.1)', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
+        <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#c4b5fd' : '#6366f1' }}>{node.content}</Text>
       </Animated.View>
     </SubwayTrack>
   );

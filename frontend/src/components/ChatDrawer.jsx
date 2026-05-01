@@ -107,7 +107,7 @@ const ChatDrawer = ({
   // Auto-scroll to bottom when new messages arrive or chat opens
   useEffect(() => {
     if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
     }
   }, [messages]);
 
@@ -414,7 +414,7 @@ const ChatDrawer = ({
               );
 
               return (
-                <Slide key={msg._id} direction="up" in={true} timeout={300}>
+                <Slide key={msg._id} direction="up" in={true} timeout={100}>
                   <Box
                     sx={{
                       display: 'flex',

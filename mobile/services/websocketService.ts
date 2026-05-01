@@ -151,73 +151,71 @@ class WebSocketManager {
   private isConnected = false;
   private currentRoomId: string | null = null;
 
-  private pendingListeners: Array<{ event: string; callback: (data: any) => void }> = [];
+  // Track all listeners to re-attach them on reconnection/room switch
+  private listeners: Map<string, Set<(data: any) => void>> = new Map();
   private onConnectCallbacks: Array<() => void> = [];
 
   async connect(roomId: string, userToken?: string) {
-    // Prevent duplicate connections
+    // Prevent duplicate connections to same room
     if (this.socket && this.isConnected && this.currentRoomId === roomId) {
-      console.log('WebSocket already connected to room:', roomId);
       return;
     }
     
     // Disconnect existing connection if different room
-    if (this.socket && this.currentRoomId !== roomId) {
-      this.disconnect();
+    if (this.socket) {
+      console.log('[WebSocketManager] Switching rooms, disconnecting from:', this.currentRoomId);
+      this.socket.disconnect();
+      this.socket = null;
+      this.isConnected = false;
     }
 
     this.currentRoomId = roomId;
 
-    // Resolve token: prefer passed token, then read from secure storage
+    // Resolve token
     let token = userToken || '';
     if (!token) {
       try {
         token = await secureStorage.getItem(TOKEN_KEY) || '';
       } catch {
-        console.warn('[WebSocketManager] Failed to read token from secureStorage');
+        console.warn('[WebSocketManager] Failed to read token');
       }
-    }
-
-    if (!token) {
-      console.warn('[WebSocketManager] No auth token available — socket will likely fail auth');
     }
 
     try {
       this.socket = io(SOCKET_URL, {
         transports: ['websocket'],
-        auth: {
-          token,
-          roomId: roomId,
-        },
+        auth: { token, roomId },
       });
 
       this.socket.on('connect', () => {
-        console.log('WebSocket connected to room:', roomId);
+        console.log('[WebSocketManager] Connected to room:', roomId);
         this.isConnected = true;
-        // Join the room for real-time updates
-        this.socket?.emit('join_room', roomId);
-        // Flush any pending listeners that were registered before connection
-        this.pendingListeners.forEach(({ event, callback }) => {
-          this.socket?.on(event, callback);
+        this.socket?.emit('room:join', roomId);
+        
+        // Re-attach all registered listeners
+        this.listeners.forEach((callbacks, event) => {
+          callbacks.forEach(cb => {
+            this.socket?.on(event, cb);
+          });
         });
-        this.pendingListeners = [];
+
         // Fire onConnect callbacks
         this.onConnectCallbacks.forEach(cb => cb());
         this.onConnectCallbacks = [];
       });
 
       this.socket.on('disconnect', () => {
-        console.log('WebSocket disconnected');
+        console.log('[WebSocketManager] Disconnected');
         this.isConnected = false;
       });
 
       this.socket.on('connect_error', (error) => {
-        console.error('WebSocket connection error:', error);
+        console.error('[WebSocketManager] Connection error:', error);
         this.isConnected = false;
       });
 
     } catch (error) {
-      console.error('Failed to connect to WebSocket:', error);
+      console.error('[WebSocketManager] Failed to connect:', error);
     }
   }
 
@@ -226,18 +224,33 @@ class WebSocketManager {
       this.socket.disconnect();
       this.socket = null;
       this.isConnected = false;
+      this.currentRoomId = null;
     }
   }
 
   on(event: string, callback: (data: any) => void) {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, new Set());
+    }
+    this.listeners.get(event)!.add(callback);
+
+    // If already connected, attach immediately
     if (this.socket && this.isConnected) {
       this.socket.on(event, callback);
-    } else if (this.socket) {
-      // Socket exists but not yet connected — queue the listener
-      this.pendingListeners.push({ event, callback });
-    } else {
-      // No socket at all — queue for when connect() is called
-      this.pendingListeners.push({ event, callback });
+    }
+  }
+
+  off(event: string, callback: (data: any) => void) {
+    const callbacks = this.listeners.get(event);
+    if (callbacks) {
+      callbacks.delete(callback);
+      if (callbacks.size === 0) {
+        this.listeners.delete(event);
+      }
+    }
+    
+    if (this.socket) {
+      this.socket.off(event, callback);
     }
   }
 
@@ -246,12 +259,6 @@ class WebSocketManager {
       callback();
     } else {
       this.onConnectCallbacks.push(callback);
-    }
-  }
-
-  off(event: string, callback: (data: any) => void) {
-    if (this.socket) {
-      this.socket.off(event, callback);
     }
   }
 

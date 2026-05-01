@@ -34,6 +34,8 @@ const appreciationRoutes = require('./routes/appreciations');
 const orbitSummaryRoutes = require('./routes/orbitSummary');
 const personalTaskRoutes = require('./routes/personalTasks');
 const aiRoutes = require('./routes/ai');
+const internalRoutes = require('./routes/internal');
+
 
 // Import socket handler
 const socketHandler = require('./socket/socketHandler');
@@ -186,8 +188,10 @@ app.use('/api/appreciations', appreciationRoutes);
 app.use('/api/orbit-summary', orbitSummaryRoutes);
 app.use('/api/personal-tasks', personalTaskRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/internal', internalRoutes);
 
 // Health check
+
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });

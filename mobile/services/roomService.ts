@@ -62,6 +62,36 @@ function mapMember(m: any): RoomMember {
   };
 }
 
+// ── Pending member type (returned by GET /rooms/:id/pending) ──────────────
+export interface PendingMember {
+  id: string;
+  userId: string;
+  username: string;
+  avatar?: string;
+  email?: string;
+  requestedAt: string;
+}
+
+function mapPendingMember(raw: any): PendingMember {
+  const userObj =
+    typeof raw.userId === 'object' && raw.userId ? raw.userId : raw.user;
+  return {
+    id: raw._id || raw.id,
+    userId: userObj?._id || userObj?.id || raw.userId || '',
+    username: userObj?.username ?? 'Member',
+    avatar: userObj?.avatar,
+    email: userObj?.email,
+    requestedAt: raw.requestedAt || raw.joinedAt || new Date().toISOString(),
+  };
+}
+
+// ── Settings payload ──────────────────────────────────────────────────────
+export interface RoomSettingsPayload {
+  isPublic?: boolean;
+  chatRetentionDays?: number;
+  requireApproval?: boolean;
+}
+
 export const RoomService = {
   async getRoom(roomId: string): Promise<RoomDetail> {
     const res = await api.get(`/rooms/${roomId}`);
@@ -73,6 +103,42 @@ export const RoomService = {
     const room = res.data.room;
     const members = room?.members || [];
     return members.map(mapMember);
+  },
+
+  // ── Settings (owner only) ────────────────────────────────────────────────
+  async updateSettings(
+    roomId: string,
+    settings: RoomSettingsPayload,
+  ): Promise<RoomDetail> {
+    const res = await api.put(`/rooms/${roomId}/settings`, settings);
+    return mapRoom(res.data.room);
+  },
+
+  // ── Delete room (owner only, cascade) ────────────────────────────────────
+  async deleteRoom(roomId: string): Promise<void> {
+    await api.delete(`/rooms/${roomId}`);
+  },
+
+  // ── Leave room (members only, owner cannot leave) ────────────────────────
+  async leaveRoom(roomId: string): Promise<void> {
+    await api.delete(`/rooms/${roomId}/leave`);
+  },
+
+  // ── Pending members (owner only) ─────────────────────────────────────────
+  async getPendingMembers(roomId: string): Promise<PendingMember[]> {
+    const res = await api.get(`/rooms/${roomId}/pending`);
+    const pending = res.data.pendingMembers || [];
+    return pending.map(mapPendingMember);
+  },
+
+  // ── Approve pending member (owner only) ──────────────────────────────────
+  async approveMember(roomId: string, userId: string): Promise<void> {
+    await api.put(`/rooms/${roomId}/members/${userId}/approve`);
+  },
+
+  // ── Reject pending member (owner only) ───────────────────────────────────
+  async rejectMember(roomId: string, userId: string): Promise<void> {
+    await api.delete(`/rooms/${roomId}/members/${userId}/reject`);
   },
 };
 

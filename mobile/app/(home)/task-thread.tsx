@@ -14,8 +14,11 @@ import { fetchAINote, AINote, AIMilestone } from '../../services/aiNoteService';
 import AITaskNote from '../../components/AITaskNote';
 import { secureStorage } from '../../services/storage';
 import { TOKEN_KEY } from '../../constants/config';
+import { useAuth } from '../../context/AuthContext';
+import { ScoutInterface } from '../../components/ai/ScoutInterface';
 
 // ── Local theme helper ──────────────────────────────────────────────────────
+
 function useT() {
   const { isDark, colors, gradients } = useTheme();
   return {
@@ -43,6 +46,7 @@ export default function TaskThreadScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const t = useT();
+  const { user } = useAuth();
   const [token, setToken] = useState<string | null>(null);
 
   // Load token once on mount
@@ -52,6 +56,7 @@ export default function TaskThreadScreen() {
 
   const params = useLocalSearchParams<{
     taskId: string;
+    roomId: string;
     taskTitle: string;
     taskPriority: string;
     taskBucket: string;
@@ -62,12 +67,15 @@ export default function TaskThreadScreen() {
   }>();
 
   const taskId = params.taskId as string;
+  const roomId = params.roomId as string || '';
 
   const [noteInput, setNoteInput] = useState('');
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [completed, setCompleted] = useState(params.taskCompleted === 'true');
   const [thread, setThread] = useState<ThreadEntry[]>([]);
+  const [showScout, setShowScout] = useState(false);
+
 
   // AI note state
   const [aiNote, setAiNote] = useState<AINote | null>(null);
@@ -205,7 +213,6 @@ export default function TaskThreadScreen() {
             </Text>
           </View>
         </View>
-        {/* Refresh AI button */}
         <TouchableOpacity
           onPress={handleRefreshAI}
           style={[styles.iconBtn, { backgroundColor: `rgba(${t.surfRgb},0.7)`, borderColor: t.border, marginRight: 8 }]}
@@ -213,9 +220,18 @@ export default function TaskThreadScreen() {
         >
           {aiLoading
             ? <ActivityIndicator size={14} color={t.primary} />
-            : <Text style={{ fontSize: 14 }}>✦</Text>
+            : <Ionicons name="sparkles" size={16} color={t.primary} />
           }
         </TouchableOpacity>
+        
+        {/* Commander Comms button */}
+        <TouchableOpacity
+          onPress={() => setShowScout(true)}
+          style={[styles.iconBtn, { backgroundColor: `rgba(${t.surfRgb},0.7)`, borderColor: t.primary, marginRight: 8, borderWidth: 1.5 }]}
+        >
+          <Ionicons name="radio-outline" size={18} color={t.primary} />
+        </TouchableOpacity>
+
         <TouchableOpacity
           onPress={() => setCompleted(v => !v)}
           style={[styles.doneBtn, { backgroundColor: completed ? t.success : t.primary }]}
@@ -223,6 +239,7 @@ export default function TaskThreadScreen() {
           <Ionicons name={completed ? 'checkmark-circle' : 'ellipse-outline'} size={20} color="#fff" />
         </TouchableOpacity>
       </View>
+
 
       {/* ── Thread content ── */}
       <ScrollView
@@ -342,9 +359,18 @@ export default function TaskThreadScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      <ScoutInterface 
+        visible={showScout} 
+        onClose={() => setShowScout(false)} 
+        roomId={roomId} 
+        userId={user?.id || ''} 
+        taskId={taskId}
+      />
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   root:         { flex: 1 },

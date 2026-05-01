@@ -1,27 +1,21 @@
 /**
- * CalendarStrip — Horizontal pill calendar matching HomeScreen design
- *
- * UPDATED pill specs:
- *   Inactive: 42x58, borderRadius 21, subtle dark bg
- *   Active:   46x70, borderRadius 23, Lavender/Cyan accent, noticeably taller+wider
- *   Today:    border ring when not selected
+ * CalendarStrip — Tactical Ribbon variant with 3D-like curves and under-lighting
  */
 import React, { useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import Animated, { 
+  useAnimatedStyle, 
+  interpolate, 
+  withTiming, 
+  Extrapolate 
+} from 'react-native-reanimated';
 import { useTheme } from '../../context/ThemeContext';
 
 const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-
-// Lavender/Cyan accent for active pill
-const ACTIVE_PILL_COLOR = '#818cf8'; // Lavender
-const ACTIVE_PILL_GLOW = 'rgba(129,140,248,0.35)';
+const ACTIVE_PILL_COLOR = '#818cf8'; 
 
 function isSameDay(a: Date, b: Date) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
 function getWeekDays(ref: Date): Date[] {
@@ -37,20 +31,17 @@ function getWeekDays(ref: Date): Date[] {
 interface CalendarStripProps {
   selectedDate: Date;
   onSelectDate: (date: Date) => void;
-  /** Dates that have tasks — shows dot indicator */
   taskDates?: Date[];
 }
 
-const CalendarStrip: React.FC<CalendarStripProps> = ({
-  selectedDate,
-  onSelectDate,
-  taskDates = [],
-}) => {
-  const { isDark, colors } = useTheme();
+const CalendarStrip: React.FC<CalendarStripProps> = ({ selectedDate, onSelectDate, taskDates = [] }) => {
+  const { isDark } = useTheme();
   const today = useMemo(() => new Date(), []);
   const weekDays = useMemo(() => getWeekDays(selectedDate), [selectedDate]);
-
-  const surfRgb = isDark ? '30,30,50' : '240,240,255';
+  
+  const selectedIndex = useMemo(() => {
+    return weekDays.findIndex(d => isSameDay(d, selectedDate));
+  }, [weekDays, selectedDate]);
 
   return (
     <View style={styles.container}>
@@ -60,88 +51,55 @@ const CalendarStrip: React.FC<CalendarStripProps> = ({
           const isTod = isSameDay(d, today);
           const hasTask = taskDates.some(td => isSameDay(td, d));
 
+          // ── Ribbon Animation logic ───────────────────────────────────────
+          const diff = i - selectedIndex;
+          
           return (
             <TouchableOpacity
               key={i}
               onPress={() => onSelectDate(d)}
-              activeOpacity={0.7}
-              style={styles.cell}
+              activeOpacity={0.8}
+              style={[styles.cell]}
             >
-              {/* Day letter */}
-              <Text
-                style={[
+              <View style={[
+                styles.ribbonWrapper,
+                { 
+                  transform: [
+                    { perspective: 1000 },
+                    { rotateY: `${diff * 10}deg` },
+                    { scale: 1 - Math.abs(diff) * 0.05 }
+                  ] as any
+                }
+              ]}>
+                <Text style={[
                   styles.dayLabel,
-                  {
-                    color: isSel
-                      ? ACTIVE_PILL_COLOR
-                      : isDark
-                        ? 'rgba(255,255,255,0.4)'
-                        : 'rgba(15,23,42,0.45)',
-                    fontWeight: isSel ? '800' : '700',
-                  },
-                ]}
-              >
-                {DAY_LETTERS[d.getDay()]}
-              </Text>
+                  { color: isSel ? ACTIVE_PILL_COLOR : (isDark ? 'rgba(255,255,255,0.4)' : 'rgba(15,23,42,0.45)') }
+                ]}>
+                  {DAY_LETTERS[d.getDay()]}
+                </Text>
 
-              {/* Pill — active is noticeably taller + wider */}
-              <View
-                style={[
+                <View style={[
                   styles.pill,
                   {
-                    width: isSel ? 46 : 42,
-                    height: isSel ? 70 : 58,
-                    borderRadius: isSel ? 23 : 21,
-                    backgroundColor: isSel
-                      ? ACTIVE_PILL_COLOR
-                      : isTod
-                        ? 'rgba(129,140,248,0.15)'
-                        : `rgba(${surfRgb},0.5)`,
-                    borderWidth: isTod && !isSel ? 2 : isSel ? 0 : StyleSheet.hairlineWidth,
-                    borderColor: isTod && !isSel
-                      ? ACTIVE_PILL_COLOR
-                      : isDark
-                        ? 'rgba(255,255,255,0.08)'
-                        : 'rgba(0,0,0,0.06)',
-                    // Glow shadow on active pill
-                    shadowColor: isSel ? ACTIVE_PILL_COLOR : 'transparent',
-                    shadowOffset: { width: 0, height: isSel ? 4 : 0 },
-                    shadowOpacity: isSel ? 0.45 : 0,
-                    shadowRadius: isSel ? 12 : 0,
-                    elevation: isSel ? 6 : 0,
-                  },
-                ]}
-              >
-                <Text
-                  style={{
-                    fontSize: isSel ? 20 : 16,
-                    fontWeight: isSel ? '800' : isTod ? '700' : '600',
-                    color: isSel
-                      ? '#ffffff'
-                      : isTod
-                        ? ACTIVE_PILL_COLOR
-                        : isDark
-                          ? 'rgba(255,255,255,0.8)'
-                          : '#1e293b',
-                    letterSpacing: -0.3,
-                  }}
-                >
-                  {d.getDate()}
-                </Text>
-                {/* Today indicator dot inside selected pill */}
-                {isTod && isSel && (
-                  <View style={styles.todayDotInside} />
-                )}
-              </View>
+                    width: 42,
+                    height: isSel ? 64 : 54,
+                    borderRadius: 21,
+                    backgroundColor: isSel ? ACTIVE_PILL_COLOR : (isDark ? 'rgba(30,30,50,0.5)' : 'rgba(240,240,255,0.5)'),
+                    borderColor: isTod && !isSel ? ACTIVE_PILL_COLOR : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'),
+                    borderWidth: isTod && !isSel ? 1.5 : 0.5,
+                  }
+                ]}>
+                  <Text style={[
+                    styles.dateText,
+                    { color: isSel ? '#fff' : (isTod ? ACTIVE_PILL_COLOR : (isDark ? 'rgba(255,255,255,0.8)' : '#1e293b')) }
+                  ]}>
+                    {d.getDate()}
+                  </Text>
+                  {isSel && <View style={styles.underglow} />}
+                </View>
 
-              {/* Task dot below pill */}
-              {hasTask && !isSel && (
-                <View
-                  style={[styles.taskDot, { backgroundColor: ACTIVE_PILL_COLOR }]}
-                />
-              )}
-              {/* Invisible spacer so unselected cells don't shift when neighbor is active */}
-              {!hasTask && !isSel && <View style={styles.taskDotSpacer} />}
+                {hasTask && !isSel && <View style={[styles.taskDot, { backgroundColor: ACTIVE_PILL_COLOR }]} />}
+              </View>
             </TouchableOpacity>
           );
         })}
@@ -151,48 +109,26 @@ const CalendarStrip: React.FC<CalendarStripProps> = ({
 };
 
 const styles = StyleSheet.create({
-  container: {
-    paddingHorizontal: 0,
-    paddingTop: 2,
-    paddingBottom: 0,
+  container: { paddingTop: 4 },
+  strip: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  cell: { flex: 1, alignItems: 'center' },
+  ribbonWrapper: { alignItems: 'center' },
+  dayLabel: { fontSize: 9, fontWeight: '800', marginBottom: 6, letterSpacing: 0.5 },
+  pill: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  dateText: { fontSize: 16, fontWeight: '700' },
+  underglow: {
+    position: 'absolute',
+    bottom: -10,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: ACTIVE_PILL_COLOR,
+    opacity: 0.4,
+    shadowRadius: 10,
+    shadowColor: ACTIVE_PILL_COLOR,
+    shadowOpacity: 0.8,
   },
-  strip: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-  },
-  cell: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  dayLabel: {
-    fontSize: 10,
-    letterSpacing: 0.8,
-    marginBottom: 5,
-    textTransform: 'uppercase',
-  },
-  pill: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  todayDotInside: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: 'rgba(255,255,255,0.75)',
-    marginTop: 3,
-  },
-  taskDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    marginTop: 5,
-  },
-  taskDotSpacer: {
-    width: 4,
-    height: 4,
-    marginTop: 5,
-  },
+  taskDot: { width: 4, height: 4, borderRadius: 2, marginTop: 4 },
 });
 
 export default React.memo(CalendarStrip);

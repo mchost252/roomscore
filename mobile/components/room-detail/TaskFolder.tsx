@@ -1,18 +1,20 @@
 /**
- * TaskFolder — Refactored Multi-State Task Card for "Tactical Archive"
+ * TaskFolder — Enhanced Multi-State Task Card with Liquid Progress and Tactical Effects
  */
-import React, { useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import React, { useEffect, useMemo } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, Dimensions } from 'react-native';
 import Animated, { 
-  FadeInDown, FadeOutUp, Layout, 
-  useSharedValue, useAnimatedStyle, 
-  withRepeat, withSequence, withTiming 
+  Layout, useSharedValue, useAnimatedStyle, 
+  withRepeat, withSequence, withTiming, interpolate, Easing
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Task } from '../../types/room';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
+
+const { width: W } = Dimensions.get('window');
 
 export enum TaskState {
   ACTIVE = 'ACTIVE',
@@ -28,365 +30,177 @@ interface TaskFolderProps {
   onMenuPress?: (task: Task) => void;
 }
 
-// Map Priority to color
-const PRIORITY_COLOR: Record<string, string> = {
-  urgent: '#ef4444',
-  high: '#f97316',
-  medium: '#6366f1',
-  low: '#22c55e',
+// ─── Sub-Components for Visual Effects ──────────────────────────────────────
+
+const LiquidBackground = ({ progress, color, isDark }: { progress: number, color: string, isDark: boolean }) => {
+  const waveAnim = useSharedValue(0);
+  
+  useEffect(() => {
+    waveAnim.value = withRepeat(withTiming(1, { duration: 3000, easing: Easing.inOut(Easing.sin) }), -1, true);
+  }, []);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    const height = interpolate(progress, [0, 100], [0, 140]); // Max height of card approx 140
+    const translateY = interpolate(waveAnim.value, [0, 1], [-2, 2]);
+    return {
+      height,
+      transform: [{ translateY }],
+      opacity: isDark ? 0.12 : 0.08,
+    };
+  });
+
+  return (
+    <Animated.View style={[s.liquidBase, animatedStyle, { backgroundColor: color }]}>
+      <LinearGradient
+        colors={['transparent', color]}
+        style={StyleSheet.absoluteFill}
+      />
+    </Animated.View>
+  );
 };
 
-// Formatter for timestamps
-const formatTime = (dateStr: string) => {
-  if (!dateStr) return '';
-  const d = new Date(dateStr);
-  return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')} • ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+const TaskStatusLine = ({ state, color, isDark, priority }: { state: TaskState, color: string, isDark: boolean, priority?: string }) => {
+  const pulse = useSharedValue(1);
+  const stripePos = useSharedValue(0);
+
+  useEffect(() => {
+    if (state === TaskState.ACTIVE || state === TaskState.PENDING) {
+      pulse.value = withRepeat(withSequence(withTiming(0.4, { duration: 1000 }), withTiming(1, { duration: 1000 })), -1, true);
+    }
+    if (priority === 'urgent' || state === TaskState.PENDING) {
+      stripePos.value = withRepeat(withTiming(1, { duration: 2000, easing: Easing.linear }), -1, false);
+    }
+  }, [state, priority]);
+
+  const animatedDotStyle = useAnimatedStyle(() => ({
+    opacity: pulse.value,
+    transform: [{ scale: interpolate(pulse.value, [0.4, 1], [0.8, 1.1]) }]
+  }));
+
+  const isUrgent = priority === 'urgent' || state === TaskState.PENDING;
+
+  return (
+    <View style={s.trackCol}>
+      <View style={[s.trackLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]}>
+        {isUrgent && (
+           <View style={StyleSheet.absoluteFill}>
+             {/* Hazard Stripe Simulation */}
+             <LinearGradient 
+                colors={['transparent', color, 'transparent']} 
+                style={{ height: '100%', width: '100%', opacity: 0.3 }} 
+             />
+           </View>
+        )}
+      </View>
+      <Animated.View style={[s.trackDot, { borderColor: color, backgroundColor: isDark ? '#0a0a16' : '#ffffff' }, animatedDotStyle]}>
+        <View style={[s.innerDot, { backgroundColor: color }]} />
+      </Animated.View>
+    </View>
+  );
 };
 
-export const TaskFolder: React.FC<TaskFolderProps> = ({
-  task,
-  index,
-  onPress,
-  onMenuPress,
-}) => {
+// ─── Main Component ──────────────────────────────────────────────────────────
+
+export const TaskFolder: React.FC<TaskFolderProps> = ({ task, index, onPress, onMenuPress }) => {
   const { colors, isDark } = useTheme();
-
-  // Calculate Progress — per-user completion logic
   const { user } = useAuth();
+
   const completionCount = task.completions?.length || 0;
   const participantCount = task.participants?.length || 0;
   const hasCurrentUserCompleted = task.completions?.some(c => c.userId === user?.id || c.id === user?.id);
-  // Per-user: only mark COMPLETED if current user completed AND all participants completed
-  // If no participants tracked, fall back to isCompleted (per-user from backend)
+
   const isActuallyCompleted = participantCount > 0
     ? (hasCurrentUserCompleted && completionCount >= participantCount)
     : !!task.isCompleted;
+
   const progressPercent = participantCount > 0
     ? Math.min(100, Math.round((completionCount / participantCount) * 100))
     : (task.isCompleted ? 100 : 0);
 
-  // Derived State Logic
   let state: TaskState = TaskState.SPECTATING;
-  if (isActuallyCompleted) {
-    state = TaskState.COMPLETED;
-  } else if (hasCurrentUserCompleted || (task as any).status === 'pending') {
-    state = TaskState.PENDING;
-  } else if (task.isJoined || task.status === 'accepted') {
-    state = TaskState.ACTIVE;
-  }
+  if (isActuallyCompleted) state = TaskState.COMPLETED;
+  else if (hasCurrentUserCompleted || (task as any).status === 'pending') state = TaskState.PENDING;
+  else if (task.isJoined || task.status === 'accepted') state = TaskState.ACTIVE;
 
-  // Visual Properties based on State
-  let opacity = 1;
-  let subwayColor: string = colors.primary;
-  let statusLabel = 'ACTIVE';
-  let isMuted = false;
-
-  switch (state) {
-    case TaskState.COMPLETED:
-      opacity = 0.6;
-      subwayColor = colors.success;
-      statusLabel = 'COMPLETED';
-      break;
-    case TaskState.PENDING:
-      subwayColor = colors.warning;
-      statusLabel = hasCurrentUserCompleted ? 'AWAITING SQUAD' : 'AWAITING VOUCH';
-      break;
-    case TaskState.SPECTATING:
-      isMuted = true;
-      subwayColor = colors.textTertiary || 'gray';
-      statusLabel = 'SPECTATING';
-      break;
-    case TaskState.ACTIVE:
-    default:
-      subwayColor = colors.primary;
-      statusLabel = 'ACTIVE';
-      break;
-  }
-
-  // Reanimated Pulse for PENDING
-  const pulse = useSharedValue(1);
-  useEffect(() => {
-    if (state === TaskState.PENDING) {
-      pulse.value = withRepeat(
-        withSequence(
-          withTiming(0.4, { duration: 800 }),
-          withTiming(1, { duration: 800 })
-        ),
-        -1,
-        true
-      );
-    } else {
-      pulse.value = 1;
+  const statusConfig = useMemo(() => {
+    switch (state) {
+      case TaskState.COMPLETED: return { color: colors.success, label: 'SECURED', opacity: 0.7 };
+      case TaskState.PENDING: return { color: colors.warning, label: 'AWAITING VOUCH', opacity: 1 };
+      case TaskState.SPECTATING: return { color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)', label: 'SPECTATING', opacity: 0.8 };
+      default: return { color: colors.primary, label: 'ACTIVE', opacity: 1 };
     }
-  }, [state, pulse]);
-
-  const animatedBorder = useAnimatedStyle(() => {
-    if (state !== TaskState.PENDING) return {};
-    return {
-      borderColor: `rgba(245, 158, 11, ${pulse.value})`, // warning color pulse
-    };
-  });
-
-  const pColor = PRIORITY_COLOR[(task as any).priority || 'medium'] || colors.primary;
+  }, [state, colors, isDark]);
 
   return (
-    <Animated.View
-      entering={FadeInDown.duration(400).delay(index * 60).springify()}
-      exiting={FadeOutUp.duration(300)}
-      layout={Layout.springify()}
-      style={{ marginBottom: 12, opacity, flexDirection: 'row' }}
-    >
-      {/* Visual Alignment with RoomTaskThread Subway Line */}
-      <View style={styles.trackCol}>
-        <View style={[styles.trackLine, { backgroundColor: subwayColor }]} />
-        <View style={[styles.trackDot, { borderColor: subwayColor, backgroundColor: isDark ? '#0a0a16' : '#ffffff' }]} />
-      </View>
+    <Animated.View layout={Layout.springify()} style={{ marginBottom: 14, flexDirection: 'row', opacity: statusConfig.opacity }}>
+      
+      <TaskStatusLine state={state} color={statusConfig.color} isDark={isDark} priority={(task as any).priority} />
 
-      <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={{ flex: 1 }}>
-        <Animated.View
-          style={[
-            styles.cardWrapper,
-            {
-              // Tactical Light Mode: 1px Sharp Border (#D1D1D1) and subtle elevation
-              borderColor: isDark ? colors.borderColor : '#D1D1D1',
-              shadowColor: isDark ? '#000' : '#00000020',
-              elevation: isDark ? 4 : 2,
-            },
-            isMuted && { borderColor: isDark ? 'rgba(255,255,255,0.05)' : '#E5E5E5' },
-            animatedBorder,
-          ]}
-        >
-          <BlurView 
-            intensity={isDark ? 40 : 80} 
-            tint={isDark ? 'dark' : 'light'}
-            style={[styles.card, { backgroundColor: isDark ? 'rgba(20,20,30,0.6)' : 'rgba(255,255,255,0.8)' }]}
-          >
-            <View style={[styles.cardContent, isMuted ? { opacity: 0.6 } : null]}>
-              {/* Header: Status Badge & Menu */}
-              <View style={styles.topRow}>
-                <View style={styles.topRowLeft}>
-                  <View style={[styles.statusBadge, { backgroundColor: subwayColor + '20' }]}>
-                    <Text style={[styles.statusText, { color: subwayColor }]}>{statusLabel}</Text>
-                  </View>
-                  {!isActuallyCompleted && state !== TaskState.SPECTATING ? (
-                    <View style={[styles.statusBadge, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)', marginLeft: 4 }]}>
-                      <Text style={[styles.statusText, { color: colors.textSecondary }]}>{progressPercent}%</Text>
-                    </View>
-                  ) : null}
-                </View>
+      <TouchableOpacity onPress={onPress} activeOpacity={0.9} style={{ flex: 1 }}>
+        <View style={[s.cardWrapper, { borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)', backgroundColor: isDark ? '#12121A' : '#FFFFFF' }]}>
+          
+          <LiquidBackground progress={progressPercent} color={statusConfig.color} isDark={isDark} />
 
-                {onMenuPress ? (
-                  <TouchableOpacity onPress={() => onMenuPress(task)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                    <Ionicons name="ellipsis-vertical" size={16} color={colors.textSecondary} />
-                  </TouchableOpacity>
-                ) : null}
+          <BlurView intensity={isDark ? 20 : 40} tint={isDark ? 'dark' : 'light'} style={s.cardInner}>
+            <View style={s.topRow}>
+              <View style={[s.statusBadge, { backgroundColor: statusConfig.color + '15' }]}>
+                <Text style={[s.statusText, { color: statusConfig.color }]}>{statusConfig.label}</Text>
+              </View>
+              {progressPercent > 0 && !isActuallyCompleted && (
+                <Text style={s.progressText}>{progressPercent}% OPS</Text>
+              )}
+              <View style={{ flex: 1 }} />
+              {onMenuPress && (
+                <TouchableOpacity onPress={() => onMenuPress(task)} hitSlop={15}>
+                  <Ionicons name="ellipsis-horizontal" size={16} color={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <Text style={[s.title, { color: isDark ? '#FFF' : '#000', textDecorationLine: isActuallyCompleted ? 'line-through' : 'none' }]} numberOfLines={2}>
+              {task.title}
+            </Text>
+
+            <View style={s.footer}>
+              <View style={s.metaWrap}>
+                <Ionicons name="flash" size={10} color={statusConfig.color} />
+                <Text style={[s.metaText, { color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }]}>{task.points} GHOST PTS</Text>
               </View>
 
-              {/* Title (High Contrast) */}
-              <Text
-                style={[
-                  styles.title,
-                  { color: isDark ? '#FFFFFF' : '#1A1A1A' }, // Tactical Light Mode contrast
-                  state === TaskState.COMPLETED ? { textDecorationLine: 'line-through' } : null,
-                ]}
-                numberOfLines={2}
-              >
-                {task.title}
-              </Text>
-
-              {/* Timestamps */}
-              <View style={styles.timestampRow}>
-                <Ionicons name="time-outline" size={10} color={colors.textTertiary || 'gray'} />
-                <Text style={[styles.timestampText, { color: colors.textSecondary }]}>
-                  Created: {formatTime(task.createdAt)} {task.dueDate ? `• Due: ${task.dueDate}` : ''}
-                </Text>
-              </View>
-
-              {/* Meta Footer */}
-              <View style={styles.metaRow}>
-                <View style={[styles.priorityDot, { backgroundColor: pColor }]} />
-                <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-                  {(task as any).priority || 'medium'}
-                </Text>
-
-                {task.points > 0 ? (
-                  <Text style={[styles.metaText, { color: colors.textSecondary }]}> • {task.points} pts</Text>
-                ) : null}
-
-                {/* Participant avatar stack */}
-                {task.participants && task.participants.length > 0 ? (
-                  <View style={styles.participantStack}>
-                    {task.participants.slice(0, 4).map((p, i) => (
-                      <View 
-                        key={p.userId || p.id || i}
-                        style={[
-                          styles.participantAvatar, 
-                          { 
-                            marginLeft: i > 0 ? -6 : 0, 
-                            zIndex: 10 - i,
-                            backgroundColor: isDark ? 'rgba(99,102,241,0.25)' : 'rgba(99,102,241,0.12)',
-                            borderColor: isDark ? '#0a0a16' : '#ffffff',
-                          }
-                        ]}
-                      >
-                        <Text style={[styles.participantInitial, { color: colors.primary }]}>
-                          {(p.username || 'U').charAt(0).toUpperCase()}
-                        </Text>
-                      </View>
-                    ))}
-                    {task.participants.length > 4 ? (
-                      <View style={[styles.participantAvatar, { marginLeft: -6, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)', borderColor: isDark ? '#0a0a16' : '#ffffff' }]}>
-                        <Text style={[styles.participantOverflow, { color: colors.textSecondary }]}>+{task.participants.length - 4}</Text>
-                      </View>
-                    ) : null}
+              <View style={s.avatarStack}>
+                {task.participants?.slice(0, 3).map((p, i) => (
+                  <View key={p.id} style={[s.miniAvatar, { marginLeft: i > 0 ? -8 : 0, borderColor: isDark ? '#12121A' : '#FFF', backgroundColor: colors.primary + '30' }]}>
+                    <Text style={s.avatarText}>{(p.username || 'U').charAt(0).toUpperCase()}</Text>
                   </View>
-                ) : null}
-
-                <View style={{ flex: 1 }} />
-                
-                {state === TaskState.SPECTATING ? (
-                  <View style={styles.actionBtn}>
-                    <Text style={[styles.actionBtnText, { color: colors.primary }]}>View Brief</Text>
-                    <Ionicons name="chevron-forward" size={12} color={colors.primary} />
-                  </View>
-                ) : null}
-                {state === TaskState.ACTIVE ? (
-                  <View style={styles.actionBtn}>
-                    <Text style={[styles.actionBtnText, { color: colors.primary }]}>Update</Text>
-                    <Ionicons name="chevron-forward" size={12} color={colors.primary} />
-                  </View>
-                ) : null}
+                ))}
               </View>
             </View>
           </BlurView>
-        </Animated.View>
+        </View>
       </TouchableOpacity>
     </Animated.View>
   );
 };
 
-const styles = StyleSheet.create({
-  cardWrapper: {
-    borderRadius: 14,
-    borderWidth: 1,
-    overflow: 'hidden',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  card: {
-    flexDirection: 'row',
-    padding: 12,
-  },
-  cardContent: {
-    flex: 1,
-    paddingLeft: 4,
-  },
-  topRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  topRowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  statusText: {
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  title: {
-    fontSize: 15,
-    fontWeight: '700',
-    marginBottom: 4,
-    letterSpacing: -0.2,
-  },
-  timestampRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: 8,
-  },
-  timestampText: {
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  priorityDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  metaText: {
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'capitalize',
-  },
-  actionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  actionBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  trackCol: {
-    width: 36,
-    alignItems: 'center',
-    position: 'relative',
-    marginRight: 4,
-  },
-  trackLine: {
-    position: 'absolute',
-    top: 0,
-    bottom: -12,
-    width: 2,
-    opacity: 0.6,
-  },
-  trackDot: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 12,
-    zIndex: 2,
-  },
-  participantStack: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 8,
-  },
-  participantAvatar: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  participantInitial: {
-    fontSize: 8,
-    fontWeight: '800',
-  },
-  participantOverflow: {
-    fontSize: 7,
-    fontWeight: '800',
-  },
+const s = StyleSheet.create({
+  trackCol: { width: 32, alignItems: 'center', marginRight: 8 },
+  trackLine: { position: 'absolute', top: 0, bottom: -14, width: 1, overflow: 'hidden' },
+  trackDot: { width: 14, height: 14, borderRadius: 7, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginTop: 14, zIndex: 2 },
+  innerDot: { width: 4, height: 4, borderRadius: 2 },
+  cardWrapper: { flex: 1, borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
+  cardInner: { padding: 16 },
+  liquidBase: { position: 'absolute', bottom: 0, left: 0, right: 0, borderTopLeftRadius: 4, borderTopRightRadius: 4 },
+  topRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  statusText: { fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
+  progressText: { fontSize: 10, fontWeight: '700', color: 'rgba(99,102,241,0.6)' },
+  title: { fontSize: 16, fontWeight: '800', marginBottom: 12, letterSpacing: -0.3 },
+  footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  metaWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  metaText: { fontSize: 10, fontWeight: '700' },
+  avatarStack: { flexDirection: 'row', alignItems: 'center' },
+  miniAvatar: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontSize: 8, fontWeight: '900', color: '#6366f1' },
 });
 
 export default React.memo(TaskFolder);

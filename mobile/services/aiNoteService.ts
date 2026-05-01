@@ -11,8 +11,9 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_BASE_URL } from '../constants/config';
+import { API_BASE_URL, AI_TASK_ASSIST_URL } from '../constants/config';
 import { aiBehaviorEngine } from './aiBehaviorEngine';
+
 
 const CACHE_PREFIX = '@krios:aiNote:';
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days — notes rarely change
@@ -257,9 +258,9 @@ export async function fetchAINote(params: {
     userProfile = await aiBehaviorEngine.getProfileSummary();
   } catch {}
 
-  // 3. Call backend AI endpoint
+// 3. Call backend AI endpoint
   try {
-    const response = await fetch(`${API_BASE_URL}/api/ai/task-assist`, {
+    const response = await fetch(AI_TASK_ASSIST_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -274,6 +275,7 @@ export async function fetchAINote(params: {
         userProfile,
       }),
     });
+
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));

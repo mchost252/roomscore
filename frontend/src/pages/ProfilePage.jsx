@@ -284,9 +284,8 @@ const ProfilePage = () => {
     }
 
     // Navigate to the related room if exists
-    if (notification.relatedRoom) {
-      // relatedRoom can be either an object with _id or just an ID string
-      const roomId = notification.relatedRoom._id || notification.relatedRoom;
+    const roomId = notification.data?.roomId || notification.relatedRoom?._id || notification.relatedRoom;
+    if (roomId) {
       navigate(`/rooms/${roomId}`);
       return;
     }

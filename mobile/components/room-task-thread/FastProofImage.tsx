@@ -11,8 +11,16 @@ import { Image } from 'expo-image';
 import Animated, { FadeIn, FadeOut, ZoomIn, ZoomOut } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { API_BASE_URL } from '../../constants/config';
 
 const { width, height } = Dimensions.get('window');
+
+const getFullImageUrl = (url?: string) => {
+  if (!url || url === 'undefined' || url === 'null') return undefined;
+  if (url.startsWith('http') || url.startsWith('file://') || url.startsWith('data:') || url.startsWith('blob:')) return url;
+  if (url.startsWith('/')) return `${API_BASE_URL}${url}`;
+  return `${API_BASE_URL}/${url}`;
+};
 
 interface FastProofImageProps {
   mediaUrl: string;
@@ -34,9 +42,11 @@ export default function FastProofImage({
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const [hasError, setHasError] = useState(false);
   const insets = useSafeAreaInsets();
+  
+  const fullUrl = getFullImageUrl(mediaUrl);
 
   // Only show "Processing" for truly invalid URLs (empty or malformed)
-  if (!mediaUrl || mediaUrl === 'undefined' || mediaUrl === 'null') {
+  if (!fullUrl) {
     return (
       <View style={[styles.container, { width: imgWidth as any, height: imgHeight, borderRadius, backgroundColor: 'rgba(99,102,241,0.1)' }]}>
         <Ionicons name="image-outline" size={32} color="rgba(99,102,241,0.5)" />
@@ -59,7 +69,7 @@ export default function FastProofImage({
           </View>
         ) : (
           <Image
-            source={{ uri: mediaUrl }}
+            source={{ uri: fullUrl }}
             placeholder={blurHash ? { blurhash: blurHash } : undefined}
             contentFit="cover"
             transition={300}
@@ -92,7 +102,7 @@ export default function FastProofImage({
 
           <Animated.View entering={ZoomIn.springify().damping(16)} exiting={ZoomOut.duration(200)}>
             <Image
-              source={{ uri: mediaUrl }}
+              source={{ uri: fullUrl }}
               placeholder={blurHash ? { blurhash: blurHash } : undefined}
               contentFit="contain"
               style={{ width, height: height * 0.8 }}

@@ -33,69 +33,60 @@ router.get('/conversations', protect, async (req, res, next) => {
     const acceptedFriendships = friendships.filter(f => f.status === 'accepted' || f.status === 'removed');
     const pendingRequests = friendships.filter(f => f.status === 'pending');
 
-    // Add pending requests as conversations with request status
+    // Build list of all counterpart user ids (accepted+removed+pending) so we can compute last message/unread uniformly
+    const acceptedIds = acceptedFriendships.map(f => (f.fromUserId === userId ? f.toUserId : f.fromUserId));
+    const pendingIds = pendingRequests.map(f => (f.fromUserId === userId ? f.toUserId : f.fromUserId));
+    const allCounterpartIds = Array.from(new Set([...acceptedIds, ...pendingIds]));
+
+    // Fetch recent messages across all counterpart users (including pending), to compute last message + unread.
+    // Exclude messages soft-deleted by current user via deletedFor field.
+    const allMessages = allCounterpartIds.length === 0 ? [] : await prisma.directMessage.findMany({
+      where: {
+        AND: [
+          {
+            OR: [
+              { fromUserId: userId, toUserId: { in: allCounterpartIds } },
+              { toUserId: userId, fromUserId: { in: allCounterpartIds } }
+            ]
+          },
+          {
+            OR: [
+              { deletedFor: null },
+              { NOT: { deletedFor: { contains: userId } } }
+            ]
+          }
+        ]
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200
+    });
+
+    const lastMessageMap = new Map();
+    const unreadCountMap = new Map();
+    for (const msg of allMessages) {
+      const otherId = msg.fromUserId === userId ? msg.toUserId : msg.fromUserId;
+      if (!lastMessageMap.has(otherId)) lastMessageMap.set(otherId, msg);
+      if (msg.fromUserId === otherId && msg.toUserId === userId && !msg.read) {
+        unreadCountMap.set(otherId, (unreadCountMap.get(otherId) || 0) + 1);
+      }
+    }
+
+    // Add pending requests as conversations with request status (lastMessage comes from DM if available)
     const pendingConversations = pendingRequests.map(req => {
       const otherUserId = req.fromUserId === userId ? req.toUserId : req.fromUserId;
       const otherUser = req.fromUserId === userId ? req.toUser : req.fromUser;
       const isSentByMe = req.fromUserId === userId;
-      
-      // If there's an initial message attached to the request, show it
-      const lastMessage = req.message ? {
-        _id: req.id,
-        message: req.message,
-        content: req.message,
-        createdAt: req.createdAt,
-        fromUserId: req.fromUserId,
-        toUserId: req.toUserId
-      } : null;
-      
+      const lastMessage = lastMessageMap.get(otherUserId);
+      const unreadCount = unreadCountMap.get(otherUserId) || (isSentByMe ? 0 : 1);
+
       return {
         friend: { ...otherUser, _id: otherUser.id },
-        lastMessage,
-        unreadCount: isSentByMe ? 0 : 1, // Treat incoming request as unread
+        lastMessage: lastMessage ? { ...lastMessage, _id: lastMessage.id, message: lastMessage.content } : null,
+        unreadCount,
         requestStatus: isSentByMe ? 'pending_sent' : 'pending_received',
         requestId: req.id
       };
     });
-
-    if (acceptedFriendships.length === 0 && pendingRequests.length === 0) {
-      return res.json({ success: true, conversations: pendingConversations, totalUnread: 0 });
-    }
-
-    // Get friend IDs from accepted friendships only
-    const friendIds = acceptedFriendships.map(f => 
-      f.fromUserId === userId ? f.toUserId : f.fromUserId
-    );
-
-    // Get all messages involving user and their friends (SQLite compatible)
-    const allMessages = await prisma.directMessage.findMany({
-      where: {
-        OR: [
-          { fromUserId: userId, toUserId: { in: friendIds } },
-          { toUserId: userId, fromUserId: { in: friendIds } }
-        ]
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 100
-    });
-
-    // Build last message map per conversation (SQLite compatible)
-    const lastMessageMap = new Map();
-    const unreadCountMap = new Map();
-    
-    for (const msg of allMessages) {
-      const friendId = msg.fromUserId === userId ? msg.toUserId : msg.fromUserId;
-      
-      // Keep only the first (most recent) message per conversation
-      if (!lastMessageMap.has(friendId)) {
-        lastMessageMap.set(friendId, msg);
-      }
-      
-      // Count unread messages from this friend
-      if (msg.fromUserId === friendId && msg.toUserId === userId && !msg.read) {
-        unreadCountMap.set(friendId, (unreadCountMap.get(friendId) || 0) + 1);
-      }
-    }
 
     // Build conversations from accepted friendships
     const acceptedConversations = acceptedFriendships.map(friendship => {
@@ -112,7 +103,8 @@ router.get('/conversations', protect, async (req, res, next) => {
           message: lastMessage.content 
         } : null,
         unreadCount,
-        requestStatus: 'accepted'
+        // Preserve friendship status so clients can distinguish 'accepted' vs 'removed'
+        requestStatus: friendship.status
       };
     });
 
@@ -142,11 +134,14 @@ router.get('/unread-count', protect, async (req, res, next) => {
   try {
     const userId = req.user.id;
 
-    // NOTE: deletedFor filtering removed for SQLite compatibility
     const unreadCount = await prisma.directMessage.count({
       where: {
         toUserId: userId,
-        read: false
+        read: false,
+        OR: [
+          { deletedFor: null },
+          { NOT: { deletedFor: { contains: userId } } }
+        ]
       }
     });
 
@@ -165,10 +160,10 @@ router.get('/:friendId', protect, async (req, res, next) => {
     const friendId = req.params.friendId;
     const { last_id, limit = 100 } = req.query;
 
-    // Verify friendship exists
+    // Verify relationship exists (accepted OR pending OR removed)
     const friendship = await prisma.friend.findFirst({
       where: {
-        status: 'accepted',
+        status: { in: ['accepted', 'pending', 'removed'] },
         OR: [
           { fromUserId: userId, toUserId: friendId },
           { fromUserId: friendId, toUserId: userId }
@@ -180,16 +175,26 @@ router.get('/:friendId', protect, async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Not friends with this user' });
     }
 
-    // Build where clause - Delta Sync support
-    // NOTE: deletedFor filtering removed for SQLite compatibility
+    // Build where clause - Delta Sync support + deletedFor filtering
     const whereClause = {
-      OR: [
-        { fromUserId: userId, toUserId: friendId },
-        { fromUserId: friendId, toUserId: userId }
+      AND: [
+        {
+          OR: [
+            { fromUserId: userId, toUserId: friendId },
+            { fromUserId: friendId, toUserId: userId }
+          ]
+        },
+        {
+          OR: [
+            { deletedFor: null },
+            { NOT: { deletedFor: { contains: userId } } }
+          ]
+        }
       ]
     };
 
     // DELTA SYNC: If last_id provided, only fetch messages after that
+    let isDeltaSync = false;
     if (last_id) {
       const lastMessage = await prisma.directMessage.findUnique({
         where: { id: String(last_id) },
@@ -197,20 +202,15 @@ router.get('/:friendId', protect, async (req, res, next) => {
       });
       
       if (lastMessage) {
-        whereClause.createdAt = { gt: lastMessage.createdAt };
+        whereClause.AND.push({ createdAt: { gt: lastMessage.createdAt } });
+        isDeltaSync = true;
         console.log(`[Delta Sync] DM ${friendId}: Fetching messages after ${last_id}`);
       }
     }
 
-    // Get messages (excluding ones deleted by current user)
-    // NOTE: deletedFor filtering removed for SQLite compatibility - can add back if needed
+    // Get messages using the properly built whereClause (includes delta sync + deletedFor filter)
     const messages = await prisma.directMessage.findMany({
-      where: {
-        OR: [
-          { fromUserId: userId, toUserId: friendId },
-          { fromUserId: friendId, toUserId: userId }
-        ]
-      },
+      where: whereClause,
       include: {
         fromUser: { select: { id: true, username: true } },
         toUser: { select: { id: true, username: true } }
@@ -219,23 +219,25 @@ router.get('/:friendId', protect, async (req, res, next) => {
       take: parseInt(limit)
     });
 
-    // Mark messages from friend as read
-    await prisma.directMessage.updateMany({
-      where: {
-        fromUserId: friendId,
-        toUserId: userId,
-        read: false
-      },
-      data: { read: true }
-    });
-
-    // Emit read receipt to sender via socket
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`user:${friendId}`).emit('dm:read', {
-        readBy: userId,
-        readAt: new Date().toISOString()
+    // Mark messages from friend as read (idempotent) only if relationship is accepted.
+    // While pending/removed, we avoid toggling read state to reduce UI thrash.
+    if (friendship.status === 'accepted') {
+      const result = await prisma.directMessage.updateMany({
+        where: {
+          fromUserId: friendId,
+          toUserId: userId,
+          read: false
+        },
+        data: { read: true }
       });
+
+      const io = req.app.get('io');
+      if (io && result.count > 0) {
+        io.to(`user:${friendId}`).emit('dm:read', {
+          readBy: userId,
+          readAt: new Date().toISOString()
+        });
+      }
     }
 
     // Format for frontend
@@ -252,7 +254,7 @@ router.get('/:friendId', protect, async (req, res, next) => {
     res.json({ 
       success: true, 
       messages: formattedMessages,
-      deltaSync: !!last_id,
+      deltaSync: isDeltaSync,
       syncFrom: last_id || null
     });
   } catch (error) {
@@ -315,8 +317,8 @@ router.delete('/:friendId', protect, async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Not friends with this user' });
     }
 
-    // Soft delete: Add current user to deletedFor array instead of hard deleting
-    // This way the other user still sees their messages
+    // Soft delete: append current userId into deletedFor string (comma-separated).
+    // This way the other user still sees their messages. If both users deleted, we hard delete.
     const messages = await prisma.directMessage.findMany({
       where: {
         OR: [
@@ -332,29 +334,29 @@ router.delete('/:friendId', protect, async (req, res, next) => {
     let updatedCount = 0;
     let permanentlyDeletedCount = 0;
     
+    const hasId = (csv, id) => {
+      if (!csv) return false;
+      return csv.split(',').map(s => s.trim()).filter(Boolean).includes(id);
+    };
+
     for (const msg of messages) {
-      if (!msg.deletedFor.includes(userId)) {
-        // Check if the other user has already deleted this message
-        const otherUserId = msg.deletedFor.length > 0 ? msg.deletedFor[0] : null;
-        const bothDeleted = otherUserId && (otherUserId === friendId || msg.deletedFor.includes(friendId));
-        
-        if (bothDeleted || msg.deletedFor.includes(friendId)) {
-          // Both users have now deleted - permanently remove from database
-          await prisma.directMessage.delete({
-            where: { id: msg.id }
-          });
-          permanentlyDeletedCount++;
-        } else {
-          // Only this user is deleting - add to deletedFor array
-          await prisma.directMessage.update({
-            where: { id: msg.id },
-            data: {
-              deletedFor: { push: userId }
-            }
-          });
-          updatedCount++;
-        }
+      const deletedForStr = msg.deletedFor || '';
+      const alreadyDeletedByMe = hasId(deletedForStr, userId);
+      if (alreadyDeletedByMe) continue;
+
+      const alreadyDeletedByOther = hasId(deletedForStr, friendId);
+      if (alreadyDeletedByOther) {
+        await prisma.directMessage.delete({ where: { id: msg.id } });
+        permanentlyDeletedCount++;
+        continue;
       }
+
+      const newDeletedFor = deletedForStr ? `${deletedForStr},${userId}` : userId;
+      await prisma.directMessage.update({
+        where: { id: msg.id },
+        data: { deletedFor: newDeletedFor }
+      });
+      updatedCount++;
     }
 
     logger.info(`User ${userId} cleared chat with ${friendId}: ${updatedCount} soft-deleted, ${permanentlyDeletedCount} permanently deleted`);
@@ -381,10 +383,9 @@ router.post('/:friendId', protect, async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Message cannot be empty' });
     }
 
-    // Verify friendship
-    const friendship = await prisma.friend.findFirst({
+    // Find relationship row if it exists (either direction)
+    let friendship = await prisma.friend.findFirst({
       where: {
-        status: 'accepted',
         OR: [
           { fromUserId: userId, toUserId: friendId },
           { fromUserId: friendId, toUserId: userId }
@@ -392,8 +393,79 @@ router.post('/:friendId', protect, async (req, res, next) => {
       }
     });
 
-    if (!friendship) {
-      return res.status(403).json({ success: false, message: 'Not friends with this user' });
+    // WhatsApp-style message requests:
+    // - If accepted: send normally
+    // - If pending: requester can send up to 2 messages, recipient cannot send until accepted
+    // - If removed/rejected/no row: create/convert to pending and allow requester to send up to 2
+    const MAX_PENDING_MESSAGES = 2;
+    const now = new Date();
+
+    // Helper: ensure pending request exists where current user is requester
+    const ensurePendingFromMe = async () => {
+      if (friendship && friendship.status === 'pending') {
+        if (friendship.fromUserId !== userId) {
+          return { ok: false, error: 'WAITING_FOR_YOU_TO_ACCEPT' };
+        }
+        return { ok: true };
+      }
+
+      if (friendship && (friendship.status === 'removed' || friendship.status === 'rejected')) {
+        friendship = await prisma.friend.update({
+          where: { id: friendship.id },
+          data: { fromUserId: userId, toUserId: friendId, status: 'pending', message: null }
+        });
+      }
+
+      if (!friendship) {
+        friendship = await prisma.friend.create({
+          data: { fromUserId: userId, toUserId: friendId, status: 'pending', message: null }
+        });
+      }
+
+      // Emit request events (recipient sees banner, sender gets confirmation)
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`user:${friendId}`).emit('friend:request', {
+          request: { ...friendship, _id: friendship.id },
+          requester: { _id: userId, username: req.user.username },
+          message: null
+        });
+        const recipient = await prisma.user.findUnique({
+          where: { id: friendId },
+          select: { username: true }
+        }).catch(() => null);
+
+        io.to(`user:${userId}`).emit('friend:request_sent', {
+          request: { ...friendship, _id: friendship.id },
+          recipientId: friendId,
+          recipientUsername: recipient?.username || 'User'
+        });
+      }
+
+      return { ok: true };
+    };
+
+    // Accepted: OK
+    if (friendship?.status === 'accepted') {
+      // continue
+    } else {
+      const ensured = await ensurePendingFromMe();
+      if (!ensured.ok) {
+        return res.status(403).json({ success: false, code: ensured.error });
+      }
+
+      // Enforce 2-message limit for requester during pending
+      const since = friendship.updatedAt || friendship.createdAt;
+      const sentCount = await prisma.directMessage.count({
+        where: {
+          fromUserId: userId,
+          toUserId: friendId,
+          createdAt: { gte: since }
+        }
+      });
+      if (sentCount >= MAX_PENDING_MESSAGES) {
+        return res.status(403).json({ success: false, code: 'PENDING_LIMIT', message: 'Waiting for acceptance' });
+      }
     }
 
     // Get reply message text if replying

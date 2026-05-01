@@ -6,8 +6,8 @@ import { Platform } from 'react-native';
 const USE_LOCAL_DEV = true; // <-- CHANGE THIS to false when ready for production
 
 // Local server URL (emulator/simulator)
-const LOCAL_API_URL = 'http://10.143.147.150:5000';  // Physical device
-const LOCAL_SOCKET_URL = 'http://10.143.147.150:5000';
+const LOCAL_API_URL = 'http://10.126.141.150:5000';  // Physical device
+const LOCAL_SOCKET_URL = 'http://10.126.141.150:5000';
 
 const LOCAL_WEB_URL = 'http://localhost:5000';  // Browser testing
 const LOCAL_WEB_SOCKET_URL = 'http://localhost:5000';
@@ -52,6 +52,14 @@ const getApiUrl = (): string => {
   return USE_LOCAL_DEV ? LOCAL_API_URL : PROD_API_URL;
 };
 
+// AI Agent URLs
+const LOCAL_AI_URL = 'http://10.126.141.150:3000/api/chat';
+const LOCAL_WEB_AI_URL = 'http://localhost:3000/api/chat';
+const LOCAL_AI_TASK_URL = 'http://10.126.141.150:3000/api/task-assist';
+const LOCAL_WEB_AI_TASK_URL = 'http://localhost:3000/api/task-assist';
+
+// ... existing code ...
+
 const getSocketUrl = (): string => {
   // Detect if running on web - prioritize web detection over env
   if (isWebPlatform()) {
@@ -66,8 +74,20 @@ const getSocketUrl = (): string => {
   return USE_LOCAL_DEV ? LOCAL_SOCKET_URL : PROD_SOCKET_URL;
 };
 
+const getAiUrl = (): string => {
+  if (isWebPlatform()) return USE_LOCAL_DEV ? LOCAL_WEB_AI_URL : '/api/chat';
+  return process.env.EXPO_PUBLIC_AI_AGENT_URL || LOCAL_AI_URL;
+};
+
+const getAiTaskUrl = (): string => {
+  if (isWebPlatform()) return USE_LOCAL_DEV ? LOCAL_WEB_AI_TASK_URL : '/api/task-assist';
+  return process.env.EXPO_PUBLIC_AI_TASK_ASSIST_URL || LOCAL_AI_TASK_URL;
+};
+
 export const API_BASE_URL = getApiUrl();
 export const SOCKET_URL = getSocketUrl();
+export const AI_AGENT_URL = getAiUrl();
+export const AI_TASK_ASSIST_URL = getAiTaskUrl();
 export const API_TIMEOUT = 30000; // 30 seconds - increased for Railway/Neon cold starts
 
 // Token storage keys

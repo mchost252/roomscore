@@ -108,6 +108,8 @@ const RoomListPage = () => {
     // When a room is deleted/disbanded
     const handleRoomDeleted = (data) => {
       setMyRooms(prev => prev.filter(room => room._id !== data.roomId));
+      // Clear persistent cache so deleted room doesn't reappear from localStorage
+      cacheManager.delete(cacheManager.generateKey('/rooms'));
     };
 
     // When current user joins a room (via approval)
@@ -553,8 +555,8 @@ const RoomListPage = () => {
       {/* Tabs */}
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
         <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)}>
-          <Tab label={`My Rooms (${myRooms.length})`} />
-          <Tab label={`Public Rooms (${publicRooms.length})`} />
+          <Tab label={`My Rooms (${filteredMyRooms.length})`} />
+          <Tab label={`Public Rooms (${filteredPublicRooms.length})`} />
         </Tabs>
       </Box>
 

@@ -36,10 +36,13 @@ router.post('/request', protect, async (req, res, next) => {
       }
     });
 
+    let friendRequest;
+
     if (existing) {
       if (existing.status === 'accepted') {
         return res.status(400).json({ success: false, message: 'Already friends with this user' });
       }
+
       if (existing.status === 'pending') {
         // Check if the request is FROM current user or TO current user
         if (existing.fromUserId === requesterId) {
@@ -48,32 +51,42 @@ router.post('/request', protect, async (req, res, next) => {
           return res.status(400).json({ success: false, message: 'This user already sent you a friend request. Check your pending requests!' });
         }
       }
-      if (existing.status === 'rejected') {
-        // Delete old rejected request and allow new one
-        await prisma.friend.delete({ where: { id: existing.id } });
+
+      // For rejected or removed relationships, reuse the same row as a fresh pending request
+      if (existing.status === 'rejected' || existing.status === 'removed') {
+        friendRequest = await prisma.friend.update({
+          where: { id: existing.id },
+          data: {
+            fromUserId: requesterId,
+            toUserId: recipientId,
+            status: 'pending',
+            message: requestMessage || null,
+          },
+        });
       }
     }
 
-    // Create friend request
-    let friendRequest;
-    try {
-      friendRequest = await prisma.friend.create({
-        data: {
-          message: requestMessage || null,
-          fromUserId: requesterId,
-          toUserId: recipientId,
-          status: 'pending'
-        }
-      });
-    } catch (createError) {
-      // Handle unique constraint violation (P2002)
-      if (createError.code === 'P2002') {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'Friend request already exists or you are already friends' 
+    // No existing friendship row – create a new one
+    if (!friendRequest) {
+      try {
+        friendRequest = await prisma.friend.create({
+          data: {
+            message: requestMessage || null,
+            fromUserId: requesterId,
+            toUserId: recipientId,
+            status: 'pending'
+          }
         });
+      } catch (createError) {
+        // Handle unique constraint violation (P2002)
+        if (createError.code === 'P2002') {
+          return res.status(400).json({ 
+            success: false, 
+            message: 'Friend request already exists or you are already friends' 
+          });
+        }
+        throw createError;
       }
-      throw createError;
     }
 
     // Send in-app notification
@@ -132,6 +145,7 @@ router.post('/request', protect, async (req, res, next) => {
 // @access  Private
 router.put('/accept/:requestId', protect, async (req, res, next) => {
   try {
+    const userId = req.user.id;
     const friendRequest = await prisma.friend.findUnique({
       where: { id: req.params.requestId }
     });
@@ -151,36 +165,8 @@ router.put('/accept/:requestId', protect, async (req, res, next) => {
 
     const updated = await prisma.friend.update({
       where: { id: req.params.requestId },
-      data: {
-          message: friendRequest.message || null, status: 'accepted' }
+      data: { status: 'accepted' }
     });
-
-    let initialMessage = null;
-
-    // If there was a message attached to the friend request, create it as a DM now
-    if (friendRequest.message && friendRequest.message.trim().length > 0) {
-      initialMessage = await prisma.directMessage.create({
-        data: {
-          message: friendRequest.message || null,
-          fromUserId: friendRequest.fromUserId,
-          toUserId: friendRequest.toUserId,
-          content: friendRequest.message,
-          read: false
-        },
-        include: {
-          fromUser: { select: { id: true, username: true, avatar: true } },
-          toUser: { select: { id: true, username: true, avatar: true } }
-        }
-      });
-      // Format to match what the frontend expects
-      initialMessage = {
-        ...initialMessage,
-        _id: initialMessage.id,
-        message: initialMessage.content,
-        sender: { ...initialMessage.fromUser, _id: initialMessage.fromUser.id },
-        recipient: { ...initialMessage.toUser, _id: initialMessage.toUser.id }
-      };
-    }
 
     // Notify requester with in-app notification
     await NotificationService.createNotification({
@@ -196,28 +182,39 @@ router.put('/accept/:requestId', protect, async (req, res, next) => {
       req.user.username
     ).catch(err => logger.error('Push notification error for friend acceptance:', err));
 
-    // Emit socket event
+    // Emit socket event (to BOTH users so UI updates instantly without navigation)
     const io = req.app.get('io');
     if (io) {
+      const requester = await prisma.user.findUnique({
+        where: { id: friendRequest.fromUserId },
+        select: { id: true, username: true },
+      }).catch(() => null);
+
       io.to(`user:${friendRequest.fromUserId}`).emit('notification', {
         type: 'friend_accepted',
         title: 'Friend Request Accepted',
         message: `${req.user.username} accepted your friend request`,
-        friendId: req.user.id
+        friendId: userId
       });
       
-      io.to(`user:${friendRequest.fromUserId}`).emit('friend:accepted', {
+      const payload = {
+        requestId: friendRequest.id,
         friend: {
-          _id: req.user.id,
+          _id: userId,
           username: req.user.username
         }
+      };
+
+      // Requester (sender of the request)
+      io.to(`user:${friendRequest.fromUserId}`).emit('friend:accepted', payload);
+      // Recipient (the one who accepted) also needs the event to update local caches immediately
+      io.to(`user:${friendRequest.toUserId}`).emit('friend:accepted', {
+        requestId: friendRequest.id,
+        friend: {
+          _id: friendRequest.fromUserId,
+          username: requester?.username || 'Friend'
+        }
       });
-      
-      // Emit the initial message to BOTH users if it exists
-      if (initialMessage) {
-        io.to(`user:${friendRequest.toUserId}`).emit('new_direct_message', initialMessage);
-        io.to(`user:${friendRequest.fromUserId}`).emit('new_direct_message', initialMessage);
-      }
     }
 
     res.json({ success: true, friendRequest: { ...updated, _id: updated.id } });
@@ -246,8 +243,7 @@ router.put('/reject/:requestId', protect, async (req, res, next) => {
 
     await prisma.friend.update({
       where: { id: req.params.requestId },
-      data: {
-          message: requestMessage || null, status: 'rejected' }
+      data: { status: 'rejected' }
     });
 
     res.json({ success: true, message: 'Friend request rejected' });
@@ -310,8 +306,7 @@ router.delete('/:friendId', protect, async (req, res, next) => {
           const newDeletedFor = deletedForStr ? `${deletedForStr},${userId}` : userId;
           await prisma.directMessage.update({
             where: { id: msg.id },
-            data: {
-          message: requestMessage || null, deletedFor: newDeletedFor }
+            data: { deletedFor: newDeletedFor }
           });
         }
       }
@@ -320,8 +315,10 @@ router.delete('/:friendId', protect, async (req, res, next) => {
     // Emit socket events so both users update UI
     const io = req.app.get('io');
     if (io) {
-      io.to(`user:${userId}`).emit('friend:removed', { friendId });
-      io.to(`user:${friendId}`).emit('friend:removed', { friendId: userId });
+      // Tell the initiator they removed someone (they lose history)
+      io.to(`user:${userId}`).emit('friend:removed', { friendId, removedBy: userId });
+      // Tell the receiver they were removed (they keep history)
+      io.to(`user:${friendId}`).emit('friend:removed', { friendId: userId, removedBy: userId });
     }
 
     res.json({ success: true, message: 'Friend removed' });

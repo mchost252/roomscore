@@ -6,7 +6,8 @@
  *   IF user is a participant             → [Leave Task]
  *   IF user is NOT a participant         → [Join Task]
  *
- * Solid #0A0A0A background. Renders as transparent modal with scrim.
+ * v2: Solid opaque background, proper scrim, theme tokens,
+ *     premium styling with accent-colored action rows.
  */
 import React from 'react';
 import {
@@ -23,11 +24,8 @@ import { Task } from '../../types/room';
 interface TaskOptionsSheetProps {
   visible: boolean;
   task: Task | null;
-  /** The current user's ID */
   currentUserId: string;
-  /** Whether the current user is the room owner */
   isRoomOwner: boolean;
-  /** Whether the current user is a participant of this task */
   isParticipant: boolean;
   onClose: () => void;
   onEdit?: (task: Task) => void;
@@ -62,67 +60,68 @@ const TaskOptionsSheet: React.FC<TaskOptionsSheetProps> = ({
 
   const options: OptionItem[] = [];
 
-  // Smart context logic:
-  // Task creator OR room owner → Edit + Delete
   const isTaskCreator = !!task.createdBy && task.createdBy === currentUserId;
 
   if (isTaskCreator || isRoomOwner) {
     options.push({
       icon: 'create-outline',
       label: 'Edit Task',
-      color: '#a5b4fc',
+      color: colors.primary,
       action: () => { onEdit?.(task); onClose(); },
     });
     options.push({
       icon: 'trash-outline',
       label: 'Delete Task',
-      color: '#ef4444',
+      color: colors.error || '#ef4444',
       destructive: true,
       action: () => { onDelete?.(task); onClose(); },
     });
   }
 
-  // Participant (but not creator/owner viewing) → Leave
   if (isParticipant && !isTaskCreator && !isRoomOwner) {
     options.push({
       icon: 'exit-outline',
       label: 'Leave Task',
-      color: '#f59e0b',
+      color: colors.warning || '#f59e0b',
       action: () => { onLeave?.(task); onClose(); },
     });
   }
 
-  // Not a participant → Join
   if (!isParticipant) {
     options.push({
       icon: 'enter-outline',
       label: 'Join Task',
-      color: '#22d3ee',
+      color: colors.success || '#22c55e',
       action: () => { onJoin?.(task); onClose(); },
     });
   }
 
-  // If the task creator is also a participant, still show Leave as an option
   if (isParticipant && (isTaskCreator || isRoomOwner)) {
     options.push({
       icon: 'exit-outline',
       label: 'Leave Task',
-      color: '#f59e0b',
+      color: colors.warning || '#f59e0b',
       action: () => { onLeave?.(task); onClose(); },
     });
   }
 
+  // Solid backgrounds
+  const sheetBg = isDark ? '#141424' : '#ffffff';
+  const handleBarColor = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)';
+  const dividerColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+  const cancelBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
+
   return (
     <Modal visible={visible} animationType="fade" transparent>
       <TouchableOpacity
-        style={styles.scrim}
+        style={[styles.scrim, { backgroundColor: colors.overlay }]}
         activeOpacity={1}
         onPress={onClose}
       />
       <View style={styles.sheetContainer}>
-        <View style={[styles.sheet, { backgroundColor: colors.surfaceElevated }]}>
+        <View style={[styles.sheet, { backgroundColor: sheetBg }]}>
           {/* Handle bar */}
-          <View style={[styles.handleBar, { backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }]} />
+          <View style={[styles.handleBar, { backgroundColor: handleBarColor }]} />
 
           {/* Task title */}
           <Text style={[styles.taskTitle, { color: colors.text }]} numberOfLines={1}>
@@ -141,7 +140,7 @@ const TaskOptionsSheet: React.FC<TaskOptionsSheetProps> = ({
           </Text>
 
           {/* Divider */}
-          <View style={[styles.divider, { backgroundColor: colors.borderColor }]} />
+          <View style={[styles.divider, { backgroundColor: dividerColor }]} />
 
           {/* Options */}
           {options.map((opt, i) => (
@@ -151,7 +150,7 @@ const TaskOptionsSheet: React.FC<TaskOptionsSheetProps> = ({
               onPress={opt.action}
               activeOpacity={0.7}
             >
-              <View style={[styles.optionIcon, { backgroundColor: opt.color + '15' }]}>
+              <View style={[styles.optionIcon, { backgroundColor: opt.color + '12' }]}>
                 <Ionicons name={opt.icon} size={18} color={opt.color} />
               </View>
               <Text
@@ -162,12 +161,13 @@ const TaskOptionsSheet: React.FC<TaskOptionsSheetProps> = ({
               >
                 {opt.label}
               </Text>
+              <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} />
             </TouchableOpacity>
           ))}
 
           {/* Cancel */}
           <TouchableOpacity
-            style={[styles.cancelRow, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)' }]}
+            style={[styles.cancelRow, { backgroundColor: cancelBg }]}
             onPress={onClose}
             activeOpacity={0.7}
           >
@@ -182,18 +182,22 @@ const TaskOptionsSheet: React.FC<TaskOptionsSheetProps> = ({
 const styles = StyleSheet.create({
   scrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.55)',
   },
   sheetContainer: {
     flex: 1,
     justifyContent: 'flex-end',
   },
   sheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     paddingTop: 12,
     paddingBottom: 34,
     paddingHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 12,
   },
   handleBar: {
     width: 36,
@@ -224,8 +228,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   optionIcon: {
-    width: 34,
-    height: 34,
+    width: 36,
+    height: 36,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
@@ -233,6 +237,7 @@ const styles = StyleSheet.create({
   optionLabel: {
     fontSize: 15,
     fontWeight: '600',
+    flex: 1,
   },
   cancelRow: {
     marginTop: 10,

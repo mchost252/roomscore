@@ -1,12 +1,13 @@
 import React, { createContext, useState, useContext, useEffect, useRef, ReactNode } from 'react';
 import axios from 'axios';
 import api from '../services/api';
-import { secureStorage } from '../services/storage';
+import { secureStorage, storage } from '../services/storage';
 import { TOKEN_KEY, REFRESH_TOKEN_KEY, API_BASE_URL } from '../constants/config';
 import { User, AuthResponse } from '../types';
 import syncEngine from '../services/syncEngine';
 import messageService from '../services/messageService';
 import sqliteService from '../services/sqliteService';
+import { initRoomDb } from '../db/roomDb';
 
 interface AuthContextType {
   user: User | null;
@@ -44,6 +45,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const initializeMessagingServices = async (userId: string, token: string) => {
     try {
       await sqliteService.initialize();
+      await initRoomDb();
     } catch (err) {
       console.warn('[Auth] SQLite init failed (non-fatal):', err);
     }
@@ -74,14 +76,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const token = await secureStorage.getItem(TOKEN_KEY);
       if (token) {
         // OPTIMISTIC: Load cached user immediately for instant UI
-        const cachedUser = await secureStorage.getItem('cached_user');
+        const cachedUser = await storage.getJSON('cached_user');
         if (cachedUser) {
-          const parsed = JSON.parse(cachedUser);
-          setUser(parsed);
+          setUser(cachedUser);
           setLoading(false);
 
           // Initialize messaging services in background (with error handling)
-          await initializeMessagingServices(parsed.id, token);
+          await initializeMessagingServices(cachedUser.id, token);
         }
         
         // Then fetch fresh data in background
@@ -116,7 +117,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const response = await api.get('/auth/profile', { timeout: 5000 });
       
       // Cache user data for next instant load
-      await secureStorage.setItem('cached_user', JSON.stringify(response.data.user));
+      await storage.setJSON('cached_user', response.data.user);
       
       setUser(response.data.user);
       setLoading(false);
@@ -125,7 +126,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       // Only logout on explicit auth errors (401)
       if (error.response?.status === 401) {
-        await secureStorage.removeItem('cached_user');
+        await storage.removeItem('cached_user');
         setLoading(false);
         await logout();
       } else {
@@ -151,7 +152,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       await secureStorage.setItem(TOKEN_KEY, token);
       await secureStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
       // Cache user for instant load next time
-      await secureStorage.setItem('cached_user', JSON.stringify(newUser));
+      await storage.setJSON('cached_user', newUser);
       
       setUser(newUser);
 
@@ -199,7 +200,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       await secureStorage.setItem(TOKEN_KEY, token);
       await secureStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
       // Cache user for instant load next time
-      await secureStorage.setItem('cached_user', JSON.stringify(newUser));
+      await storage.setJSON('cached_user', newUser);
       
       setUser(newUser);
       
@@ -242,7 +243,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } finally {
       await secureStorage.removeItem(TOKEN_KEY);
       await secureStorage.removeItem(REFRESH_TOKEN_KEY);
-      await secureStorage.removeItem('cached_user');
+      await storage.removeItem('cached_user');
       
       // Disconnect real-time services
       syncEngine.disconnect();
