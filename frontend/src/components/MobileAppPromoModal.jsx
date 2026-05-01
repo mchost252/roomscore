@@ -92,13 +92,13 @@ const MobileAppPromoModal = ({ open, onClose }) => {
             position: 'relative',
             borderRadius: '20px',
             overflow: 'hidden',
-            animation: `${floatIn} 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards`,
+            // Combine animations into a single shorthand to avoid conflicts
+            animation: `${floatIn} 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards, ${pulseGlow} 2s ease-in-out infinite`,
             // Outer glow border
             border: '2px solid rgba(123, 97, 255, 0.5)',
-            animationName: pulseGlow,
-            animationDuration: '2s',
-            animationIterationCount: 'infinite',
-            animationTimingFunction: 'ease-in-out',
+            minHeight: '200px',
+            minWidth: '300px',
+            backgroundColor: '#0a0a0f', // Dark background in case image fails/loads slow
           }}
         >
           {/* Close button / countdown - top right */}
