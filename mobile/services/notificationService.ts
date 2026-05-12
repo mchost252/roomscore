@@ -89,7 +89,7 @@ class NotificationService {
    * Schedule morning digest notification
    * "Good morning! You have 3 ongoing tasks today"
    */
-  async scheduleMorningDigest(tasks: PersonalTask[]) { return; // disabled for now
+  async scheduleMorningDigest(tasks: PersonalTask[]) {
     if (Platform.OS === 'web' || !this.preferences.enabled) return;
 
     const ongoingCount = tasks.filter(t => 
@@ -120,7 +120,7 @@ class NotificationService {
    * Schedule evening preview notification
    * "Tomorrow you have 5 tasks scheduled"
    */
-  async scheduleEveningPreview(tasks: PersonalTask[]) { return; // disabled for now
+  async scheduleEveningPreview(tasks: PersonalTask[]) {
     if (Platform.OS === 'web' || !this.preferences.enabled) return;
 
     const tomorrow = new Date();

@@ -1,7 +1,8 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Stack, usePathname } from 'expo-router';
+import { Stack, usePathname, useRouter } from 'expo-router';
 import { View, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
 import SidebarNav from '../../components/SidebarNav';
 import BottomTabBar from '../../components/BottomTabBar';
 import { NotificationProvider } from '../../context/NotificationContext';
@@ -31,9 +32,31 @@ function ScreenEntry({ children }: { children: React.ReactNode }) {
 
 export default function HomeLayout() {
   const pathname = usePathname();
+  const router = useRouter();
   const [navStyle, setNavStyle] = useState<'bottom' | 'sidebar'>('bottom');
   const [aiChatFn, setAiChatFn] = useState<() => void>(() => () => {});
   const [addTaskFn, setAddTaskFn] = useState<() => void>(() => () => {});
+
+  // ── Notification tap handler ────────────────────────────────────────────
+  // When user taps a notification, deep-link to the relevant task thread
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response.notification.request.content.data;
+      if (!data) return;
+
+      if (data.type === 'due-reminder' && data.taskId) {
+        router.push({
+          pathname: '/(home)/task-thread',
+          params: { taskId: data.taskId as string, taskTitle: response.notification.request.content.body || '' },
+        });
+      } else if (data.type === 'morning-digest' || data.type === 'evening-preview') {
+        // Navigate to home screen (tasks list)
+        router.push('/(home)');
+      }
+    });
+
+    return () => subscription.remove();
+  }, [router]);
 
   useEffect(() => {
     const load = async () => {

@@ -17,14 +17,24 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const HISTORY_KEY = '@krios:chatHistory_v2'; // New key for Groq history
 
 // ── Theme helper ─────────────────────────────────────────────────────────────
+function hexToRgb(hex: string): string {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return `${r},${g},${b}`;
+}
+
 function useT() {
   const { isDark, colors, gradients } = useTheme();
+  const primaryRgb = hexToRgb(colors.primary);
   return {
     isDark,
     bg:      colors.background.primary,
     text:    colors.text,
     textSub: colors.textSecondary,
     primary: colors.primary,
+    primaryRgb,
     border:  colors.border.primary,
     surf:    colors.surface,
     surfRgb: isDark ? '26,26,46' : '255,255,255',
@@ -102,16 +112,28 @@ export default function AIChatScreen() {
     commanderInput,
     updateCommanderInput,
     sendCommanderCommand,
+    deployQuery,
+    isCommanderWaiting,
     isCommanderLoading,
     commanderError,
-    deployQuery,
+    reloadCommander,
+    stopCommander,
   } = useTacticalCommander(undefined, user?.id, initialMessages);
 
   // Save history whenever messages change
   useEffect(() => {
     if (commanderMessages.length > 0) {
-      AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(commanderMessages));
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 150);
+      try {
+        // Keep only the last 30 messages in storage to ensure performance and prevent crashes
+        const recentMessages = commanderMessages.slice(-30);
+        AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(recentMessages));
+      } catch (e) {
+        console.warn('Failed to save chat history:', e);
+      }
+      // Optimized scroll
+      if (flatListRef.current) {
+        flatListRef.current.scrollToEnd({ animated: true });
+      }
     }
   }, [commanderMessages]);
 
@@ -125,8 +147,11 @@ export default function AIChatScreen() {
     const timestamp = (item as any).createdAt || new Date();
     const time = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    // In v3 AI SDK, tool invocations might be on the message object directly
-    const toolInvocations = (item as any).toolInvocations as any[] | undefined;
+    const messageText = getMessageText(item).trim();
+    const toolInvocations = item.parts?.filter(p => p.type === 'tool-invocation') || [];
+
+    // Hide message completely if it's completely empty (no text and no tools)
+    if (!messageText && toolInvocations.length === 0) return null;
 
     return (
       <View style={[styles.row, isUser ? styles.rowRight : styles.rowLeft]}>
@@ -136,29 +161,37 @@ export default function AIChatScreen() {
           </View>
         )}
         <View style={{ flex: 1, maxWidth: '85%' }}>
-          <View style={[
-            styles.bubble,
-            isUser
-              ? { backgroundColor: 'rgba(99,102,241,0.18)', borderColor: '#6366f133', alignSelf: 'flex-end' }
-              : { backgroundColor: `rgba(${t.surfRgb},0.92)`, borderColor: t.border, alignSelf: 'flex-start' },
-          ]}>
-            <Text style={{ 
-              fontSize: 14, 
-              color: t.text, 
-              lineHeight: 21,
-              fontFamily: !isUser ? (Platform.OS === 'ios' ? 'Menlo' : 'monospace') : undefined 
-            }}>
-              {getMessageText(item)}
-            </Text>
-          </View>
+          {messageText ? (
+            <View style={[
+              styles.bubble,
+              isUser
+                ? { backgroundColor: t.primary, borderColor: t.primary, alignSelf: 'flex-end', borderBottomRightRadius: 4 }
+                : { backgroundColor: t.isDark ? '#2A2A35' : '#F0F0F5', borderColor: 'transparent', alignSelf: 'flex-start', borderBottomLeftRadius: 4 },
+            ]}>
+              <Text style={{ 
+                fontSize: 15, 
+                color: isUser ? '#FFFFFF' : t.text, 
+                lineHeight: 22,
+                fontWeight: '400',
+              }}>
+                {messageText}
+              </Text>
+            </View>
+          ) : null}
 
           {/* Tool execution badge */}
-          {item.parts?.filter(p => p.type === 'tool-invocation').map((part: any, idx: number) => (
-            <View key={`tool-${idx}`} style={styles.toolBadge}>
-              <Ionicons name="construct-outline" size={10} color="#22d3ee" />
-              <Text style={styles.toolText}>EXECUTING: {part.toolName?.toUpperCase() || 'TOOL'}</Text>
-            </View>
-          ))}
+          {toolInvocations.map((part: any, idx: number) => {
+            const friendlyName = part.toolName === 'create_task' ? 'Creating task...' : 
+                                 part.toolName === 'update_task' ? 'Updating task...' :
+                                 part.toolName === 'delete_task' ? 'Deleting task...' :
+                                 'Gathering context...';
+            return (
+              <View key={`tool-${idx}`} style={[styles.toolBadge, { backgroundColor: `rgba(${t.primaryRgb}, 0.1)` }]}>
+                <Ionicons name="sparkles-outline" size={12} color={t.primary} />
+                <Text style={[styles.toolText, { color: t.primary, fontFamily: undefined, fontWeight: '600' }]}>{friendlyName}</Text>
+              </View>
+            );
+          })}
 
           <Text style={[styles.timeLabel, { color: t.textSub, textAlign: isUser ? 'right' : 'left' }]}>{time}</Text>
         </View>
@@ -169,7 +202,11 @@ export default function AIChatScreen() {
   if (!historyLoaded) return null;
 
   return (
-    <View style={[styles.root, { backgroundColor: t.bg }]}>
+    <KeyboardAvoidingView 
+      style={[styles.root, { backgroundColor: t.bg }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={0}
+    >
       <LinearGradient colors={t.grad} locations={[0, 0.5, 1]} start={{ x: 0.3, y: 0 }} end={{ x: 0.7, y: 1 }} style={StyleSheet.absoluteFill} />
       <LinearGradient colors={[`rgba(139,92,246,${t.isDark ? '0.15' : '0.06'})`, 'transparent']} start={{ x: 1, y: 0 }} end={{ x: 0, y: 1 }} style={StyleSheet.absoluteFill} />
 
@@ -185,11 +222,11 @@ export default function AIChatScreen() {
         </View>
 
         <View style={{ flex: 1, marginLeft: 10 }}>
-          <Text style={[styles.headerTitle, { color: t.text }]}>Krios Assistant</Text>
+          <Text style={[styles.headerTitle, { color: t.text }]}>Krios</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: isCommanderLoading ? '#22d3ee' : '#22c55e' }} />
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: isCommanderLoading ? t.primary : '#22c55e' }} />
             <Text style={[styles.headerSub, { color: t.textSub }]}>
-              {isCommanderLoading ? 'Thinking...' : 'Groq L4 Powered'}
+              {isCommanderLoading ? 'Thinking...' : 'Online'}
             </Text>
           </View>
         </View>
@@ -208,16 +245,19 @@ export default function AIChatScreen() {
         data={commanderMessages}
         keyExtractor={(m, i) => (m as any).id || i.toString()}
         renderItem={renderMessage}
+        style={{ flex: 1 }}
         contentContainerStyle={[styles.list, { paddingBottom: 12 }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        ListFooterComponent={isCommanderLoading ? (
+        maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+        ListFooterComponent={isCommanderWaiting ? (
           <View style={[styles.row, styles.rowLeft]}>
             <View style={[styles.avatarSmall, { backgroundColor: t.primary }]}>
               <Image source={require('../../assets/krios-logo.png')} style={{ width: 14, height: 14 }} resizeMode="contain" />
             </View>
-            <View style={[styles.bubble, { backgroundColor: `rgba(${t.surfRgb},0.92)`, borderColor: t.border }]}>
-              <TypingDots color={t.primary} />
+            <View style={[styles.bubble, { backgroundColor: t.isDark ? '#2A2A35' : '#F0F0F5', borderColor: 'transparent', borderBottomLeftRadius: 4 }]}>
+              <TypingDots color={t.textSub} />
             </View>
           </View>
         ) : null}
@@ -243,15 +283,11 @@ export default function AIChatScreen() {
       )}
 
       {/* ── Input bar ── */}
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 60 : 0}
-      >
-        <View style={[styles.inputBar, {
-          backgroundColor: t.isDark ? 'rgba(10,10,22,0.98)' : 'rgba(252,252,255,0.98)',
-          borderTopColor: t.border,
-          paddingBottom: insets.bottom + 12,
-        }]}>
+      <View style={[styles.inputBar, {
+        backgroundColor: t.isDark ? 'rgba(10,10,22,0.98)' : 'rgba(252,252,255,0.98)',
+        borderTopColor: t.border,
+        paddingBottom: insets.bottom + 12,
+      }]}>
           <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
             <TextInput
               style={[styles.input, {
@@ -280,14 +316,14 @@ export default function AIChatScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </KeyboardAvoidingView>
 
       {commanderError && (
         <View style={styles.errorBanner}>
-          <Text style={styles.errorText}>COMM_LINK_FAILURE: {commanderError.message}</Text>
+          <Ionicons name="alert-circle-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
+          <Text style={styles.errorText}>Oops! Something went wrong.</Text>
         </View>
       )}
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -303,7 +339,7 @@ const styles = StyleSheet.create({
   row:           { flexDirection: 'row', alignItems: 'flex-start' },
   rowLeft:       { alignSelf: 'flex-start', maxWidth: '88%' },
   rowRight:      { alignSelf: 'flex-end', maxWidth: '88%', flexDirection: 'row-reverse' },
-  bubble:        { borderRadius: 18, padding: 12, borderWidth: StyleSheet.hairlineWidth, flexShrink: 1 },
+  bubble:        { borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, borderWidth: 0, flexShrink: 1, elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2 },
   timeLabel:     { fontSize: 10, marginTop: 4, paddingHorizontal: 4 },
   quickRow:      { paddingHorizontal: 16, paddingVertical: 8, gap: 8, height: 50 },
   chip:          { borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, paddingVertical: 7, height: 34 },
@@ -314,28 +350,35 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(34,211,238,0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-    marginTop: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    marginTop: 6,
     alignSelf: 'flex-start',
   },
   toolText: {
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#22d3ee',
+    fontSize: 12,
   },
   errorBanner: {
-    backgroundColor: '#ef4444',
-    padding: 8,
+    position: 'absolute',
+    top: 80,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    backgroundColor: 'rgba(239, 68, 68, 0.9)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+    zIndex: 1000,
   },
   errorText: {
     color: '#fff',
-    fontSize: 10,
-    fontWeight: '800',
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

@@ -84,6 +84,41 @@ export default function TaskThreadScreen() {
 
   const scrollRef = useRef<ScrollView>(null);
 
+  // ── Auto-generate AI Note on mount ─────────────────────────────────────────
+  useEffect(() => {
+    if (!taskId || !token || aiNote) return; // skip if already loaded or no token yet
+    let cancelled = false;
+
+    const autoFetch = async () => {
+      setAiLoading(true);
+      try {
+        // Parse clarifications if passed from the creation flow
+        let clarifications: Record<string, string> = {};
+        if (params.clarifications) {
+          try { clarifications = JSON.parse(params.clarifications as string); } catch {}
+        }
+
+        const note = await fetchAINote({
+          taskId,
+          taskTitle: params.taskTitle as string,
+          taskType: params.taskType as string,
+          priority: params.taskPriority as string,
+          clarifications,
+          token,
+          forceRefresh: false, // use cache if available
+        });
+        if (!cancelled) setAiNote(note);
+      } catch {
+        if (!cancelled) setAiError('Could not load AI note');
+      } finally {
+        if (!cancelled) setAiLoading(false);
+      }
+    };
+
+    autoFetch();
+    return () => { cancelled = true; };
+  }, [taskId, token]);
+
   // ── Load thread messages ──────────────────────────────────────────────────
   useEffect(() => {
     const loadThread = async () => {

@@ -22,7 +22,7 @@ import KriosDatePicker from '../../components/KriosDatePicker';
 import Skia3DCard from '../../components/Skia3DCard';
 import ConfettiCelebration from '../../components/ConfettiCelebration';
 import AIClarificationSheet from '../../components/AIClarificationSheet';
-import { checkVagueness, ClarificationQuestion } from '../../services/aiNoteService';
+import { checkVagueness, ClarificationQuestion, fetchAINote } from '../../services/aiNoteService';
 import { secureStorage } from '../../services/storage';
 import { TOKEN_KEY } from '../../constants/config';
 
@@ -249,6 +249,20 @@ export default function HomeScreen() {
     setTasks(prev=>[task,...prev]);
     closeAddTask();
     showToast('Task added!');
+
+    // Fire-and-forget: pre-cache AI Note so it's ready when user views the task thread
+    secureStorage.getItem(TOKEN_KEY).then(tkn => {
+      if (tkn && task.id) {
+        fetchAINote({
+          taskId: task.id,
+          taskTitle: newTaskTitle.trim(),
+          taskType: 'daily',
+          priority: newTaskPriority,
+          token: tkn,
+          forceRefresh: false,
+        }).catch(err => console.warn('[HomeScreen] AI Note pre-cache failed:', err));
+      }
+    }).catch(() => {});
 
     // Check vagueness — if vague show clarification sheet, else go straight to thread
     try {
