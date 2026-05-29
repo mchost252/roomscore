@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<KiloTaskSystem name="KriosApp_Part1_Foundation" version="1.0">
+  <Meta>
+    <Description>Foundation, data layer, storage, and core logic primitives</Description>
+    <ExecutionOrder>1</ExecutionOrder>
+  </Meta>
+
+  <Rules>
+    <Rule>No task exceeds one responsibility</Rule>
+    <Rule>All tasks must be independently testable</Rule>
+    <Rule>No placeholder or pseudo-code allowed</Rule>
+    <Rule>All outputs must compile and run</Rule>
+  </Rules>
+
+  <!-- ================= DATA MODELS ================= -->
+
+  <Task id="T001"><Name>Define RoomDetail Interface</Name>
+    <Outputs><File>types/room.ts</File></Outputs>
+    <DoneWhen><Condition>Includes id, name, doom_clock_expiry, retention_days, user_role, group_aura</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T002"><Name>Define TaskNode Interface</Name>
+    <DependsOn>T001</DependsOn>
+    <Outputs><File>types/task.ts</File></Outputs>
+    <DoneWhen><Condition>Includes type, status, vouch_count, created_at</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T003"><Name>Define User Interface</Name>
+    <DependsOn>T001</DependsOn>
+    <Outputs><File>types/user.ts</File></Outputs>
+    <DoneWhen><Condition>User roles and aura fields defined</Condition></DoneWhen>
+  </Task>
+
+  <!-- ================= DATABASE ================= -->
+
+  <Task id="T004"><Name>Design SQLite Schema</Name>
+    <DependsOn>T001</DependsOn>
+    <Outputs><File>db/schema.sql</File></Outputs>
+    <DoneWhen><Condition>Rooms, Tasks, Nodes tables exist</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T005"><Name>Implement SQLite Init</Name>
+    <DependsOn>T004</DependsOn>
+    <Outputs><File>db/init.ts</File></Outputs>
+    <DoneWhen><Condition>DB initializes without error</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T006"><Name>CRUD: Rooms</Name>
+    <DependsOn>T005</DependsOn>
+    <Outputs><File>db/rooms.ts</File></Outputs>
+    <DoneWhen><Condition>Create, Read, Update, Delete works</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T007"><Name>CRUD: Tasks</Name>
+    <DependsOn>T005</DependsOn>
+    <Outputs><File>db/tasks.ts</File></Outputs>
+    <DoneWhen><Condition>CRUD operations verified</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T008"><Name>CRUD: Nodes</Name>
+    <DependsOn>T005</DependsOn>
+    <Outputs><File>db/nodes.ts</File></Outputs>
+    <DoneWhen><Condition>CRUD operations verified</Condition></DoneWhen>
+  </Task>
+
+  <!-- ================= LOCAL HOOKS ================= -->
+
+  <Task id="T009"><Name>useLocalData Hook</Name>
+    <DependsOn>T006</DependsOn>
+    <Outputs><File>hooks/useLocalData.ts</File></Outputs>
+    <DoneWhen><Condition>Reads/writes all entities</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T010"><Name>MMKV Setup</Name>
+    <Outputs><File>storage/mmkv.ts</File></Outputs>
+    <DoneWhen><Condition>Key-value storage operational</Condition></DoneWhen>
+  </Task>
+
+  <!-- ================= CORE LOGIC ================= -->
+
+  <Task id="T011"><Name>Doom Clock Calculation</Name>
+    <DependsOn>T001</DependsOn>
+    <Outputs><File>utils/doomClock.ts</File></Outputs>
+    <DoneWhen><Condition>Returns progress percentage correctly</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T012"><Name>Ghost Approval Engine</Name>
+    <DependsOn>T002</DependsOn>
+    <Outputs><File>utils/ghostApproval.ts</File></Outputs>
+    <DoneWhen><Condition>Auto approval after 4 hours</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T013"><Name>Aura Weight Logic</Name>
+    <DependsOn>T003</DependsOn>
+    <Outputs><File>utils/aura.ts</File></Outputs>
+    <DoneWhen><Condition>Weight multiplier correct</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T014"><Name>Vouch Logic</Name>
+    <DependsOn>T013</DependsOn>
+    <Outputs><File>utils/vouch.ts</File></Outputs>
+    <DoneWhen><Condition>Vote weight applied</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T015"><Name>5-Day Data Janitor</Name>
+    <DependsOn>T006</DependsOn>
+    <Outputs><File>utils/janitor.ts</File></Outputs>
+    <DoneWhen><Condition>Old data deleted</Condition></DoneWhen>
+  </Task>
+
+  <!-- ================= IMAGE PIPELINE ================= -->
+
+  <Task id="T016"><Name>BlurHash Generator</Name>
+    <Outputs><File>utils/blurhash.ts</File></Outputs>
+    <DoneWhen><Condition>Generates valid hash</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T017"><Name>Thumbnail Generator</Name>
+    <DependsOn>T016</DependsOn>
+    <Outputs><File>utils/thumbnail.ts</File></Outputs>
+    <DoneWhen><Condition>Creates 200px image</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T018"><Name>FastImage Wrapper</Name>
+    <DependsOn>T017</DependsOn>
+    <Outputs><File>components/CachedImage.tsx</File></Outputs>
+    <DoneWhen><Condition>Loads cached images</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T019"><Name>Media Auto Purge</Name>
+    <DependsOn>T018</DependsOn>
+    <Outputs><File>utils/mediaJanitor.ts</File></Outputs>
+    <DoneWhen><Condition>Deletes media after 5 days</Condition></DoneWhen>
+  </Task>
+
+</KiloTaskSystem>

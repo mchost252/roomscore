@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Platform, StatusBar, Image, KeyboardAvoidingView,
-  ActivityIndicator, Dimensions, Modal, Pressable,
+  ActivityIndicator, Dimensions, Modal, Pressable, Keyboard
 } from 'react-native';
 import Animated, {
   FadeIn, FadeInDown, useSharedValue, useAnimatedStyle,
@@ -68,11 +68,25 @@ export default function ChatScreen() {
   const [menuVisible, setMenuVisible] = useState(false);
   const [clearChatModalVisible, setClearChatModalVisible] = useState(false);
   const [deleteFriendModalVisible, setDeleteFriendModalVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   // Keep requestStatusRef in sync with requestStatus state
   useEffect(() => {
     requestStatusRef.current = requestStatus;
   }, [requestStatus]);
+
+  // Keyboard listeners
+  useEffect(() => {
+    const show = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e: any) => setKeyboardHeight(e.endCoordinates.height)
+    );
+    const hide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardHeight(0)
+    );
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   // Refs
   const flatListRef = useRef<FlashList<LocalDirectMessage>>(null);
@@ -707,8 +721,8 @@ export default function ChatScreen() {
       >
         <KeyboardAvoidingView
           style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 20}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={0}
         >
           {/* Curved top handle */}
           <View style={styles.sheetHandle}>
@@ -855,7 +869,7 @@ export default function ChatScreen() {
           <View style={[styles.inputWrap, {
             backgroundColor: sheetBg,
             borderTopColor: borderColor,
-            paddingBottom: insets.bottom || 12,
+            paddingBottom: keyboardHeight > 0 ? 12 : Math.max(insets.bottom, 12),
             paddingTop: 8,
           }]}>
             <MessageInput

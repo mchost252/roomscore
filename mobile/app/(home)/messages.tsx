@@ -10,7 +10,7 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, RefreshControl, Pressable, ScrollView,
   Dimensions, Platform, StatusBar, Modal, FlatList, Image,
-  KeyboardAvoidingView,
+  KeyboardAvoidingView, Keyboard,
 } from 'react-native';
 import Animated, {
   useSharedValue, useAnimatedStyle, useAnimatedScrollHandler,
@@ -24,7 +24,7 @@ import { BlurView } from 'expo-blur';
 import { Svg, Path, Defs, LinearGradient as SvgGrad, Stop } from 'react-native-svg';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
-import { HomeNavContext } from './_layout';
+import { HomeNavContext } from '../../context/HomeNavContext';
 import messageService from '../../services/messageService';
 import api from '../../services/api';
 import { LocalConversation } from '../../services/sqliteService';
@@ -71,6 +71,7 @@ export default function MessagesScreen() {
   const [navStyle, setNavStyle] = useState<'bottom' | 'sidebar'>('bottom');
   const [removeModalVisible, setRemoveModalVisible] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<LocalConversation | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   useEffect(() => {
     secureStorage.getItem('krios_nav_style').then(v => {
@@ -78,10 +79,29 @@ export default function MessagesScreen() {
     });
   }, []);
 
+  // Keyboard listeners for perfect modal input handling
+  useEffect(() => {
+    const show = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      e => setKeyboardHeight(e.endCoordinates.height)
+    );
+    const hide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardHeight(0)
+    );
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+
   // Register + button to open add friend modal (instead of task modal on home)
   const { setOpenAIChat, setOpenAddTask } = React.useContext(HomeNavContext);
   const openAddFriend = React.useCallback(() => {
     setAddFriendModalVisible(true);
+  }, []);
+  const closeAddFriend = React.useCallback(() => {
+    Keyboard.dismiss();
+    setAddFriendModalVisible(false);
+    setAddFriendSearch('');
+    setAddFriendResults([]);
   }, []);
   
   // Register callbacks on mount
@@ -537,7 +557,7 @@ export default function MessagesScreen() {
           )}
         </View>
 
-          {/* ── Conversation list (FlashList for performance) ── */}
+          {/* ── Conversation list (Switched to map to fix VirtualizedList warning) ── */}
           {loading ? (
             [1, 2, 3, 4, 5].map(i => (
               <View
@@ -552,22 +572,8 @@ export default function MessagesScreen() {
               />
             ))
           ) : (
-            <FlatList
-              data={filtered}
-              keyExtractor={(item) => `${item.friend_id}-${item.request_status || 'none'}`}
-              renderItem={({ item, index }) => (
-                <Animated.View
-                  entering={FadeInDown.delay(index * 40).springify().damping(18)}
-                >
-                  <ConversationCard
-                    conversation={item}
-                    onPress={() => goToChat(item)}
-                    onDelete={() => handleDelete(item)}
-                    isDark={isDark}
-                  />
-                </Animated.View>
-              )}
-              ListEmptyComponent={
+            <View style={{ paddingBottom: 20 }}>
+              {filtered.length === 0 ? (
                 <View style={s.emptyWrap}>
                   <LinearGradient
                     colors={['rgba(99,102,241,0.12)', 'rgba(139,92,246,0.07)']}
@@ -597,8 +603,22 @@ export default function MessagesScreen() {
                     </TouchableOpacity>
                   )}
                 </View>
-              }
-            />
+              ) : (
+                filtered.map((item, index) => (
+                  <Animated.View
+                    key={`${item.friend_id}-${item.request_status || 'none'}`}
+                    entering={FadeInDown.delay(index * 40).springify().damping(18)}
+                  >
+                    <ConversationCard
+                      conversation={item}
+                      onPress={() => goToChat(item)}
+                      onDelete={() => handleDelete(item)}
+                      isDark={isDark}
+                    />
+                  </Animated.View>
+                ))
+              )}
+            </View>
           )}
         </View>
       </Animated.ScrollView>
@@ -608,19 +628,15 @@ export default function MessagesScreen() {
         visible={addFriendModalVisible}
         animationType="slide"
         transparent={true}
-        onRequestClose={() => setAddFriendModalVisible(false)}
+        onRequestClose={closeAddFriend}
       >
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={{ flex: 1 }}
-        >
-          <View style={[s.modalOverlay, { backgroundColor: isDark ? 'rgba(8,8,16,0.6)' : 'rgba(0,0,0,0.4)' }]}>
-            <View style={[s.modalContent, { backgroundColor: bg }]}>
+        <View style={[s.modalOverlay, { backgroundColor: isDark ? 'rgba(8,8,16,0.6)' : 'rgba(0,0,0,0.4)', paddingBottom: keyboardHeight }]}>
+          <View style={[s.modalContent, { backgroundColor: bg }]}>
             {/* Header with close button */}
             <View style={[s.modalHeader, { borderBottomColor: border }]}>
               <Text style={[s.modalTitle, { color: text }]}>Message Friends</Text>
               <TouchableOpacity
-                onPress={() => setAddFriendModalVisible(false)}
+                onPress={closeAddFriend}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Ionicons name="close-outline" size={24} color={text} />
@@ -663,7 +679,7 @@ export default function MessagesScreen() {
                     style={[s.modalFriendItem, { borderBottomColor: border }]}
                     onPress={() => {
                       goToChat(item);
-                      setAddFriendModalVisible(false);
+                      closeAddFriend();
                     }}
                   >
                     <View style={[s.modalAvatarContainer, { backgroundColor: avatarColor(item.friend_id) }]}>
@@ -697,7 +713,6 @@ export default function MessagesScreen() {
             />
           </View>
         </View>
-        </KeyboardAvoidingView>
       </Modal>
 
       {/* SidebarNav is now rendered globally in _layout.tsx */}

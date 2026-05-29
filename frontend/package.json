@@ -11,6 +11,7 @@
     "@react-oauth/google": "^0.11.1",
     "axios": "^1.5.0",
     "date-fns": "^2.30.0",
+    "esbuild": "^0.18.20",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.15.0",

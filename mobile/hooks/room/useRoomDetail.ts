@@ -39,41 +39,59 @@ function getQuickCache(roomId: string) {
 async function syncToSQLite(roomId: string, room: Room, tasks: Task[], members: RoomMember[]) {
   try {
     const db = await getRoomDb();
-    // Use a transaction for atomic sync
-    await db.execAsync('BEGIN TRANSACTION;');
     
-    // 1. Sync Room
-    await db.runAsync(
-      `INSERT OR REPLACE INTO rooms (id, name, description, joinCode, isPrivate, maxMembers, chatRetentionDays, isPremium, streak, ownerId, isActive, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [room.id, room.name, room.description || '', room.joinCode, room.isPrivate ? 1 : 0, room.maxMembers, room.chatRetentionDays, room.isPremium ? 1 : 0, room.streak, room.ownerId, room.isActive ? 1 : 0, room.createdAt, room.updatedAt]
-    );
+    await db.withTransactionAsync(async () => {
+      const sanitize = (val: any) => {
+        if (val === undefined) return null;
+        if (val instanceof Date) return val.toISOString();
+        if (typeof val === 'boolean') return val ? 1 : 0;
+        return val;
+      };
 
-    // 2. Sync Tasks (Delete old, Insert new for this room)
-    await db.runAsync('DELETE FROM room_tasks WHERE roomId = ?', [roomId]);
-    for (const t of tasks) {
+      // Ensure primary keys are NEVER null to prevent SQLite crashes
+      const safeRoomId = room.id || (room as any)._id || roomId;
+
+      // 1. Sync Room
       await db.runAsync(
-        `INSERT INTO room_tasks (id, roomId, title, description, taskType, points, isActive, createdAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [t.id, roomId, t.title, t.description || '', t.taskType, t.points, t.isActive ? 1 : 0, t.createdAt || new Date().toISOString()]
+        `INSERT OR REPLACE INTO rooms (id, name, description, joinCode, isPrivate, maxMembers, chatRetentionDays, isPremium, streak, ownerId, isActive, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          safeRoomId, room.name || 'Unnamed', room.description || '', room.joinCode, 
+          room.isPrivate ? 1 : 0, room.maxMembers || 0, room.chatRetentionDays || 0, room.isPremium ? 1 : 0, 
+          room.streak || 0, room.ownerId || '', room.isActive ? 1 : 0, room.createdAt, room.updatedAt
+        ].map(sanitize)
       );
-    }
 
-    // 3. Sync Members
-    await db.runAsync('DELETE FROM room_members WHERE roomId = ?', [roomId]);
-    for (const m of members) {
-      await db.runAsync(
-        `INSERT INTO room_members (id, roomId, userId, username, avatar, isOnline, role)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [m.id, roomId, m.userId || m.id, m.username, m.avatar || null, m.isOnline ? 1 : 0, 'member']
-      );
-    }
+      // 2. Sync Tasks (Delete old, Insert new for this room)
+      await db.runAsync('DELETE FROM room_tasks WHERE roomId = ?', [roomId]);
+      for (const t of tasks) {
+        const tId = t.id || (t as any)._id || `task_${Date.now()}_${Math.random()}`;
+        await db.runAsync(
+          `INSERT INTO room_tasks (id, roomId, title, description, taskType, points, isActive, createdAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            tId, roomId, t.title || 'Untitled', t.description || '', t.taskType || 'daily', 
+            t.points || 0, t.isActive ? 1 : 0, t.createdAt || new Date().toISOString()
+          ].map(sanitize)
+        );
+      }
 
-    await db.execAsync('COMMIT;');
+      // 3. Sync Members
+      await db.runAsync('DELETE FROM room_members WHERE roomId = ?', [roomId]);
+      for (const m of members) {
+        const mId = m.id || (m as any)._id || `member_${Date.now()}_${Math.random()}`;
+        await db.runAsync(
+          `INSERT INTO room_members (id, roomId, userId, username, avatar, isOnline, role)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            mId, roomId, m.userId || m.id || (m as any)._id || mId, m.username || 'Unknown', 
+            m.avatar || null, m.isOnline ? 1 : 0, 'member'
+          ].map(sanitize)
+        );
+      }
+    });
   } catch (e) {
-    console.error('[useRoomDetail] SQLite Sync Error:', e);
-    const db = await getRoomDb();
-    await db.execAsync('ROLLBACK;');
+    console.error('[useRoomDetail] SQLite Sync Error handled gracefully:', e);
   }
 }
 

@@ -1,0 +1,200 @@
+1. The UI Layout: Minimalist Folders
+This screen is the central hub of a specific Room. It separates what the user is actively doing from what they are just watching.
+ * The Header (Information & Urgency):
+   * Left Side: A clean back arrow and the Room Title in a bold, crisp font. Underneath, a subtle subtext showing "X Members • Y Active Tasks".
+   * Right Side (The Doom Clock): Instead of a heavy 3D gauge, this is a sleek, minimalist circular progress ring. It shows the time remaining before the Room's 5-day cycle resets or expires. It stays a calm gray or accent color, only turning a subtle red when there are less than 12 hours left.
+ * The Task Folders (The FlashList):
+   * Accepted Tasks (Top Section): These are the tasks the user has explicitly joined. The "Folder" shape is achieved with a clean 1px border using your primary accent color (e.g., electric blue). The background is a solid, very dark gray.
+   * Avatar Stack: Inside the folder, a horizontal stack of minimal, circular profile pictures shows who else is doing the task. If a user is currently online/active, they get a simple 2px colored ring around their avatar.
+   * Spectator Tasks (Bottom Section): Separated by a clean divider. These are tasks the user hasn't joined. The folders are dimmed (around 40% opacity), the borders are dashed or a muted gray, and a small, elegant badge reads "Viewing Only."
+ * Action Menus: Every folder has a clean, vertical 3-dot icon in the corner. Tapping it opens a native BottomSheet (sliding up from the bottom) with quick actions: Join Task, View Details, or Leave Task.
+2. The Core Logic: The "WhatsApp" Brain
+This is how we fix the "scattered" lack of depth. The UI must be separated from the network requests to achieve that 0ms load time.
+ * The Local-First Render: When you navigate to the Room Detail Screen, the app does not ask Supabase for the tasks. It asks the local SQLite/MMKV database. The screen paints the folders instantly using whatever was saved during the last visit.
+ * The Delta Sync (Background Fetch): Milliseconds after the screen renders, a silent function fires to the backend. It says: "Fetch any task updates, new members, or point changes that happened after [Timestamp of last sync]." * The Seamless Merge: If the backend returns new data, it updates the local database. The UI then quietly updates (e.g., an avatar pops into a folder, or a task's progress bar inches forward) without throwing a loading spinner in the user's face.
+ * The 5-Day Janitor: Every time this screen mounts, a local logic check runs. It scans all tasks in the room. If any task data or message is older than 5 days, it is instantly deleted from the local phone storage to keep Krios perfectly lightweight.
+3. Gamification & States (Professional Implementation)
+We need to keep the user engaged without relying on heavy game animations that cause lag.
+ * The "Aura" Indicator: Next to the user avatars in the folder, there is no glowing animation. Instead, the Aura is represented by a crisp, static icon or border color (Bronze, Silver, Gold). This is pulled directly from the user's profile state.
+ * The "Heat" State: If a user completes 3 tasks in 24 hours, their avatar gets a subtle, static "flame" icon badge next to it. It’s a clean SVG, not a particle effect, maintaining the professional look while still rewarding the user.
+ * Weekly Sprint Points: A small pill at the top of the screen shows the user's current points for the last 7 days. This number resets locally every Sunday at midnight.
+4. The Interaction Flow
+How the user actually moves through this screen:
+ * Scroll: The user scrolls vertically through the massive folder cards. Because we are using a highly optimized list component (like FlashList), it runs at a locked 60 FPS, even with 50 tasks.
+ * Join/Leave: The user taps the 3-dot menu on a "Spectator" task and taps "Join."
+   * Optimistic Update: The folder instantly moves to the "Accepted Tasks" section, and its opacity changes to 100%.
+   * Backend: The app sends the user_id and task_id to Supabase in the background to officially log the join.
+ * Dive In: The user taps the body of an "Accepted Task" folder. The app instantly navigates to the Room Task Thread (the subway timeline screen) to start uploading proofs and chatting.
+The Next Step to Un-Scatter the Code
+Right now, if your components don't have endpoints, they are just empty shells. To make this logic work, the frontend needs to know exactly what the database looks like.
+
+I. The Room Detail Header: The "Contain & Flip" Architecture
+To fix the layout breaking, we must move away from a "Dropdown" that pushes content. Instead, we use a Fixed-Height 3D Flip Container.
+1. The Visual Look
+ * The Frame: A fixed-height glassmorphic box (approx. 180px high). It doesn't expand; it rotates.
+ * Side A (Mission Control):
+   * Room Name: Bold, professional typography in the center.
+   * Member Count: Small "X Members Online" pill on the top left.
+   * The Doom Clock: A minimalist circular stroke on the top right. It doesn't use heavy colors—just a 1px ring that slowly turns from the accent color to red as the 5-day limit nears.
+ * Side B (The Strategy Deck):
+   * The Minimalist Calendar: A horizontal row of dates (e.g., M, T, W, T, F). The current day is "Active" with a solid accent-colored circle.
+   * Room Stats: Instead of a message, this shows two small progress bars: "Group Completion %" and "Your Personal Contribution."
+2. The Interaction (The Switch)
+ * When you tap the "Arrow" or the "Room Title," the entire 180px box performs a 3D Y-Axis Rotation (180^{\circ}).
+ * Why this works: Because the height is fixed, the Task Folders below it never move. This eliminates the "black space" or layout flickering. The folders stay pinned while the "brain" of the room flips above them.
+II. The Task Thread Screen: The Soul of Krios
+This is where the actual work happens. It is a high-speed, live "Mission Feed" inspired by the Subway Timeline.
+1. The Look & Feel
+ * Background: Deep charcoal, almost black. Zero clutter.
+ * The Subway Line: A thin, 1px neon violet line runs vertically down the left side of the screen, about 40px from the edge. Every activity (message, proof, notification) is a "Node" (a small dot) on this line.
+ * The Progress Header: A sticky, slim bar at the top showing the task title (e.g., "Operation Saturn") and a horizontal progress bar showing how close the group is to finishing.
+2. Features & Content Types
+ * The Pinned Memory Wall: At the very top (below the header), there is a horizontal scroll of "Pinned Proofs." These are the best images uploaded that day, displayed as angled, polygonal thumbnails. Tapping one opens it full-screen instantly.
+ * Proof Cards (The Mission Evidence):
+   * When a user uploads a photo, it appears as a "Proof Card" attached to the Subway Line.
+   * The Shield Badges: Once uploaded, a "Pending" shield appears. After 4 hours of no admin rejection, it flips to the "Ghost Approved" neon cyan shield. If a peer vouches for it, it gets the "Vouched" violet shield.
+ * System Cards: Admin changes (like "Deadline extended") appear as slim, center-aligned purple pills that don't have avatars. They are "Events" on the timeline.
+3. Activity & Flow (The Process)
+ * Sending Proof: Tap the "+" in the input bar. The camera opens instantly. Once you snap, the image is "Optimistically" added to the local timeline with a "Uploading..." state. The user can keep chatting while the 2MB image sends in the background.
+ * Ghost Approval Logic: * Every Proof Card has an internal timer based on its created_at timestamp.
+   * The UI shows a tiny countdown: "Auto-verifying in 3h 59m."
+   * If an Admin hits "Reject," the card turns red and the points are deducted.
+ * Engagement Loops: You can "Double Tap" any node on the subway line to send a "Vouch." This adds to the user's Aura score and helps protect their proof from being challenged.
+4. The Input Bar (Minimalist Power)
+ * A very slim, floating input bar at the bottom.
+ * Left: A "Folder" icon to pick from gallery.
+ * Center: Text input area.
+ * Right: A "Camera" icon for instant snaps and a "Send" arrow.
+III. The Functional Structure (The Brain)
+To avoid the "Scattered" feel, the Thread Screen must follow these Three Laws:
+ * Joined-Only Access: If a user is a "Spectator," the input bar is hidden and replaced with a "Join Task to Participate" button. They can see the Subway Timeline but cannot "Vouch" or "Post."
+ * 5-Day Local Purge: The thread only keeps the last 5 days of messages on the phone. Older messages are purged from the local SQLite DB to keep the app "WhatsApp Fast."
+ * Real-Time Delta Sync: The thread uses a "Subscription" to Supabase. When User A posts a proof, User B’s Subway Line adds a new node instantly without a page refresh.
+📑 Summary of File Logic
+| Feature | Implementation Method | UI Element |
+|---|---|---|
+| Header Flip | Reanimated interpolate (0 to 180 deg) | 180px Fixed Container |
+| Timeline | FlashList + 1px SVG Line | Subway Nodes |
+| Verification | Client-side setInterval comparison | Ghost/Vouch Shields |
+| Data Retention | Local SQL DELETE WHERE date < 5_days | Janitor Function |
+This is the soul of Krios. 
+
+To keep Krios "WhatsApp-fast" as a solo developer, you have to stop thinking about the cloud and start thinking about the Local Device as the primary source of truth. The cloud (Supabase) is just a backup for when the phone is lost.
+Here is the deep-dive technical architecture for image optimization, caching, and background synchronization.
+I. The "Lightning" Image Pipeline
+Proof images are the heaviest part of Krios. If you load 2MB images directly into a list, the app will stutter.
+ * Triple-Tier Loading (The Progressive Blur):
+   * Tier 1 (Instant): When a user uploads proof, generate a BlurHash (a 30-character string representing a blurred version of the image). Store this string in your database.
+   * Tier 2 (Fast): Generate a Thumbnail (max 200px width) on the client before upload.
+   * Tier 3 (Full): The high-res image only loads when a user taps the "Proof Card."
+ * The "FastImage" Cache: Use react-native-fast-image. It performs aggressive disk caching. Once a user scrolls past a "Subway Node" with an image, it stays on their phone disk. It never hits the network again.
+ * Auto-Purge (The Janitor): To prevent Krios from taking up 10GB of phone space, the app runs a "Janitor" function every midnight:
+   * Scan the local media folder.
+   * Delete any image file whose associated task_id is older than 5 days.
+II. Caching & Persistence Architecture
+You need a "Two-Speed" storage system to handle high-frequency UI updates and persistent data.
+| Tool | Purpose | Data Type |
+|---|---|---|
+| MMKV | Ultra-fast Key/Value | UI State (Flip Header position, Theme, Last Sync Time). |
+| SQLite | Relational Database | Messages, Tasks, Rooms, Member Lists. |
+| Supabase | Cloud Sync | Global State, Authentication, Storage. |
+The Delta-Sync Logic:
+When the user opens a Room, the app asks: SELECT MAX(updated_at) FROM local_tasks WHERE room_id = x. It sends that single timestamp to Supabase. Supabase returns only the 3-4 things that changed since that second. This makes "loading" happen in under 100ms.
+III. The Data "Shape" (The Blueprint)
+To keep the code from becoming "scattered," you must strictly follow these TypeScript interfaces. This is the Soul of your data.
+interface RoomDetail {
+  id: string;
+  name: string;
+  doom_clock_expiry: string; // ISO Timestamp
+  retention_days: number; // 5 by default
+  user_role: 'OWNER' | 'ADMIN' | 'MEMBER' | 'SPECTATOR';
+  group_aura: number;
+}
+
+interface TaskNode {
+  id: string;
+  type: 'MESSAGE' | 'PROOF' | 'SYSTEM_ALERT';
+  author_id: string;
+  content_text?: string;
+  media_url?: string;
+  blur_hash?: string;
+  status: 'PENDING' | 'GHOST_APPROVED' | 'VOUCHED' | 'REJECTED';
+  vouch_count: number;
+  created_at: string; // ISO Timestamp for Ghost Timer
+}
+
+IV. Logic Calculations (The Performance Math)
+1. The Doom Clock (GPU-Efficient)
+Don't use a JS setInterval to move the clock; it will lag the UI. Instead, calculate the "Progress Percentage" once when the screen mounts and use react-native-reanimated to handle the visual transition.
+2. The Ghost Approval Timer
+Instead of a live countdown for every message, use a Static Target.
+ * When a proof is rendered, calculate: const isApproved = Date.now() > (created_at + 14400000) (4 hours in ms).
+ * If false, display the "Pending" shield.
+ * If true and the status is still "Pending," the UI automatically shows the "Ghost Approved" shield locally while firing a background update to the server.
+3. Weighted Aura (The Trust Shield)
+To calculate a user's "Vote Weight" for a Vouch, use a simple multiplier:
+ * Base Weight: 1.0
+ * Aura Bonus: +0.5 if Aura > 500 (Gold status)
+ * Owner Bonus: +5.0 (Instant approval)
+V. Background Sync (The "WhatsApp" Secret)
+To ensure the user doesn't have to wait for "Connecting..." every time they open a room:
+ * Supabase Realtime: Use a WebSocket connection while the app is in the foreground. When a "Node" is added to the Subway Line by someone else, it "pops" into the local SQLite DB and the UI updates instantly.
+ * Background Tasks: Use Expo BackgroundFetch. Every 15 minutes, the app wakes up for 5 seconds, performs a Delta-Sync, and downloads new messages.
+ * Silent Notifications: When an admin changes a setting, send a high-priority "Silent Push Notification" (FCM). The app receives it, updates the local database, and moves the folders around—all while the user's phone is in their pocket.
+🧠 Managing Complexity
+As a solo dev, the "Smartest" thing you can do is Modularize.
+ * One file for useSync.ts (handles all Supabase fetching).
+ * One file for useLocalData.ts (handles SQLite reading).
+ * The UI components only listen to useLocalData. They never even know Supabase exists.
+
+To ensure Krios has that "soul" while staying professional and minimalist, we are moving away from heavy textures and leaning into Architectural Depth. This means we use shadows, 1px borders, and spatial layers to create a "High-End" feel that is still lightweight enough to run on an old HP EliteBook or a mid-range phone.
+Here is the exhaustive creative breakdown and the Master UI Architect Prompt for your AI.
+I. The Creative UI Philosophy: "The Tactical Archive"
+1. The Room Detail Screen (The Folder Hub)
+ * The Container-Flip Header: Instead of a menu that pushes content down, the header is a 3D revolving block.
+   * Side A (Mission Control): Displays the Room Name in a massive, high-contrast typeface. The "Doom Clock" is a thin, high-resolution stroke around the edge of the container.
+   * Side B (The Strategy Deck): When flipped, it reveals the minimalist calendar. Instead of a grid, it’s a single horizontal line of numbers. The "Active" day is a solid, inverted-color circle (e.g., White on Black).
+ * The Folder Cards: We use "Spatial Priority."
+   * Accepted Folders: These have a 1px solid border and a subtle inner shadow that makes them look slightly sunken into the screen.
+   * Spectator Folders: These have a dashed border and lower text contrast, making them feel like "ghost" entries.
+2. The Task Thread Screen (The Subway Timeline)
+ * The "Line of Truth": A vertical 1px neon violet line that never breaks. This line represents the continuity of the task.
+ * Proof Cards: Each photo isn't just a square; it has a "Crest" at the top. This crest holds the user's name and their "Aura" level.
+ * The Shield Stamps: The "Ghost Approved" shield is small, sharp, and sits at the bottom right of the image, appearing as if it was physically stamped onto the photo.
+II. Visual Mode Logic (Dark vs. Light)
+| Element | Dark Mode (Stealth) | Light Mode (Clean) |
+|---|---|---|
+| Base Background | #0A0A0A (Deep Charcoal) | #F5F7FA (Cool Soft Gray) |
+| Surface/Card | #1A1A1A (Lighter Black) | #FFFFFF (Pure White) |
+| Accents | Neon Cyan / Violet | Deep Navy / Emerald |
+| Borders | rgba(255,255,255,0.1) | rgba(0,0,0,0.05) |
+| Typography | Inter / SF Pro (White/Gray) | Inter / SF Pro (Black/Dark Gray) |
+III. The "Master Architect" AI Prompt
+Copy this prompt to give your AI the exact creative and technical direction needed to build these screens.
+[COPY FROM HERE]
+ROLE:
+You are a Senior UI/UX Engineer and React Native Expert. Your goal is to build the "Soul" of the Krios app using a "Tactical Minimalist" aesthetic. This must be WhatsApp-fast, local-first, and professional.
+CORE DIRECTIVES:
+ * Dynamic Theme Support: Implement a robust ThemeContext that supports a Stealth Dark Mode (Deep Charcoal) and a Clean Light Mode (Soft Cool Gray).
+ * The Room Detail Screen (Folder Hub):
+   * FlipHeader Component: Create a fixed-height container (180px) using react-native-reanimated. Implement a 3D Y-axis flip that toggles between "Room Title/Doom Clock" and a "Horizontal Line Calendar."
+   * TaskFolder Component: Use a minimalist folder design. "Accepted" tasks have a 1px solid border. "Spectator" tasks have a dashed border and 0.4 opacity. Use @shopify/flash-list for the scroll performance.
+ * The Task Thread Screen (The Subway Timeline):
+   * The Timeline: Render a 1px vertical neon line (Subway Line) on the left margin.
+   * Nodes: Every activity must be a node on this line. Use a FlashList to handle a mix of Message, ProofCard, and SystemNotification components.
+   * Proof Verification: Implement the "Ghost Shield" logic. Every image proof must show a timer that auto-flips from "Pending" to "Ghost Approved" (Neon Cyan Shield) after 4 hours based on created_at.
+ * The Room Creation Modal:
+   * Use a native slide-up modal (presentation: 'modal').
+   * Design ultra-clean, high-padding text inputs with a focus on typography. Include a minimalist slider for the "5-Day Data Retention" policy.
+PERFORMANCE & LOGIC CONSTRAINTS:
+ * Optimistic UI: Every action (Join, Post, Vouch) must update the local state instantly.
+ * Local-First Sync: The UI must read from a local store (Zustand/MMKV). Supabase is only for background delta-syncs.
+ * Image Optimization: Implement a FastImage component with a BlurHash placeholder for all proof cards.
+ * Zero Lag: Use Native Driver for all animations. No useState for layout-heavy shifts.
+OUTPUT:
+Provide the complete, production-ready TypeScript files for RoomDetailScreen.tsx, TaskThreadScreen.tsx, and RoomCreationModal.tsx. Include the necessary helper functions for the Ghost Approval timer and the Delta-Sync logic.
+[END COPY]
+🚀 Implementation Strategy
+ * Define the Types: First, make sure the AI defines the Room, Task, and Node interfaces so the data isn't "scattered."
+ * The Header First: Tell the AI to build the FlipHeader as a standalone component. This fixes your "black space" issue because the height is locked.
+ * The Subway Logic: Ensure the AI treats the Task Thread as a single list of different item types. This is how WhatsApp handles messages, dates, and media in one smooth scroll.

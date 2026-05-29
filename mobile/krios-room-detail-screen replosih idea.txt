@@ -1,0 +1,117 @@
+KRIOS ROOM DETAIL — COMPLETE EXPERIENCE SUMMARY
+This is the Room Detail Screen system, designed as a layered, interactive workspace focused on clarity, participation, and momentum.
+🧩 1. ENTRY STATE (DEFAULT VIEW)
+When a user enters a room, they see a clean, structured interface divided into 4 main layers:
+🔷 A. Header (Primary Identity Block)
+Displays:
+Room name
+Member avatars
+Includes:
+A subtle branded Krios visual embedded on the right side
+→ softly faded into the background toward the left
+A thin room energy/progress bar sits beneath the title
+🔁 Interaction:
+The header is swipeable (left/right)
+🔄 Header Back View (On Swipe)
+When swiped:
+Reveals room metadata:
+Room code
+Number of members
+Room duration (days active)
+Message retention settings
+✅ Important:
+Only the header layer moves, not the entire screen
+Works whether the calendar is open or closed
+📅 B. Calendar (Docked + Expandable System)
+The calendar is attached to the header and behaves like a layered control system.
+🧱 Collapsed State (Default)
+Displays:
+A horizontal week view (Mon–Sun)
+Current day highlighted
+Small indicators under each day:
+🟢 Completed tasks → green dot
+⚪ Due/available → gray dot
+🔘 Upcoming → low emphasis
+🔽 Expanded State (Level 1)
+Triggered by tapping the calendar
+Expands downward like a dropdown connected to the header
+Shows:
+Enlarged weekly layout
+Clearer day indicators
+🔽🔽 Full Expansion (Level 2)
+Expands further into a full calendar grid
+Each day becomes a circular node:
+Green → completed
+Gray → due
+Dim → upcoming
+⚙️ Behavior Rules:
+Expansion is layered and progressive
+Not a modal — remains part of the screen
+Can be closed and reopened anytime
+Header swipe still works even when calendar is open
+⚡ C. Room Pulse (Live Activity Layer)
+This is a fixed-height section placed between the calendar and task list.
+🎯 Purpose:
+Displays real-time room activity and notifications
+🧱 Structure:
+Shows only ONE notification at a time
+Content includes:
+Task completions
+Proof submissions
+System nudges (e.g. reminders)
+🔁 Behavior:
+Content updates dynamically
+Previous activity is stored in backend/database
+Can be reused or surfaced again if needed
+Does NOT expand — remains compact and controlled
+💡 Value:
+Adds life and awareness to the room
+Keeps users engaged without cluttering UI
+✅ D. Task Section (Structured & State-Based)
+Tasks are grouped into three states, each with clear hierarchy and behavior.
+🟢 1. Active Tasks (Default Open)
+Tasks the user has accepted
+Visually emphasized:
+Slight elevation
+Stronger contrast
+Clean progress indicator inside the card
+Includes:
+Task title
+Deadline
+Member avatars
+Progress bar
+⏳ 2. Pending Tasks (Collapsed)
+Tasks user completed but others haven’t
+Default state:
+Collapsed
+Only header + divider line visible
+👀 3. Spectating Tasks (Collapsed)
+Tasks user did not join
+Default state:
+Collapsed
+Lower visual emphasis
+📂 Section Behavior
+Each section has a header
+Sections can be:
+Expanded
+Collapsed
+Only Active Tasks stay open by default
+🎯 KEY DESIGN PRINCIPLES
+1. Layered Interaction System
+Header, Calendar, and Content operate independently
+No blocking interactions
+2. State-Driven UI
+Tasks visually communicate:
+Ownership
+Progress
+Status
+3. Minimal but Powerful
+No unnecessary UI noise
+Every section has a purpose
+4. Real, Professional UI Direction
+Clean
+Flat with subtle depth
+No exaggerated 3D or “galaxy” effects
+Feels like a real production app
+🧠 IN ONE LINE (Pitch Version)
+Krios Room is a layered productivity space where users track tasks, monitor progress, and stay updated through an interactive header, expandable calendar, live activity pulse, and state-driven task system.

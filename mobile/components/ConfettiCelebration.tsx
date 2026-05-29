@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useCallback } from 'react';
-import { View, Animated, Dimensions, StyleSheet, Easing } from 'react-native';
+import { View, Animated, Dimensions, StyleSheet, Easing, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 
 const { width: W, height: H } = Dimensions.get('window');
@@ -38,19 +38,34 @@ const COLORS: Record<string, string[]> = {
 };
 
 const PIECE_COUNTS: Record<string, number> = {
-  urgent: 70,
-  high: 50,
-  medium: 35,
-  low: 20,
+  urgent: 28,
+  high: 22,
+  medium: 16,
+  low: 10,
 };
+
+const SHAPES: Array<ConfettiPiece['shape']> = ['circle', 'square', 'line'];
 
 export default React.memo(function ConfettiCelebration({ show, priority, onComplete }: Props) {
   const confettiPieces = useRef<ConfettiPiece[]>([]);
   const [isVisible, setIsVisible] = React.useState(false);
   const animationRef = useRef<Animated.CompositeAnimation | null>(null);
+  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const completedRef = useRef(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
+  const completeOnce = useCallback(() => {
+    if (completedRef.current) return;
+    completedRef.current = true;
+    setIsVisible(false);
+    onComplete?.();
+  }, [onComplete]);
+
   const cleanup = useCallback(() => {
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
+    }
     if (animationRef.current) {
       animationRef.current.stop();
       animationRef.current = null;
@@ -60,12 +75,17 @@ export default React.memo(function ConfettiCelebration({ show, priority, onCompl
   }, []);
 
   useEffect(() => {
-    if (!show) return;
+    if (!show) {
+      cleanup();
+      setIsVisible(false);
+      return;
+    }
 
     cleanup();
+    completedRef.current = false;
     setIsVisible(true);
 
-    const pieceCount = PIECE_COUNTS[priority] || 35;
+    const pieceCount = PIECE_COUNTS[priority] || PIECE_COUNTS.medium;
     const colors = COLORS[priority] || COLORS.medium;
 
     confettiPieces.current = Array.from({ length: pieceCount }, (_, i) => ({
@@ -77,11 +97,12 @@ export default React.memo(function ConfettiCelebration({ show, priority, onCompl
       opacity: new Animated.Value(0),
       sway: new Animated.Value(0),
       color: colors[Math.floor(Math.random() * colors.length)],
-      shape: (['circle', 'square', 'line'] as const)[Math.floor(Math.random() * 3)],
+      shape: SHAPES[Math.floor(Math.random() * SHAPES.length)],
     }));
 
-    // Impact Haptics
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (Platform.OS !== 'web') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    }
     
     const shake = Animated.sequence([
       Animated.timing(shakeAnim, { toValue: 8, duration: 40, useNativeDriver: true }),
@@ -90,10 +111,8 @@ export default React.memo(function ConfettiCelebration({ show, priority, onCompl
     ]);
 
     const animations = confettiPieces.current.map((piece) => {
-      const duration = 2800 + Math.random() * 2000;
-      const swayAmount = 25 + Math.random() * 55;
-      const swayDuration = 700 + Math.random() * 700;
-      const iterations = Math.ceil(duration / (swayDuration * 2));
+      const duration = 1450 + Math.random() * 950;
+      const swayAmount = -30 + Math.random() * 60;
 
       const fallAnim = Animated.timing(piece.y, {
         toValue: H + 120,
@@ -102,18 +121,16 @@ export default React.memo(function ConfettiCelebration({ show, priority, onCompl
         useNativeDriver: true,
       });
 
-      // FINITE sway instead of infinite loop to prevent freezing
-      const swayAnim = Animated.loop(
-        Animated.sequence([
-          Animated.timing(piece.sway, { toValue: swayAmount, duration: swayDuration, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-          Animated.timing(piece.sway, { toValue: -swayAmount, duration: swayDuration, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        ]),
-        { iterations }
-      );
+      const swayAnim = Animated.timing(piece.sway, {
+        toValue: swayAmount,
+        duration,
+        easing: Easing.inOut(Easing.sin),
+        useNativeDriver: true,
+      });
 
       const opacityAnim = Animated.sequence([
-        Animated.timing(piece.opacity, { toValue: 1, duration: 600, useNativeDriver: true }),
-        Animated.timing(piece.opacity, { toValue: 0, duration: 600, delay: duration - 1200, useNativeDriver: true }),
+        Animated.timing(piece.opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
+        Animated.timing(piece.opacity, { toValue: 0, duration: 360, delay: Math.max(240, duration - 720), useNativeDriver: true }),
       ]);
 
       const rotateAnim = Animated.timing(piece.rotate, {
@@ -128,19 +145,22 @@ export default React.memo(function ConfettiCelebration({ show, priority, onCompl
 
     const finalAnimation = Animated.parallel([
       shake,
-      Animated.stagger(12, animations),
+      Animated.stagger(3, animations),
     ]);
 
     animationRef.current = finalAnimation;
     finalAnimation.start(({ finished }) => {
       if (finished) {
-        setIsVisible(false);
-        onComplete?.();
+        completeOnce();
       }
     });
+    hideTimeoutRef.current = setTimeout(() => {
+      cleanup();
+      completeOnce();
+    }, 2600);
 
     return cleanup;
-  }, [show, priority, cleanup, onComplete]);
+  }, [show, priority, cleanup, completeOnce]);
 
   if (!isVisible) return null;
 
@@ -156,9 +176,9 @@ export default React.memo(function ConfettiCelebration({ show, priority, onCompl
             styles.piece,
             {
               backgroundColor: piece.color,
-              width: piece.shape === 'line' ? 3 : 10,
-              height: piece.shape === 'line' ? 14 : 10,
-              borderRadius: piece.shape === 'circle' ? 5 : 1,
+              width: piece.shape === 'line' ? 2 : 8,
+              height: piece.shape === 'line' ? 12 : 8,
+              borderRadius: piece.shape === 'circle' ? 4 : 1,
               opacity: piece.opacity,
               transform: [
                 { translateX: piece.x },

@@ -54,7 +54,7 @@ export default function Index() {
       setHasCheckedOnboarding(true);
       setIsReady(true);
     }
-  }, [user, authLoading, segments, router]);
+  }, [user, authLoading]); // intentional omit segments and router to prevent loops
 
   useEffect(() => {
     checkRouting();

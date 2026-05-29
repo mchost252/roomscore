@@ -236,10 +236,11 @@ export async function fetchAINote(params: {
   taskType?: string;
   priority?: string;
   clarifications?: Record<string, string>;
+  notesContext?: string;
   token: string;
   forceRefresh?: boolean;
 }): Promise<AINote | null> {
-  const { taskId, taskTitle, taskType, priority, clarifications = {}, token, forceRefresh = false } = params;
+  const { taskId, taskTitle, taskType, priority, clarifications = {}, notesContext = '', token, forceRefresh = false } = params;
 
   // 1. Return cache if available and not forcing refresh
   if (!forceRefresh) {
@@ -272,6 +273,7 @@ export async function fetchAINote(params: {
         taskType,
         priority,
         clarifications,
+        notesContext,
         userProfile,
       }),
     });
@@ -307,15 +309,7 @@ export async function fetchAINote(params: {
 
     return note;
   } catch (err) {
-    console.warn('[AINote] Fetch failed, checking cache fallback:', err);
-    // Last resort: return stale cache even if expired
-    try {
-      const raw = await AsyncStorage.getItem(cacheKey(taskId));
-      if (raw) {
-        const stale: AINote = JSON.parse(raw);
-        return { ...stale, fromCache: true };
-      }
-    } catch {}
+    console.warn('[AINote] Fetch failed, no live AI note available:', err);
     return null;
   }
 }

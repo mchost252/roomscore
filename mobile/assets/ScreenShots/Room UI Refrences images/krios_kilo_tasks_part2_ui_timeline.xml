@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<KiloTaskSystem name="KriosApp_Part2_UI" version="1.0">
+  <Meta>
+    <Description>UI components and interaction layer</Description>
+    <ExecutionOrder>2</ExecutionOrder>
+  </Meta>
+
+  <!-- ================= ROOM SCREEN ================= -->
+
+  <Task id="T020"><Name>FlipHeader Component</Name>
+    <Outputs><File>components/FlipHeader.tsx</File></Outputs>
+    <DoneWhen><Condition>3D flip works</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T021"><Name>Calendar Strip</Name>
+    <DependsOn>T020</DependsOn>
+    <Outputs><File>components/Calendar.tsx</File></Outputs>
+    <DoneWhen><Condition>Shows current day</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T022"><Name>Room Stats Bars</Name>
+    <DependsOn>T020</DependsOn>
+    <Outputs><File>components/StatsBars.tsx</File></Outputs>
+    <DoneWhen><Condition>Progress bars render</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T023"><Name>TaskFolder UI</Name>
+    <Outputs><File>components/TaskFolder.tsx</File></Outputs>
+    <DoneWhen><Condition>Accepted vs Spectator states visible</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T024"><Name>Avatar Stack</Name>
+    <DependsOn>T023</DependsOn>
+    <Outputs><File>components/AvatarStack.tsx</File></Outputs>
+    <DoneWhen><Condition>Stack renders correctly</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T025"><Name>3-dot Action Menu</Name>
+    <DependsOn>T023</DependsOn>
+    <Outputs><File>components/TaskMenu.tsx</File></Outputs>
+    <DoneWhen><Condition>Menu opens and actions trigger</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T026"><Name>RoomDetailScreen</Name>
+    <DependsOn>T020</DependsOn>
+    <Outputs><File>screens/RoomDetailScreen.tsx</File></Outputs>
+    <DoneWhen><Condition>All components integrated</Condition></DoneWhen>
+  </Task>
+
+  <!-- ================= TIMELINE ================= -->
+
+  <Task id="T027"><Name>Timeline Layout</Name>
+    <Outputs><File>components/Timeline.tsx</File></Outputs>
+    <DoneWhen><Condition>Vertical line renders</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T028"><Name>Node Renderer</Name>
+    <DependsOn>T027</DependsOn>
+    <Outputs><File>components/NodeRenderer.tsx</File></Outputs>
+    <DoneWhen><Condition>Handles all node types</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T029"><Name>Proof Card UI</Name>
+    <DependsOn>T028</DependsOn>
+    <Outputs><File>components/ProofCard.tsx</File></Outputs>
+    <DoneWhen><Condition>Shows image and status</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T030"><Name>System Card UI</Name>
+    <DependsOn>T028</DependsOn>
+    <Outputs><File>components/SystemCard.tsx</File></Outputs>
+    <DoneWhen><Condition>Centered alert card works</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T031"><Name>Pinned Memory Wall</Name>
+    <DependsOn>T029</DependsOn>
+    <Outputs><File>components/PinnedWall.tsx</File></Outputs>
+    <DoneWhen><Condition>Horizontal scroll works</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T032"><Name>Input Bar</Name>
+    <Outputs><File>components/InputBar.tsx</File></Outputs>
+    <DoneWhen><Condition>Camera and send work</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T033"><Name>TaskThreadScreen</Name>
+    <DependsOn>T027</DependsOn>
+    <Outputs><File>screens/TaskThreadScreen.tsx</File></Outputs>
+    <DoneWhen><Condition>Full timeline works</Condition></DoneWhen>
+  </Task>
+
+</KiloTaskSystem>

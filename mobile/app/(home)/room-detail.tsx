@@ -481,6 +481,20 @@ const RoomDetailScreen: React.FC = () => {
             <Text style={[styles.navTitle, { color: isDark ? '#fff' : '#000' }]} numberOfLines={1}>
               {room?.name || 'Room'}
             </Text>
+            <View style={styles.navStatusLine}>
+              <View style={styles.navStatusItem}>
+                <View style={[styles.navStatusDot, { backgroundColor: '#22c55e' }]} />
+                <Text style={[styles.navStatusText, { color: '#22c55e' }]}>
+                  {activeTasks.length} ACTIVE OPS
+                </Text>
+              </View>
+              <View style={styles.navStatusItem}>
+                <Ionicons name="wifi" size={10} color="#22c55e" />
+                <Text style={[styles.navStatusText, { color: '#22c55e' }]}>
+                  CONNECTED
+                </Text>
+              </View>
+            </View>
           </Animated.View>
 
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -698,17 +712,7 @@ const RoomDetailScreen: React.FC = () => {
         userId={userId} 
       />
 
-      {/* ── Floating Comms Button ───────────────────────────────────────── */}
-      <TouchableOpacity 
-        style={[styles.commsFab, { backgroundColor: colors.primary, bottom: insets.bottom + 20 }]} 
-        onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-          setShowScout(true);
-        }}
-      >
-        <Ionicons name="radio-outline" size={28} color="#fff" />
-        <View style={styles.commsPulse} />
-      </TouchableOpacity>
+      {/* Comms FAB removed — Scout is accessed via other entry points */}
     </GestureHandlerRootView>
   );
 };
@@ -742,6 +746,27 @@ const styles = StyleSheet.create({
   navTitle: {
     fontSize: 17,
     fontWeight: '800',
+  },
+  navStatusLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 1,
+  },
+  navStatusItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  navStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  navStatusText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   navBorder: {
     position: 'absolute',
@@ -783,29 +808,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-  commsFab: {
-    position: 'absolute',
-    right: 20,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 8,
-    shadowColor: '#6366f1',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    zIndex: 2000,
-  },
-  commsPulse: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    borderRadius: 30,
-    borderWidth: 2,
-    borderColor: '#fff',
-    opacity: 0.2,
+  commsFabRemoved: {
+    // Comms FAB has been removed
   },
 });
 

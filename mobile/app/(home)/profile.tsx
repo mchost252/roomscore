@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Pressable,
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Dimensions, TextInput, Keyboard, Platform, Image,
+  Dimensions, TextInput, Keyboard, Platform, Image, ImageBackground,
   InteractionManager,
 } from 'react-native';
 // Optional dependency (so bundling doesn't fail if not installed yet)
@@ -63,6 +63,8 @@ const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
 const HERO_SIZE = 88;
 const MINI_SIZE = 32;
 const COLLAPSE_AT = 130; // scroll px where hero fully collapses
+// Banner ends at the midpoint of the avatar (paddingTop 100 + half avatar 44)
+const BANNER_HEIGHT = 144;
 
 type TabKey = 'about' | 'activity' | 'achievements';
 
@@ -174,6 +176,8 @@ export default function ProfileScreen() {
   const [saving, setSaving] = useState(false);
   const [localBio, setLocalBio] = useState('');
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [bannerUri, setBannerUri] = useState<string | null>(null);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
   const [activityReady, setActivityReady] = useState(false);
   const [activitySkeleton, setActivitySkeleton] = useState(false);
 
@@ -191,6 +195,15 @@ export default function ProfileScreen() {
       setLocalBio(user.bio);
     }
   }, [user?.bio]);
+
+  // Load locally cached banner on mount
+  useEffect(() => {
+    if (user?.id) {
+      imageStorageService.getBanner(user.id).then(uri => {
+        if (uri) setBannerUri(uri);
+      });
+    }
+  }, [user?.id]);
 
   // Theme tokens
   const C = {
@@ -226,6 +239,14 @@ export default function ProfileScreen() {
   // Header bg opacity
   const headerBgStyle = useAnimatedStyle(() => ({
     opacity: interpolate(scrollY.value, [0, COLLAPSE_AT * 0.65], [0, 1], Extrapolation.CLAMP),
+  }));
+  // Header icons (back + settings): hidden at top, fade in on scroll
+  const headerIconsStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [0, COLLAPSE_AT * 0.5], [0, 1], Extrapolation.CLAMP),
+  }));
+  // Banner: fades out as user scrolls
+  const bannerFadeStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [0, COLLAPSE_AT * 0.7], [1, 0], Extrapolation.CLAMP),
   }));
 
   /* ── Entrance - removed for instant render ── */
@@ -341,6 +362,35 @@ export default function ProfileScreen() {
       setUploadingAvatar(false);
     }
   }, [updateProfile, user]);
+
+  const pickBanner = useCallback(async () => {
+    try {
+      if (Platform.OS === 'web') { setInlineError('Changing banner from web is not supported yet.'); return; }
+      if (!ImagePicker) { setInlineError('expo-image-picker is not installed.'); return; }
+      setUploadingBanner(true);
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) { setInlineError('Please allow photo access to change your banner.'); return; }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.8,
+        base64: true,
+      });
+      if (result.canceled) return;
+      const asset = result.assets?.[0];
+      if (!asset?.base64) { setInlineError('Could not read image data.'); return; }
+      const mime = (asset as any).mimeType || 'image/jpeg';
+      const dataUri = `data:${mime};base64,${asset.base64}`;
+      if (user?.id) await imageStorageService.saveBanner(user.id, dataUri);
+      setBannerUri(dataUri);
+      setInlineError(null);
+    } catch (e: any) {
+      setInlineError(e?.message || 'Could not pick banner image');
+    } finally {
+      setUploadingBanner(false);
+    }
+  }, [user]);
 
   const stats = [
     { icon: 'checkmark-done', label: 'Tasks Done', value: total, color: '#10B981' },
@@ -485,10 +535,12 @@ export default function ProfileScreen() {
           <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 1, backgroundColor: C.border }, headerBgStyle]} />
 
           <View style={st.headerRow}>
-            <TouchableOpacity onPress={() => router.back()}
-              style={[st.hdrBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderColor: C.border }]}>
-              <Ionicons name="chevron-back" size={22} color={C.text} />
-            </TouchableOpacity>
+            <Animated.View style={headerIconsStyle}>
+              <TouchableOpacity onPress={() => router.back()}
+                style={[st.hdrBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderColor: C.border }]}>
+                <Ionicons name="chevron-back" size={22} color={C.text} />
+              </TouchableOpacity>
+            </Animated.View>
 
             <View style={st.hdrCenter}>
               {/* "Profile" label — fades out */}
@@ -509,11 +561,13 @@ export default function ProfileScreen() {
               </Animated.View>
             </View>
 
-            <TouchableOpacity
-              style={[st.hdrBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderColor: C.border }]}
-              onPress={() => router.push('/(home)/settings')}>
-              <Ionicons name="settings-outline" size={18} color={C.text} />
-            </TouchableOpacity>
+            <Animated.View style={headerIconsStyle}>
+              <TouchableOpacity
+                style={[st.hdrBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderColor: C.border }]}
+                onPress={() => router.push('/(home)/settings')}>
+                <Ionicons name="settings-outline" size={18} color={C.text} />
+              </TouchableOpacity>
+            </Animated.View>
           </View>
         </View>
 
@@ -522,37 +576,66 @@ export default function ProfileScreen() {
           contentContainerStyle={{ paddingBottom: 40, paddingHorizontal: 20 }}
           onScroll={onScroll} scrollEventThrottle={16} keyboardShouldPersistTaps="handled">
 
-          {/* Hero */}
-          <View style={st.hero}>
-            <Animated.View style={heroAvStyle}>
-              <TouchableOpacity activeOpacity={0.85} onPress={pickAvatar} disabled={uploadingAvatar}>
-                <View style={[st.heroAv, { overflow: 'hidden' }]}>
-                  {user?.avatar ? (
-                    <Image source={{ uri: user.avatar }} style={{ width: '100%', height: '100%' }} />
-                  ) : (
-                    <LinearGradient colors={['#6366f1', '#8b5cf6', '#a855f7'] as any}
-                      start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill}>
-                      <Text style={st.heroAvTxt}>{initial}</Text>
-                    </LinearGradient>
-                  )}
+          {/* ── Banner + Hero ── */}
+          <View style={st.heroWrapper}>
+            {/* Banner image — fades out on scroll */}
+            <Animated.View style={[st.banner, bannerFadeStyle]}>
+              <ImageBackground
+                source={bannerUri ? { uri: bannerUri } : require('../../assets/profile_bg_default.png')}
+                style={StyleSheet.absoluteFill}
+                resizeMode="cover"
+              >
+                {/* Dark gradient overlay for text contrast */}
+                <LinearGradient
+                  colors={['transparent', 'rgba(0,0,0,0.55)']}
+                  start={{ x: 0, y: 0.3 }} end={{ x: 0, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                {/* Banner camera icon — bottom right */}
+                <TouchableOpacity
+                  onPress={pickBanner}
+                  disabled={uploadingBanner}
+                  style={st.bannerCamBtn}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name={uploadingBanner ? 'cloud-upload-outline' : 'camera-outline'} size={15} color="#fff" />
+                </TouchableOpacity>
+              </ImageBackground>
+            </Animated.View>
 
-                  <TouchableOpacity
-                    onPress={pickAvatar}
-                    activeOpacity={0.85}
-                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                    style={st.camBadge}
-                  >
-                    <Ionicons name={uploadingAvatar ? 'cloud-upload-outline' : 'camera-outline'} size={14} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-              </TouchableOpacity>
-            </Animated.View>
-            <Animated.View style={[st.heroInfo, heroTxtStyle]}>
-              <Text style={[st.username, { color: C.text }]}>{user?.username || 'User'}</Text>
-              <Text style={[st.email, { color: C.sec }]}>{user?.email || 'user@example.com'}</Text>
-              <Text style={[st.tapHint, { color: C.sec }]}>{uploadingAvatar ? 'Updating photo…' : 'Tap photo to change'}</Text>
-            </Animated.View>
+            {/* Avatar — overlaps banner bottom by half */}
+            <View style={st.heroAvatarRow}>
+              <Animated.View style={heroAvStyle}>
+                <TouchableOpacity activeOpacity={0.85} onPress={pickAvatar} disabled={uploadingAvatar}>
+                  <View style={[st.heroAv, { overflow: 'hidden' }]}>
+                    {user?.avatar ? (
+                      <Image source={{ uri: user.avatar }} style={{ width: '100%', height: '100%' }} />
+                    ) : (
+                      <LinearGradient colors={['#6366f1', '#8b5cf6', '#a855f7'] as any}
+                        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill}>
+                        <Text style={st.heroAvTxt}>{initial}</Text>
+                      </LinearGradient>
+                    )}
+                    <TouchableOpacity
+                      onPress={pickAvatar}
+                      activeOpacity={0.85}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                      style={st.camBadge}
+                    >
+                      <Ionicons name={uploadingAvatar ? 'cloud-upload-outline' : 'camera-outline'} size={14} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
+              </Animated.View>
+            </View>
           </View>
+
+          {/* Hero info below banner */}
+          <Animated.View style={[st.heroInfo, heroTxtStyle]}>
+            <Text style={[st.username, { color: C.text }]}>{user?.username || 'User'}</Text>
+            <Text style={[st.email, { color: C.sec }]}>{user?.email || 'user@example.com'}</Text>
+            <Text style={[st.tapHint, { color: C.sec }]}>{uploadingAvatar ? 'Updating photo…' : 'Tap photo to change'}</Text>
+          </Animated.View>
 
           {/* Stats 2x2 */}
           <View style={st.statsGrid}>
@@ -638,6 +721,13 @@ const st = StyleSheet.create({
 
   // Hero
   hero: { alignItems: 'center', paddingTop: 100, marginBottom: 24 },
+  heroWrapper: { marginBottom: 8 },
+  banner: { height: BANNER_HEIGHT, overflow: 'hidden' },
+  heroAvatarRow: {
+    alignItems: 'center',
+    marginTop: -(HERO_SIZE / 2),
+    marginBottom: 8,
+  },
   heroAv: {
     width: HERO_SIZE, height: HERO_SIZE, borderRadius: HERO_SIZE / 2,
     justifyContent: 'center', alignItems: 'center',
@@ -645,7 +735,8 @@ const st = StyleSheet.create({
   },
   heroAvTxt: { fontSize: 36, fontWeight: '800', color: '#fff', textShadowColor: 'rgba(0,0,0,0.2)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
   camBadge: { position: 'absolute', right: 6, bottom: 6, width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(99,102,241,0.95)', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'rgba(255,255,255,0.9)' },
-  heroInfo: { alignItems: 'center', marginTop: 14 },
+  bannerCamBtn: { position: 'absolute', right: 12, bottom: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
+  heroInfo: { alignItems: 'center', marginTop: 4, marginBottom: 20 },
   tapHint: { marginTop: 6, fontSize: 12, fontWeight: '500' },
   username: { fontSize: 24, fontWeight: '800', letterSpacing: -0.5, marginBottom: 4 },
   email: { fontSize: 13, fontWeight: '500' },

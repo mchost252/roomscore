@@ -30,10 +30,12 @@ export default function ProofUploadModal({ visible, onClose, onSkip, onUpload, m
     }
     const res = await ImagePicker.launchCameraAsync({
       allowsEditing: true,
-      quality: 0.7,
+      quality: 0.5,
+      base64: true,
     });
-    if (!res.canceled && res.assets[0].uri) {
-      setSelectedImage(res.assets[0].uri);
+    if (!res.canceled && res.assets[0].base64) {
+      const mime = res.assets[0].uri.endsWith('.png') ? 'image/png' : 'image/jpeg';
+      setSelectedImage(`data:${mime};base64,${res.assets[0].base64}`);
     }
   };
 
@@ -45,11 +47,13 @@ export default function ProofUploadModal({ visible, onClose, onSkip, onUpload, m
     }
     const res = await ImagePicker.launchImageLibraryAsync({
       allowsEditing: true,
-      quality: 0.7,
+      quality: 0.5,
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      base64: true,
     });
-    if (!res.canceled && res.assets[0].uri) {
-      setSelectedImage(res.assets[0].uri);
+    if (!res.canceled && res.assets[0].base64) {
+      const mime = res.assets[0].uri.endsWith('.png') ? 'image/png' : 'image/jpeg';
+      setSelectedImage(`data:${mime};base64,${res.assets[0].base64}`);
     }
   };
 

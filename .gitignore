@@ -32,6 +32,9 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+nul
+**/nul
+mobile/.git_disabled/
 
 # Testing
 coverage/

@@ -14,24 +14,28 @@ const ITEM_H  = 48;
 const K_SIZE  = 52;
 const OPEN_W  = 68;
 const LABEL_W = 220;
-const N = 7; // nav items count
-const OPEN_H  = K_SIZE + N * ITEM_H + 8;
-
 const NAV_ITEMS = [
   { icon: 'home',                label: 'Home',     route: '/(home)',          active: ['/', '/(home)', '/(home)/index', '/index'] },
   { icon: 'briefcase-outline',   label: 'Rooms',    route: '/(home)/rooms',    active: ['/(home)/rooms', '/rooms'] },
   { icon: 'chatbubbles-outline', label: 'Messages', route: '/(home)/messages', active: ['/(home)/messages', '/messages'] },
   { icon: 'person-outline',      label: 'Profile',  route: '/(home)/profile',  active: ['/(home)/profile', '/profile'] },
   { icon: 'settings-outline',    label: 'Settings', route: '/(home)/settings', active: ['/(home)/settings', '/settings'] },
-  { icon: 'chatbubble-ellipses', label: 'Krios AI', route: 'ai',               active: [] },
   { icon: 'add-circle-outline',  label: 'Add Task', route: 'add',              active: [] },
 ] as const;
 
 const FADE_ROUTES = ['/profile', '/settings', '/rooms', '/chat', '/(home)/profile', '/(home)/settings', '/(home)/rooms', '/(home)/chat'];
 
-interface Props { onAIPress: () => void; onAddTask: () => void; }
+const N = NAV_ITEMS.length; // nav items count
+const OPEN_H  = K_SIZE + N * ITEM_H + 8;
 
-export default function SidebarNav({ onAIPress, onAddTask }: Props) {
+interface Props {
+  activeTabIndex?: number;
+  onAIPress: () => void;
+  onAddTask: () => void;
+  onNavigate?: (route: string) => void;
+}
+
+export default function SidebarNav({ activeTabIndex, onAIPress, onAddTask, onNavigate }: Props) {
   const { colors, isDark } = useTheme();
   const router   = useRouter();
   const pathname = usePathname();
@@ -141,14 +145,14 @@ export default function SidebarNav({ onAIPress, onAddTask }: Props) {
       return;
     }
     doClose();
-    // Increase the timeout slightly to allow the close spring animation to fully resolve 
-    // before locking the JS thread with React Navigation's heavy unmount/mount cycles.
+    // Give the close state one frame so taps feel instant without racing the collapse.
     setTimeout(() => {
       if      (route === 'ai')  { onAIPress(); }
       else if (route === 'add') { onAddTask(); }
+      else if (onNavigate && route.startsWith('/(home)') && route !== '/(home)/settings') { onNavigate(route); }
       else                      { router.push(route as any); }
-    }, 150);
-  }, [onAIPress, onAddTask, router, doClose]);
+    }, 16);
+  }, [onAIPress, onAddTask, onNavigate, router, doClose]);
 
   // Animated styles
   const pillStyle = useAnimatedStyle(() => ({
@@ -178,39 +182,61 @@ export default function SidebarNav({ onAIPress, onAddTask }: Props) {
         style={[styles.pill, { backgroundColor: bg, borderColor: border }, pillStyle]}
       >
         {/* Logo button — always visible, does NOT fade */}
-        <TouchableOpacity style={styles.kBtn} onPress={onKPress} activeOpacity={0.75}>
+        <TouchableOpacity 
+          style={styles.kBtn} 
+          onPress={onKPress} 
+          onLongPress={onAIPress}
+          activeOpacity={0.75}
+        >
           <View style={[styles.kCircle, {
             backgroundColor: isDark ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.1)',
             borderColor: P + '44',
             borderWidth: 1,
           }]}>
-            <Ionicons name="key" size={22} color={P} />
+            <Image 
+              source={require('../assets/krios-logo.png')} 
+              style={styles.kLogo} 
+              resizeMode="contain"
+            />
           </View>
         </TouchableOpacity>
 
         {/* Nav items — these DO fade on certain routes */}
         <Animated.View style={[styles.items, itemsStyle]}>
           {NAV_ITEMS.map((item, i) => {
-            const isActive = item.active.some((a: string) => {
+            const primaryTabIndex =
+              item.route === '/(home)' ? 0 :
+              item.route === '/(home)/rooms' ? 1 :
+              item.route === '/(home)/messages' ? 2 :
+              item.route === '/(home)/profile' ? 3 :
+              undefined;
+            const routeActive = item.active.some((a: string) => {
               if (a === '/' || a === '/(home)' || a === '/(home)/index' || a === '/index') {
                 return pathname === a; // strict equality for home routes
               }
               return pathname === a || pathname.startsWith(a + '/');
             });
-            const isAI     = item.route === 'ai';
+            const isSettingsPath = pathname === '/settings' || pathname === '/(home)/settings';
+            const isActive = primaryTabIndex !== undefined && activeTabIndex !== undefined
+              ? activeTabIndex === primaryTabIndex && !isSettingsPath
+              : routeActive;
+            const isCurrentRoute = routeActive && (
+              item.route === 'add' ||
+              pathname === item.route ||
+              (item.route === '/(home)' && (pathname === '/' || pathname === '/(home)' || pathname === '/(home)/index'))
+            );
             const isAdd    = item.route === 'add';
-            const iColor   = isActive ? P : isAI ? P : isAdd ? '#22c55e' : textC;
+            const iColor   = isActive ? P : isAdd ? '#22c55e' : textC;
             return (
               <TouchableOpacity
                 key={i}
                 style={[styles.item, isActive && { backgroundColor: `${P}15` }]}
-                onPress={() => navigate(item.route, isActive || false)}
+                onPress={() => navigate(item.route, isCurrentRoute || false)}
                 activeOpacity={0.7}
               >
                 {isActive && <View style={[styles.activeDot, { backgroundColor: P }]} />}
                 <View style={[
                   styles.iconBox,
-                  isAI  && { backgroundColor: `${P}15` },
                   isAdd && { backgroundColor: 'rgba(34,197,94,0.1)' },
                 ]}>
                   <View>

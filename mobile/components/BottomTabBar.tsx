@@ -12,9 +12,13 @@ import messageService from '../services/messageService';
  * Extracted so it can be reused on Messages and other screens.
  */
 export default function BottomTabBar({
+  activeTabIndex,
   onAddTask,
+  onNavigate,
 }: {
+  activeTabIndex?: number;
   onAddTask: () => void;
+  onNavigate?: (route: string) => void;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -43,39 +47,49 @@ export default function BottomTabBar({
     };
   }, [refreshUnread]);
 
-  const isHomeActive = pathname === '/' || pathname === '/(home)' || pathname === '/(home)/index';
-  const isRoomsActive = pathname.includes('/rooms');
-  const isMessagesActive = pathname.includes('/messages');
-  const isProfileActive = pathname.includes('/profile');
+  const pathTabIndex = pathname.includes('/rooms')
+    ? 1
+    : pathname.includes('/messages') || pathname.includes('/chat')
+      ? 2
+      : pathname.includes('/profile') || pathname.includes('/settings')
+        ? 3
+        : 0;
+  const displayTabIndex = activeTabIndex ?? pathTabIndex;
+
+  const isHomeActive = displayTabIndex === 0;
+  const isRoomsActive = displayTabIndex === 1;
+  const isMessagesActive = displayTabIndex === 2;
+  const isProfileActive = displayTabIndex === 3;
+
+  const isHomeRoute = pathname === '/' || pathname === '/(home)' || pathname === '/(home)/index';
+  const isRoomsRoute = pathname === '/rooms' || pathname === '/(home)/rooms';
+  const isMessagesRoute = pathname === '/messages' || pathname === '/(home)/messages';
+  const isProfileRoute = pathname === '/profile' || pathname === '/(home)/profile';
 
   const handleNavigation = useCallback((route: string, isActive: boolean) => {
     if (!isActive) {
-      router.push(route);
+      if (onNavigate) onNavigate(route);
+      else router.push(route);
     }
     // If already active, do nothing to prevent re-render/shake
-  }, [router]);
+  }, [onNavigate, router]);
 
   return (
-    <>
-      {/* Background shell */}
-      <View
-        style={{
-          position: 'absolute', zIndex: 1,
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: insets.bottom + 56,
-          backgroundColor: isDark ? '#16162a' : '#ffffff',
-          borderTopLeftRadius: 28,
-          borderTopRightRadius: 28,
-          borderTopWidth: 1.5,
-          borderColor: isDark ? 'rgba(99,102,241,0.3)' : 'rgba(99,102,241,0.2)',
-        }}
-      />
-
-      <View style={[s.tabBar, { paddingTop: 8, paddingBottom: Math.max(insets.bottom, 16) }]}>
+    <View
+      style={{
+        position: 'absolute',
+        bottom: 0, left: 0, right: 0,
+        backgroundColor: isDark ? '#16162a' : '#ffffff',
+        borderTopLeftRadius: 28,
+        borderTopRightRadius: 28,
+        borderTopWidth: 1.5,
+        borderColor: isDark ? 'rgba(99,102,241,0.3)' : 'rgba(99,102,241,0.2)',
+        paddingBottom: Math.max(insets.bottom, 10),
+      }}
+    >
+      <View style={s.tabBarContent}>
         {/* Home */}
-        <TouchableOpacity style={s.tabItem} onPress={() => handleNavigation('/(home)', isHomeActive)}>
+        <TouchableOpacity style={s.tabItem} onPress={() => handleNavigation('/(home)', isHomeRoute)}>
           <Ionicons 
             name={isHomeActive ? 'home' : 'home-outline'} 
             size={22} 
@@ -87,7 +101,7 @@ export default function BottomTabBar({
         </TouchableOpacity>
 
         {/* Rooms */}
-        <TouchableOpacity style={s.tabItem} onPress={() => handleNavigation('/(home)/rooms', isRoomsActive)}>
+        <TouchableOpacity style={s.tabItem} onPress={() => handleNavigation('/(home)/rooms', isRoomsRoute)}>
           <Ionicons 
             name={isRoomsActive ? 'planet' : 'planet-outline'} 
             size={22} 
@@ -99,7 +113,7 @@ export default function BottomTabBar({
         </TouchableOpacity>
 
         {/* Center FAB */}
-        <View style={{ width: 72, alignItems: 'center', marginTop: -30 }}>
+        <View style={{ width: 72, alignItems: 'center', marginTop: -24 }}>
           <TouchableOpacity
             onPress={onAddTask}
             activeOpacity={0.85}
@@ -117,7 +131,7 @@ export default function BottomTabBar({
         </View>
 
         {/* Messages */}
-        <TouchableOpacity style={s.tabItem} onPress={() => handleNavigation('/(home)/messages', isMessagesActive)}>
+        <TouchableOpacity style={s.tabItem} onPress={() => handleNavigation('/(home)/messages', isMessagesRoute)}>
           <View>
             <Ionicons 
               name={isMessagesActive ? 'chatbubbles' : 'chatbubbles-outline'} 
@@ -125,7 +139,7 @@ export default function BottomTabBar({
               color={isMessagesActive ? primary : textHint} 
             />
             {isMessagesActive && (
-              <View style={[s.tabActiveDot, { backgroundColor: primary, position: 'absolute', zIndex: 1, bottom: -12, alignSelf: 'center' }]} />
+              <View style={[s.tabActiveDot, { backgroundColor: primary, position: 'absolute', bottom: -12, alignSelf: 'center' }]} />
             )}
             {unreadCount > 0 && (
               <View style={s.unreadBadge}>
@@ -136,7 +150,7 @@ export default function BottomTabBar({
         </TouchableOpacity>
 
         {/* Profile */}
-        <TouchableOpacity style={s.tabItem} onPress={() => handleNavigation('/(home)/profile', isProfileActive)}>
+        <TouchableOpacity style={s.tabItem} onPress={() => handleNavigation('/(home)/profile', isProfileRoute)}>
           <Ionicons 
             name={isProfileActive ? 'person' : 'person-outline'} 
             size={22} 
@@ -147,28 +161,21 @@ export default function BottomTabBar({
           )}
         </TouchableOpacity>
       </View>
-
-      {/* Thin top edge line */}
-      <View style={{ position: 'absolute', zIndex: 1, left: 0, right: 0, bottom: insets.bottom + 64, height: 1, backgroundColor: border, opacity: 0.7 }} />
-    </>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
-  tabBar: {
-    position: 'absolute', zIndex: 1,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 105,
+  tabBarContent: {
+    height: 65,
     paddingHorizontal: 22,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'transparent',
   },
   tabItem: { alignItems: 'center', justifyContent: 'center', width: 44, height: 44 },
   tabActiveDot: { width: 4, height: 4, borderRadius: 2, marginTop: 4 },
+
   fab: {
     width: 58,
     height: 58,
@@ -177,13 +184,13 @@ const s = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.7,
     shadowRadius: 20,
-    elevation: 20,
+    elevation: 10,
   },
   fabGrad: { flex: 1, borderRadius: 29, alignItems: 'center', justifyContent: 'center', },
   unreadBadge: {
-    position: 'absolute', zIndex: 1,
-    top: -4,
-    right: -8,
+    position: 'absolute',
+    top: -6,
+    right: -10,
     backgroundColor: '#6366f1',
     borderRadius: 8,
     minWidth: 16,

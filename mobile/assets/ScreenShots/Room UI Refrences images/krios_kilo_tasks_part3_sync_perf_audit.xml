@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<KiloTaskSystem name="KriosApp_Part3_Sync_Performance" version="1.0">
+  <Meta>
+    <Description>Sync, realtime, performance, and audit</Description>
+    <ExecutionOrder>3</ExecutionOrder>
+  </Meta>
+
+  <!-- ================= SYNC ================= -->
+
+  <Task id="T034"><Name>Delta Sync Hook</Name>
+    <Outputs><File>hooks/useSync.ts</File></Outputs>
+    <DoneWhen><Condition>Fetches only new data</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T035"><Name>Realtime Subscription</Name>
+    <DependsOn>T034</DependsOn>
+    <Outputs><File>services/realtime.ts</File></Outputs>
+    <DoneWhen><Condition>Live updates received</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T036"><Name>Background Fetch</Name>
+    <DependsOn>T034</DependsOn>
+    <Outputs><File>services/backgroundFetch.ts</File></Outputs>
+    <DoneWhen><Condition>Runs every 15 minutes</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T037"><Name>Silent Push Handler</Name>
+    <DependsOn>T035</DependsOn>
+    <Outputs><File>services/push.ts</File></Outputs>
+    <DoneWhen><Condition>Updates local DB silently</Condition></DoneWhen>
+  </Task>
+
+  <!-- ================= PERFORMANCE ================= -->
+
+  <Task id="T038"><Name>FlashList Optimization</Name>
+    <Outputs><File>utils/listPerf.ts</File></Outputs>
+    <DoneWhen><Condition>Maintains 60 FPS</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T039"><Name>Animation Optimization</Name>
+    <Outputs><File>utils/animation.ts</File></Outputs>
+    <DoneWhen><Condition>No JS thread blocking</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T040"><Name>Memory Optimization</Name>
+    <Outputs><File>utils/memory.ts</File></Outputs>
+    <DoneWhen><Condition>No leaks detected</Condition></DoneWhen>
+  </Task>
+
+  <!-- ================= PERMISSIONS ================= -->
+
+  <Task id="T041"><Name>Spectator Mode</Name>
+    <Outputs><File>utils/permissions.ts</File></Outputs>
+    <DoneWhen><Condition>Input disabled for spectators</Condition></DoneWhen>
+  </Task>
+
+  <!-- ================= FINAL AUDIT ================= -->
+
+  <Task id="T042"><Name>System Integration Test</Name>
+    <Outputs><File>tests/integration.test.ts</File></Outputs>
+    <DoneWhen><Condition>All modules interact correctly</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T043"><Name>Performance Audit</Name>
+    <Outputs><File>audit/performance.md</File></Outputs>
+    <DoneWhen><Condition>No major bottlenecks</Condition></DoneWhen>
+  </Task>
+
+  <Task id="T044"><Name>Final Code Review</Name>
+    <Outputs><File>audit/review.md</File></Outputs>
+    <DoneWhen><Condition>No missing features</Condition></DoneWhen>
+  </Task>
+
+</KiloTaskSystem>

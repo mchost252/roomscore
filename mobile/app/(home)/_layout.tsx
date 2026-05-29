@@ -1,33 +1,28 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { Stack, usePathname, useRouter } from 'expo-router';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, PanResponder } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import SidebarNav from '../../components/SidebarNav';
 import BottomTabBar from '../../components/BottomTabBar';
 import { NotificationProvider } from '../../context/NotificationContext';
+import { HomeNavContext } from '../../context/HomeNavContext';
 
-// Context so index.tsx can register its openAIChat / openAddTask handlers
-export const HomeNavContext = React.createContext<{
-  openAIChat: () => void;
-  openAddTask: () => void;
-  setOpenAIChat: (fn: () => void) => void;
-  setOpenAddTask: (fn: () => void) => void;
-}>({
-  openAIChat: () => {},
-  openAddTask: () => {},
-  setOpenAIChat: () => {},
-  setOpenAddTask: () => {},
-});
+const HOME_TAB_ROUTES = ['/(home)', '/(home)/rooms', '/(home)/messages', '/(home)/profile'];
+const HOME_TAB_COUNT = HOME_TAB_ROUTES.length;
+const SWIPE_DISTANCE_THRESHOLD = 34;
+const SWIPE_VELOCITY_THRESHOLD = 0.22;
 
-// Screen wrapper - disabled animations for instant render
-function ScreenEntry({ children }: { children: React.ReactNode }) {
-  // No animation - instant render for faster navigation
-  return (
-    <View style={{ flex: 1 }}>
-      {children}
-    </View>
-  );
+function isPrimaryHomePath(pathname: string) {
+  return pathname === '/' ||
+    pathname === '/(home)' ||
+    pathname === '/(home)/index' ||
+    pathname === '/rooms' ||
+    pathname === '/(home)/rooms' ||
+    pathname === '/messages' ||
+    pathname === '/(home)/messages' ||
+    pathname === '/profile' ||
+    pathname === '/(home)/profile';
 }
 
 export default function HomeLayout() {
@@ -36,6 +31,8 @@ export default function HomeLayout() {
   const [navStyle, setNavStyle] = useState<'bottom' | 'sidebar'>('bottom');
   const [aiChatFn, setAiChatFn] = useState<() => void>(() => () => {});
   const [addTaskFn, setAddTaskFn] = useState<() => void>(() => () => {});
+  const [homeTabAnimation, setHomeTabAnimation] = useState<'slide_from_right' | 'slide_from_left'>('slide_from_right');
+  const [optimisticHomeTabIndex, setOptimisticHomeTabIndex] = useState<number | null>(null);
 
   // ── Notification tap handler ────────────────────────────────────────────
   // When user taps a notification, deep-link to the relevant task thread
@@ -69,58 +66,98 @@ export default function HomeLayout() {
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    const prefetch = (router as any).prefetch;
+    if (typeof prefetch !== 'function') return;
+    HOME_TAB_ROUTES.forEach((route, index) => {
+      setTimeout(() => prefetch(route), index * 120);
+    });
+  }, [router]);
+
   const setOpenAIChatStable = useCallback((fn: () => void) => setAiChatFn(() => fn), []);
   const setOpenAddTaskStable = useCallback((fn: () => void) => setAddTaskFn(() => fn), []);
+  const getHomeTabIndex = useCallback((pathOrRoute: string) => {
+    if (pathOrRoute.includes('/rooms')) return 1;
+    if (pathOrRoute.includes('/messages')) return 2;
+    if (pathOrRoute.includes('/profile')) return 3;
+    return 0;
+  }, []);
+
+  const routeHomeTabIndex = getHomeTabIndex(pathname);
+  const isPrimaryHomeTab = isPrimaryHomePath(pathname);
+  const activeNavTabIndex = optimisticHomeTabIndex ?? routeHomeTabIndex;
+
+  const navigateHomeTab = useCallback((route: string) => {
+    const currentIndex = getHomeTabIndex(pathname);
+    const targetIndex = getHomeTabIndex(route);
+    if (targetIndex === currentIndex && isPrimaryHomePath(pathname)) return;
+
+    setOptimisticHomeTabIndex(targetIndex);
+    setHomeTabAnimation(targetIndex >= currentIndex ? 'slide_from_right' : 'slide_from_left');
+    router.replace(route as any);
+  }, [getHomeTabIndex, pathname, router]);
+
+  useEffect(() => {
+    if (optimisticHomeTabIndex === null) return;
+    if (optimisticHomeTabIndex === routeHomeTabIndex) {
+      setOptimisticHomeTabIndex(null);
+    }
+  }, [optimisticHomeTabIndex, routeHomeTabIndex]);
+
+  const swipeResponder = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_, gestureState) => {
+      if (!isPrimaryHomeTab) return false;
+      return Math.abs(gestureState.dx) > 10 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.2;
+    },
+    onPanResponderRelease: (_, gestureState) => {
+      const shouldSwipe = Math.abs(gestureState.dx) > SWIPE_DISTANCE_THRESHOLD || Math.abs(gestureState.vx) > SWIPE_VELOCITY_THRESHOLD;
+      if (!shouldSwipe) return;
+
+      const direction = gestureState.dx < 0 ? 1 : -1;
+      const targetIndex = Math.max(0, Math.min(HOME_TAB_COUNT - 1, routeHomeTabIndex + direction));
+      if (targetIndex === routeHomeTabIndex) return;
+      navigateHomeTab(HOME_TAB_ROUTES[targetIndex]);
+    },
+  }), [isPrimaryHomeTab, navigateHomeTab, routeHomeTabIndex]);
 
   const ctxValue = React.useMemo(() => ({
     openAIChat: aiChatFn,
     openAddTask: addTaskFn,
+    navigateHomeTab,
     setOpenAIChat: setOpenAIChatStable,
     setOpenAddTask: setOpenAddTaskStable,
-  }), [aiChatFn, addTaskFn, setOpenAIChatStable, setOpenAddTaskStable]);
+  }), [aiChatFn, addTaskFn, navigateHomeTab, setOpenAIChatStable, setOpenAddTaskStable]);
 
   return (
     <NotificationProvider>
       <HomeNavContext.Provider value={ctxValue}>
-        <View style={styles.root}>
+        <View style={styles.root} {...swipeResponder.panHandlers}>
           <Stack screenOptions={{ 
          headerShown: false, 
-         animation: 'slide_from_bottom',
-         contentStyle: { backgroundColor: 'transparent' },
-         presentation: 'transparentModal'
+         animation: homeTabAnimation,
+         gestureEnabled: true,
+         contentStyle: { backgroundColor: '#080810' },
+         presentation: 'card'
        }}>
-          <Stack.Screen name="index" options={{ animation: 'none', presentation: 'card' }} />
-          <Stack.Screen name="rooms" options={{ animation: 'none', presentation: 'card' }} />
+          <Stack.Screen name="index" options={{ animation: homeTabAnimation, gestureEnabled: true, presentation: 'card' }} />
+          <Stack.Screen name="rooms" options={{ animation: homeTabAnimation, gestureEnabled: true, presentation: 'card' }} />
           <Stack.Screen name="room-detail" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
-          <Stack.Screen name="profile" options={{ animation: 'none', presentation: 'card' }} />
-          <Stack.Screen name="settings" options={{ animation: 'none', presentation: 'card' }} />
+          <Stack.Screen name="profile" options={{ animation: homeTabAnimation, gestureEnabled: true, presentation: 'card' }} />
+          <Stack.Screen name="settings" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
           <Stack.Screen name="task-thread" options={{ animation: 'slide_from_bottom', gestureEnabled: true, presentation: 'modal' }} />
           <Stack.Screen name="room-task-thread" options={{ animation: 'slide_from_bottom', gestureEnabled: true, presentation: 'modal' }} />
-          <Stack.Screen name="ai-chat" options={{ animation: 'slide_from_bottom', gestureEnabled: true, presentation: 'modal' }} />
-          <Stack.Screen name="messages" options={{ animation: 'none', presentation: 'card' }} />
+          <Stack.Screen name="focus-session" options={{ animation: 'slide_from_bottom', gestureEnabled: true, presentation: 'fullScreenModal' }} />
+          <Stack.Screen name="ai-chat" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
+          <Stack.Screen name="messages" options={{ animation: homeTabAnimation, gestureEnabled: true, presentation: 'card' }} />
           <Stack.Screen name="chat" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
         </Stack>
 
-        {/* Sidebar nav: show on home and messages only, hide on modals */}
-        {navStyle === 'sidebar' && (
-          (pathname === '/' || 
-          pathname === '/(home)' || 
-          pathname === '/(home)/index' ||
-          pathname === '/messages' ||
-          pathname === '/(home)/messages') && (
-            <SidebarNav onAIPress={aiChatFn} onAddTask={addTaskFn} />
-          )
+        {isPrimaryHomeTab && navStyle === 'sidebar' && (
+          <SidebarNav activeTabIndex={activeNavTabIndex} onAIPress={aiChatFn} onAddTask={addTaskFn} onNavigate={navigateHomeTab} />
         )}
 
-        {/* Bottom tab bar: show on home and messages only */}
-        {navStyle === 'bottom' && (
-          (pathname === '/' || 
-          pathname === '/(home)' || 
-          pathname === '/(home)/index' ||
-          pathname === '/messages' ||
-          pathname === '/(home)/messages') && (
-            <BottomTabBar onAddTask={addTaskFn} />
-          )
+        {isPrimaryHomeTab && navStyle === 'bottom' && (
+          <BottomTabBar activeTabIndex={activeNavTabIndex} onAddTask={addTaskFn} onNavigate={navigateHomeTab} />
         )}
       </View>
     </HomeNavContext.Provider>

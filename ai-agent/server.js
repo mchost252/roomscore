@@ -289,10 +289,13 @@ GENERAL CONVERSATION:
 // ── TASK ASSIST (Structured) ──────────────────────────────────────────────────
 app.post('/api/task-assist', async (req, res) => {
   try {
-    const { taskTitle, taskType, priority, userProfile, clarifications } = req.body;
+    const { taskTitle, taskType, priority, userProfile, clarifications, notesContext } = req.body;
     
     const contextHints = clarifications 
       ? `\nAdditional context from user: ${JSON.stringify(clarifications)}`
+      : '';
+    const notesHint = notesContext && String(notesContext).trim()
+      ? `\nUser's current notepad for this task: ${String(notesContext).slice(0, 1200)}`
       : '';
     
     const result = await generateObject({
@@ -301,6 +304,12 @@ app.post('/api/task-assist', async (req, res) => {
         summary: z.string(),
         flow: z.array(z.object({ step: z.number(), title: z.string(), detail: z.string() })),
         milestones: z.array(z.object({ id: z.number(), label: z.string(), completed: z.boolean() })),
+        resource: z.object({
+          name: z.string(),
+          url: z.string(),
+          type: z.enum(['app', 'website', 'book', 'tool']),
+          description: z.string(),
+        }).nullable(),
         hook: z.string(),
         estimatedTime: z.string(),
         category: z.string(),
@@ -309,7 +318,7 @@ app.post('/api/task-assist', async (req, res) => {
 
 A user just created a task called: "${taskTitle}"
 Task type: ${taskType || 'daily'}
-Priority: ${priority || 'medium'}${contextHints}
+Priority: ${priority || 'medium'}${contextHints}${notesHint}
 
 Generate a helpful, motivational AI note for this task. Your response should feel like advice from a supportive friend, NOT a textbook or lesson plan.
 
@@ -317,6 +326,7 @@ Rules for each field:
 - "summary": A short (1-2 sentence) motivational take on WHY this task matters. Make it personal and encouraging. Example for "Read a novel": "Reading expands your imagination and gives you a mental escape — even 15 minutes a day adds up to finishing a whole book in a few weeks!"
 - "flow": 3-4 practical, actionable steps to actually DO this task. Not academic theory — real steps. Example for "Read a novel": [{step 1: "Pick your book", detail: "Choose something that genuinely excites you — ask friends for recs or check bestseller lists"}, {step 2: "Set a daily page goal", detail: "Start small: 10-20 pages. You can always read more if you're hooked!"}]
 - "milestones": 3-4 checkpoints the user can celebrate along the way. Make them feel achievable. Example: ["Picked my book", "Finished chapter 1", "Halfway through!", "Finished the book"]
+- "resource": Pick ONE specific, real resource that fits the exact task. Prefer a searchable website/app/book/tool name and include a valid URL. If no resource would genuinely help, set null. Never use a generic "research path".
 - "hook": One interesting, fun, or surprising fact related to this task that gets the user excited. Example: "Did you know the average CEO reads 60 books a year? You're joining some great company!"
 - "estimatedTime": A realistic time estimate like "15-30 min/day" or "1-2 hours total"
 - "category": One word category like "fitness", "reading", "learning", "health", "productivity", "creative", "social", "finance", "mindfulness"

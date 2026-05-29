@@ -64,18 +64,27 @@ class RoomTaskNodeService {
       const db = await getRoomDb();
       
       const userJson = node.user ? JSON.stringify(node.user) : null;
-      const nodeId = node.id || node._id;
+      const nodeId = node.id || node._id || `local_${Date.now()}`;
+
+      const sanitize = (val: any) => {
+        if (val === undefined) return null;
+        if (val instanceof Date) return val.toISOString();
+        if (typeof val === 'boolean') return val ? 1 : 0;
+        return val;
+      };
+
+      const params = [
+        nodeId, node.roomId, taskId, node.userId || node.user?.id, 
+        node.type, node.content, node.caption, node.status, node.vouchCount || 0, node.isPinned ? 1 : 0,
+        node.mediaUrl, node.blurHash, node.heatLevel || 0,
+        node.createdAt, node.updatedAt, userJson, node.clientReferenceId
+      ].map(sanitize);
 
       await db.runAsync(
         `INSERT OR REPLACE INTO room_task_nodes 
         (id, roomId, taskId, userId, type, content, caption, status, vouchCount, isPinned, mediaUrl, blurHash, heatLevel, createdAt, updatedAt, userJson, clientReferenceId)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          nodeId, node.roomId, taskId, node.userId || node.user?.id, 
-          node.type, node.content, node.caption || null, node.status, node.vouchCount || 0, node.isPinned ? 1 : 0,
-          node.mediaUrl, node.blurHash, node.heatLevel || 0,
-          node.createdAt, node.updatedAt, userJson, node.clientReferenceId
-        ]
+        params
       );
 
       // Invalidate cache to force reload on next access

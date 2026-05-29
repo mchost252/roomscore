@@ -75,6 +75,17 @@ const DarkColors = {
     warning: '#f59e0b',
     info: '#6366f1',
   },
+  // Glass design tokens
+  glass: {
+    bg: 'rgba(255,255,255,0.05)',
+    bgElevated: 'rgba(255,255,255,0.08)',
+    bgActive: 'rgba(99,102,241,0.12)',
+    border: 'rgba(255,255,255,0.10)',
+    borderActive: 'rgba(99,102,241,0.35)',
+    glow: 'rgba(99,102,241,0.20)',
+    glowStrong: 'rgba(99,102,241,0.40)',
+    shimmer: 'rgba(255,255,255,0.06)',
+  },
 } as const;
 
 const LightColors = {
@@ -134,6 +145,17 @@ const LightColors = {
     error: '#dc2626',
     warning: '#d97706',
     info: '#6366f1',
+  },
+  // Glass design tokens
+  glass: {
+    bg: 'rgba(255,255,255,0.70)',
+    bgElevated: 'rgba(255,255,255,0.85)',
+    bgActive: 'rgba(99,102,241,0.10)',
+    border: 'rgba(0,0,0,0.08)',
+    borderActive: 'rgba(99,102,241,0.30)',
+    glow: 'rgba(99,102,241,0.15)',
+    glowStrong: 'rgba(99,102,241,0.30)',
+    shimmer: 'rgba(0,0,0,0.03)',
   },
 } as const;
 

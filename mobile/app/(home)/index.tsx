@@ -15,14 +15,16 @@ import { useAuth } from '../../context/AuthContext';
 import taskService, { PersonalTask } from '../../services/taskService';
 import messageService from '../../services/messageService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { HomeNavContext } from './_layout';
+import { HomeNavContext } from '../../context/HomeNavContext';
 import { getTaskStatus, taskStatusColors, TaskStatus } from '../../utils/taskStatusConfig';
 import notificationService from '../../services/notificationService';
 import KriosDatePicker from '../../components/KriosDatePicker';
 import Skia3DCard from '../../components/Skia3DCard';
 import ConfettiCelebration from '../../components/ConfettiCelebration';
 import AIClarificationSheet from '../../components/AIClarificationSheet';
+import AIBlobToast from '../../components/ai/AIBlobToast';
 import { checkVagueness, ClarificationQuestion, fetchAINote } from '../../services/aiNoteService';
+
 import { secureStorage } from '../../services/storage';
 import { TOKEN_KEY } from '../../constants/config';
 
@@ -114,7 +116,7 @@ export default function HomeScreen() {
 
   // ── Search ───────────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery]       = useState('');
-  
+
   // ── Task status filter ────────────────────────────────────────────────────
   const [statusFilter, setStatusFilter]     = useState<TaskStatus | null>(null);
 
@@ -207,6 +209,33 @@ export default function HomeScreen() {
   const [clarificationQuestions, setClarificationQuestions] = useState<ClarificationQuestion[]>([]);
   const [pendingTask, setPendingTask] = useState<PersonalTask | null>(null);
 
+  // ── AI Predictive Suggestions ──────────────────────────────────────────────
+  const [aiSuggestion, setAiSuggestion] = useState<{ message: string; action: string } | null>(null);
+  const [showAiToast, setShowAiToast] = useState(false);
+  const [showAiEntry, setShowAiEntry] = useState(true);
+  const focusHighlightAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    // Showcase predictive AI: Trigger a suggestion after 6s
+    const timer = setTimeout(() => {
+      setAiSuggestion({
+        message: "You usually start focusing now. Shall I begin a session?",
+        action: "Start Focus"
+      });
+      setShowAiToast(true);
+
+      // Subtle highlight effect for 0.5s
+      Animated.sequence([
+        Animated.timing(focusHighlightAnim, { toValue: 1, duration: 250, useNativeDriver: false }),
+        Animated.delay(500),
+        Animated.timing(focusHighlightAnim, { toValue: 0, duration: 250, useNativeDriver: false }),
+      ]).start();
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, []);
+
+
+
   const openAddTask = useCallback(()=>{
     // Instant open - reset animation value to 0 to prevent off-screen invisible modal freeze
     addTaskAnim.setValue(0);
@@ -214,7 +243,7 @@ export default function HomeScreen() {
   },[addTaskAnim]);
 
   const closeAddTask = useCallback(()=>{
-    setShowAddTask(false); 
+    setShowAddTask(false);
     setNewTaskTitle('');
   },[]);
 
@@ -321,12 +350,17 @@ export default function HomeScreen() {
   const dimAnim                             = useRef(new Animated.Value(0)).current;
 
   const openFocus = useCallback(()=>{
-    setFocusActive(true);
-    Animated.parallel([
-      Animated.spring(signAnim,{toValue:0,useNativeDriver:true,tension:200,friction:16}),
-      Animated.timing(dimAnim,{toValue:0.6,duration:300,useNativeDriver:true}),
-    ]).start();
-  },[signAnim,dimAnim]);
+    // Pick the most urgent incomplete task for the AI suggestion, or fallback
+    const urgentTask = tasks.find(t => !t.isCompleted);
+    router.push({
+      pathname: '/(home)/focus-session',
+      params: {
+        taskId: urgentTask?.id || 'new_session',
+        taskTitle: urgentTask?.title || 'Deep Work Session'
+      }
+    });
+  },[router, tasks]);
+
 
   const closeFocus = useCallback(()=>{
     if (focusRef.current) clearInterval(focusRef.current);
@@ -362,7 +396,7 @@ export default function HomeScreen() {
 
   useFocusEffect(useCallback(()=>{
     AsyncStorage.getItem('krios_nav_style').then(v=>{ if(v==='sidebar'||v==='bottom') setNavStyle(v); });
-    
+
     // Inject shared functions into Layout whenever Home is focused
     setOpenAIChat(openAIChat);
     setOpenAddTask(openAddTask);
@@ -443,7 +477,7 @@ export default function HomeScreen() {
   return (
     <View style={[s.root,{backgroundColor:t.bg}]}>
       <StatusBar barStyle={t.isDark?'light-content':'dark-content'} />
-      
+
       {/* ════ CONFETTI CELEBRATION ════ */}
       <ConfettiCelebration show={showConfetti} priority={confettiPriority} onComplete={() => setShowConfetti(false)} />
       {/* Background gradient - simple, reliable on all platforms */}
@@ -702,13 +736,62 @@ export default function HomeScreen() {
           </View>
         </Skia3DCard>
 
-        {/* AI HINT PILL - no extra margin, parent already has paddingHorizontal:20 */}
-        <TouchableOpacity onPress={openAIChat} activeOpacity={0.8} style={{flexDirection:'row',alignItems:'center',gap:8,backgroundColor:`rgba(${t.surfRgb},0.6)`,borderRadius:20,borderWidth:StyleSheet.hairlineWidth,borderColor:t.border,paddingHorizontal:14,paddingVertical:10,marginTop:calView==='month'?8:10,marginBottom:8}}>
-          <Image source={require('../../assets/krios-logo.png')} style={{width:20,height:20}} resizeMode="contain"/>
-          <Animated.View style={{width:6,height:6,borderRadius:3,backgroundColor:'#6366f1',opacity:pulseAnim}}/>
-          <Text style={{flex:1,fontSize:13,fontWeight:'500',color:t.textHint}}>Ask Krios anything...</Text>
-          <Ionicons name="chevron-forward" size={14} color={t.textHint}/>
-        </TouchableOpacity>
+        {/* KRIOS AI BETA CARD - compact predictive entry point */}
+        {showAiEntry && (
+          <View style={{marginTop: calView === 'month' ? 12 : 14, marginBottom: 12, borderRadius: 22, overflow: 'hidden', borderWidth: 1, borderColor: t.isDark ? 'rgba(129,140,248,0.30)' : 'rgba(99,102,241,0.16)', shadowColor: '#6366f1', shadowOffset: { width: 0, height: 10 }, shadowOpacity: t.isDark ? 0.20 : 0.10, shadowRadius: 18, elevation: 8}}>
+            <LinearGradient
+              colors={t.isDark
+                ? ['rgba(11,13,31,0.98)', 'rgba(21,18,50,0.98)', 'rgba(9,12,28,0.98)']
+                : ['rgba(255,255,255,0.98)', 'rgba(244,247,255,0.98)', 'rgba(248,245,255,0.98)']}
+              start={{x: 0, y: 0}}
+              end={{x: 1, y: 1}}
+              style={{padding: 14}}
+            >
+              <LinearGradient
+                colors={['rgba(34,211,238,0.18)', 'rgba(129,140,248,0.16)', 'rgba(168,85,247,0.12)', 'transparent']}
+                start={{x: 0, y: 0}}
+                end={{x: 1, y: 0}}
+                style={{position: 'absolute', left: 0, right: 0, top: 0, height: 2}}
+              />
+              <View style={{flexDirection: 'row', alignItems: 'center', gap: 12}}>
+                <TouchableOpacity onPress={openAIChat} activeOpacity={0.82} style={{width: 46, height: 46, borderRadius: 18, overflow: 'hidden'}}>
+                  <LinearGradient colors={['#22d3ee', '#6366f1', '#a855f7']} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={{flex: 1, alignItems: 'center', justifyContent: 'center'}}>
+                    <Ionicons name="sparkles" size={20} color="#fff" />
+                  </LinearGradient>
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={openAIChat} activeOpacity={0.82} style={{flex: 1, minWidth: 0}}>
+                  <View style={{flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 3}}>
+                    <Text style={{color: t.text, fontSize: 13, fontWeight: '800', letterSpacing: 0.2}}>Krios AI</Text>
+                    <View style={{paddingHorizontal: 6, paddingVertical: 2, borderRadius: 7, backgroundColor: t.isDark ? 'rgba(129,140,248,0.16)' : 'rgba(99,102,241,0.10)', borderWidth: 1, borderColor: t.isDark ? 'rgba(129,140,248,0.24)' : 'rgba(99,102,241,0.14)'}}>
+                      <Text style={{fontSize: 8, color: t.primary, fontWeight: '900', letterSpacing: 0.7}}>BETA</Text>
+                    </View>
+                    <View style={{width: 5, height: 5, borderRadius: 3, backgroundColor: '#22d3ee'}} />
+                  </View>
+                  <Text style={{color: t.text, fontSize: 15, fontWeight: '700', marginBottom: 2}} numberOfLines={1}>Need a smarter next move?</Text>
+                  <Text style={{color: t.textSub, fontSize: 12, lineHeight: 16}} numberOfLines={1}>Ask, break down, or start focus from your tasks.</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={() => setShowAiEntry(false)} style={{width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.05)'}} hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+                  <Ionicons name="close" size={14} color={t.textHint} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={{flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12}}>
+                <TouchableOpacity onPress={openAIChat} activeOpacity={0.82} style={{flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, paddingVertical: 8, borderRadius: 12, backgroundColor: t.primary}}>
+                  <Text style={{color: '#fff', fontSize: 12, fontWeight: '800'}}>Ask Krios</Text>
+                  <Ionicons name="arrow-forward" size={13} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={openFocus} activeOpacity={0.82} style={{flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 12, borderWidth: 1, borderColor: t.isDark ? 'rgba(34,211,238,0.22)' : 'rgba(99,102,241,0.14)', backgroundColor: t.isDark ? 'rgba(34,211,238,0.08)' : 'rgba(99,102,241,0.06)'}}>
+                  <Ionicons name="scan" size={13} color={t.primary} />
+                  <Text style={{color: t.primary, fontSize: 12, fontWeight: '800'}}>Focus</Text>
+                </TouchableOpacity>
+                <View style={{flex: 1}} />
+                <Text style={{color: t.textHint, fontSize: 10, fontWeight: '700', letterSpacing: 0.6}}>CONTEXT READY</Text>
+              </View>
+            </LinearGradient>
+          </View>
+        )}
 
         {/* DATE DIVIDER LINE — like reference image */}
         <View style={s.dateDivider}>
@@ -822,9 +905,30 @@ export default function HomeScreen() {
                         <Text style={[s.taskDesc,{color:t.textSub,marginTop:6}]} numberOfLines={priority==='high'?3:2}>{task.description}</Text>
                       )}
                     </View>
-                    {/* > arrow — signals tappable, like reference */}
-                    <View style={[s.cardArrow,{borderColor:t.border}]}>
-                      <Ionicons name="chevron-forward" size={priority==='high'?16:14} color={t.textHint}/>
+                    {/* Focus and Arrow */}
+                    <View style={{flexDirection: 'row', alignItems: 'center', gap: 10, position: 'absolute', right: priority === 'high' ? 18 : priority === 'low' ? 10 : 14, top: '50%', transform: [{ translateY: -16 }]}}>
+                      <TouchableOpacity
+                        onPress={(e: any) => {
+                          e.stopPropagation();
+                          router.push({ pathname: '/(home)/focus-session', params: { taskId: task.id, taskTitle: task.title } });
+                        }}
+                      >
+                        <Animated.View style={{
+                          width: 32, height: 32, borderRadius: 16,
+                          backgroundColor: focusHighlightAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [t.isDark ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.08)', t.primary]
+                          }) as any,
+                          alignItems: 'center', justifyContent: 'center',
+                          borderWidth: 1, borderColor: t.isDark ? 'rgba(99,102,241,0.3)' : 'rgba(99,102,241,0.2)',
+                          transform: [{ scale: focusHighlightAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.2] }) }]
+                        }}>
+                          <Ionicons name="scan" size={14} color={t.primary} />
+                        </Animated.View>
+                      </TouchableOpacity>
+                      <View style={[s.cardArrow,{borderColor:t.border, position: 'relative', top: 0, right: 0, transform: []}]}>
+                        <Ionicons name="chevron-forward" size={priority==='high'?16:14} color={t.textHint}/>
+                      </View>
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -970,7 +1074,20 @@ export default function HomeScreen() {
         <Text style={s.toastText}>{toast}</Text>
       </Animated.View>
 
+      {/* ════ AI PREDICTIVE TOAST ════ */}
+      <AIBlobToast
+        visible={showAiToast}
+        message={aiSuggestion?.message || ''}
+        actionLabel={aiSuggestion?.action}
+        onAction={() => {
+          setShowAiToast(false);
+          openFocus();
+        }}
+        onClose={() => setShowAiToast(false)}
+      />
+
       {/* ════ AI CLARIFICATION SHEET ════ */}
+
       <AIClarificationSheet
         visible={showClarification}
         taskTitle={pendingTask?.title || ''}
@@ -998,13 +1115,13 @@ export default function HomeScreen() {
 
       {/* ════ ADD TASK SHEET — dark glass card with enhanced Skia glow ════ */}
       <Modal visible={showAddTask} transparent animationType="fade" onRequestClose={closeAddTask}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <Animated.View pointerEvents="auto" style={[s.sheet,{transform:[{translateY:addTaskAnim}]}]}>
             <Pressable style={[StyleSheet.absoluteFillObject,{backgroundColor:'rgba(0,0,0,0.6)'}]} onPress={closeAddTask}/>
             <View style={[s.addTaskCard,{backgroundColor:t.isDark?'rgba(10,10,22,0.98)':'rgba(248,248,255,0.98)',borderColor:'#6366f133'}]}>
               {/* Enhanced gradient overlay */}
               <LinearGradient colors={['#6366f122','#8b5cf615','transparent']} start={{x:0.5,y:0}} end={{x:0.5,y:1}} style={[StyleSheet.absoluteFill,{borderRadius:28}]}/>
-              
+
               {/* Multiple glow layers for depth */}
               <View style={[s.addTaskGlow,{backgroundColor:'rgba(99,102,241,0.35)',filter:'blur(40px)'}]}/>
               <View style={[s.addTaskGlow,{backgroundColor:'rgba(139,92,246,0.25)',top:-30,left:'60%',width:180,filter:'blur(35px)'}]}/>
@@ -1125,7 +1242,7 @@ const s = StyleSheet.create({
 
   // Sticky Header
   stickyHeader:      { position:'absolute', top:0, left:0, right:0, zIndex:100, paddingHorizontal:20, paddingBottom:16, borderBottomWidth:0 },
-  
+
   // Header
   header:            { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginBottom:4 },
   greeting:          { fontSize:12, fontWeight:'500', letterSpacing:0.3, opacity:0.7 },

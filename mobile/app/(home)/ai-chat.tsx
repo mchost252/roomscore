@@ -204,7 +204,7 @@ export default function AIChatScreen() {
   return (
     <KeyboardAvoidingView 
       style={[styles.root, { backgroundColor: t.bg }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={0}
     >
       <LinearGradient colors={t.grad} locations={[0, 0.5, 1]} start={{ x: 0.3, y: 0 }} end={{ x: 0.7, y: 1 }} style={StyleSheet.absoluteFill} />
@@ -286,7 +286,7 @@ export default function AIChatScreen() {
       <View style={[styles.inputBar, {
         backgroundColor: t.isDark ? 'rgba(10,10,22,0.98)' : 'rgba(252,252,255,0.98)',
         borderTopColor: t.border,
-        paddingBottom: insets.bottom + 12,
+        paddingBottom: keyboardHeight > 0 ? 12 : Math.max(insets.bottom, 12),
       }]}>
           <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
             <TextInput

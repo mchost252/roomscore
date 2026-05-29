@@ -11,6 +11,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const AVATAR_STORAGE_KEY = 'user_avatar_';
+const BANNER_STORAGE_KEY = 'user_banner_';
 const AVATAR_CACHE_PREFIX = 'avatar_cache_';
 
 export interface AvatarInfo {
@@ -99,6 +100,49 @@ class ImageStorageService {
       return avatarInfo.localUri || avatarInfo.serverUrl;
     } catch (error) {
       console.error('[ImageStorage] Error getting avatar:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Save banner for a user
+   */
+  async saveBanner(userId: string, imageUri: string): Promise<string> {
+    try {
+      const key = BANNER_STORAGE_KEY + userId;
+      
+      const bannerInfo: AvatarInfo = {
+        userId,
+        localUri: imageUri,
+        serverUrl: imageUri.startsWith('http') ? imageUri : null,
+        updatedAt: Date.now(),
+      };
+      
+      await AsyncStorage.setItem(key, JSON.stringify(bannerInfo));
+      console.log('[ImageStorage] Saved banner for user:', userId);
+      return imageUri;
+    } catch (error) {
+      console.error('[ImageStorage] Error saving banner:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get banner for a user
+   */
+  async getBanner(userId: string): Promise<string | null> {
+    try {
+      const key = BANNER_STORAGE_KEY + userId;
+      const data = await AsyncStorage.getItem(key);
+      
+      if (!data) {
+        return null;
+      }
+      
+      const bannerInfo: AvatarInfo = JSON.parse(data);
+      return bannerInfo.localUri || bannerInfo.serverUrl;
+    } catch (error) {
+      console.error('[ImageStorage] Error getting banner:', error);
       return null;
     }
   }
