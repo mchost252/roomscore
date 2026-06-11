@@ -105,6 +105,15 @@ export const RoomService = {
     return members.map(mapMember);
   },
 
+  // ── Core Update (owner only) ─────────────────────────────────────────────
+  async updateRoom(
+    roomId: string,
+    data: { name?: string; description?: string; isPublic?: boolean; maxMembers?: number }
+  ): Promise<RoomDetail> {
+    const res = await api.put(`/rooms/${roomId}`, data);
+    return mapRoom(res.data.room);
+  },
+
   // ── Settings (owner only) ────────────────────────────────────────────────
   async updateSettings(
     roomId: string,

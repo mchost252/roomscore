@@ -173,10 +173,14 @@ export default function RoomsScreen() {
     { key: 'full', label: 'Full', dotColor: '#ef4444' },
   ];
 
-  const handleRoomPress = useCallback((room: any) => {
+  const handleRoomPress = useCallback((room: any, type: 'my' | 'public' = 'my') => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (type === 'public') {
+      manager.handleJoinPublicRoom(room);
+      return;
+    }
     router.push({ pathname: '/(home)/room-detail', params: { roomId: room.id } });
-  }, [router]);
+  }, [manager, router]);
 
   const handleRoomLongPress = useCallback((room: any) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
@@ -240,7 +244,7 @@ export default function RoomsScreen() {
         {data.map((item, index) => (
           <RoomCard
             key={item.id} room={item} isDark={isDark} user={user} isMember={type === 'my'}
-            index={index} onPress={handleRoomPress} onLongPress={handleRoomLongPress} onJoin={manager.handleJoinPublicRoom}
+            index={index} onPress={(room) => handleRoomPress(room, type)} onLongPress={handleRoomLongPress} onJoin={manager.handleJoinPublicRoom}
           />
         ))}
       </View>

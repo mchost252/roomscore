@@ -22,6 +22,14 @@ const calculateExpiryDate = (duration) => {
   }
 };
 
+const activeRoomWhere = () => ({
+  isActive: true,
+  OR: [
+    { endDate: null },
+    { endDate: { gt: new Date() } }
+  ]
+});
+
 // Helper to format room response
 const formatRoomResponse = (room) => ({
   ...room,
@@ -72,7 +80,7 @@ router.get('/', protect, async (req, res, next) => {
       const rooms = await prisma.room.findMany({
         where: {
           isPrivate: false,
-          isActive: true,
+          ...activeRoomWhere(),
           ...(allExcludeIds.length > 0 ? { id: { notIn: allExcludeIds } } : {})
         },
         select: {
@@ -135,7 +143,7 @@ router.get('/', protect, async (req, res, next) => {
     
     // Get owned room IDs
     const ownedRoomIds = await prisma.room.findMany({
-      where: { ownerId: req.user.id, isActive: true },
+      where: { ownerId: req.user.id, ...activeRoomWhere() },
       select: { id: true }
     });
     const ownedIds = ownedRoomIds.map(r => r.id);
@@ -150,7 +158,7 @@ router.get('/', protect, async (req, res, next) => {
     const rooms = await prisma.room.findMany({
       where: {
         id: { in: allRoomIds },
-        isActive: true
+        ...activeRoomWhere()
       },
       include: {
         owner: { select: { id: true, username: true } },
@@ -356,7 +364,7 @@ router.put('/:id', protect, isRoomOwner, validate(updateRoomSchema), async (req,
 });
 
 // @route   DELETE /api/rooms/:id
-// @desc    Delete room (soft delete)
+// @desc    Delete room
 // @access  Private (owner only)
 router.delete('/:id', protect, isRoomOwner, async (req, res, next) => {
   try {
@@ -365,47 +373,11 @@ router.delete('/:id', protect, isRoomOwner, async (req, res, next) => {
       .filter(m => m.userId !== req.user.id)
       .map(m => m.userId);
 
-    // Delete all related data in a transaction for data integrity
-    await prisma.$transaction(async (tx) => {
-      // Delete task completions for this room
-      await tx.taskCompletion.deleteMany({
-        where: { roomId: req.params.id }
-      });
-
-      // Delete user room progress
-      await tx.userRoomProgress.deleteMany({
-        where: { roomId: req.params.id }
-      });
-
-      // Delete room tasks
-      await tx.roomTask.deleteMany({
-        where: { roomId: req.params.id }
-      });
-
-      // Delete chat messages
-      await tx.chatMessage.deleteMany({
-        where: { roomId: req.params.id }
-      });
-
-      // Delete room members
-      await tx.roomMember.deleteMany({
-        where: { roomId: req.params.id }
-      });
-
-      // Delete appreciations related to this room
-      await tx.appreciation.deleteMany({
-        where: { roomId: req.params.id }
-      });
-
-      // Delete nudges related to this room
-      await tx.nudge.deleteMany({
-        where: { roomId: req.params.id }
-      });
-
-      // Finally, delete the room itself
-      await tx.room.delete({
-        where: { id: req.params.id }
-      });
+    // Delete the room. Because of `onDelete: Cascade` in the Prisma schema,
+    // this single command safely and instantly deletes all related tasks, 
+    // members, chat messages, and completions without causing a SQLite deadlock.
+    await prisma.room.delete({
+      where: { id: req.params.id }
     });
 
     // Notify members about room disbanding
@@ -418,7 +390,9 @@ router.delete('/:id', protect, isRoomOwner, async (req, res, next) => {
 
     // Emit socket event
     const io = req.app.get('io');
-    io.to(req.room.id).emit('room:deleted', { roomId: req.room.id });
+    if (io) {
+      io.to(req.room.id).emit('room:deleted', { roomId: req.room.id });
+    }
 
     logger.info(`Room deleted: ${req.room.name}`);
     res.json({
@@ -668,12 +642,14 @@ router.delete('/:id/leave', protect, isRoomMember, async (req, res, next) => {
       username: req.user.username
     };
     
-    // Emit to room (for other members)
-    io.to(req.room.id).emit('member:left', eventData);
-    
-    // IMPORTANT: Also emit to the user's personal channel
-    // because they've already left the room channel
-    io.to(`user:${req.user.id}`).emit('member:left', eventData);
+    if (io) {
+      // Emit to room (for other members)
+      io.to(req.room.id).emit('member:left', eventData);
+      
+      // IMPORTANT: Also emit to the user's personal channel
+      // because they've already left the room channel
+      io.to(`user:${req.user.id}`).emit('member:left', eventData);
+    }
 
     logger.info(`User ${req.user.email} left room: ${req.room.name}`);
     res.json({

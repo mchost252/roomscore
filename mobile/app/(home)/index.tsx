@@ -18,6 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { HomeNavContext } from '../../context/HomeNavContext';
 import { getTaskStatus, taskStatusColors, TaskStatus } from '../../utils/taskStatusConfig';
 import notificationService from '../../services/notificationService';
+import realtimeEvents from '../../services/realtimeEvents';
 import KriosDatePicker from '../../components/KriosDatePicker';
 import Skia3DCard from '../../components/Skia3DCard';
 import ConfettiCelebration from '../../components/ConfettiCelebration';
@@ -393,6 +394,14 @@ export default function HomeScreen() {
   useEffect(()=>{
     taskService.getLocalTasks().then((loaded:PersonalTask[])=>{ setTasks(loaded); setLoading(false); });
   },[]);
+
+  useEffect(() => {
+    const unsubscribe = realtimeEvents.on('tasks:changed', async () => {
+      const loaded = await taskService.getLocalTasks();
+      setTasks(loaded);
+    });
+    return unsubscribe;
+  }, []);
 
   useFocusEffect(useCallback(()=>{
     AsyncStorage.getItem('krios_nav_style').then(v=>{ if(v==='sidebar'||v==='bottom') setNavStyle(v); });

@@ -14,7 +14,8 @@ import { Room, Task, RoomMember } from '../../types/room';
 import { roomStorage, getRoomDb } from '../../db/roomDb';
 import { RoomService } from '../../services/roomService';
 import { taskService } from '../../services/taskService';
-import { webSocketManager } from '../../services/websocketService';
+import syncEngine from '../../services/syncEngine';
+import realtimeEvents from '../../services/realtimeEvents';
 import { useAuth } from '../../context/AuthContext';
 
 const roomKey = (id: string) => `room_${id}`;
@@ -159,13 +160,11 @@ export function useRoomDetail(roomId: string) {
   useEffect(() => {
     if (!roomId) return;
     
-    // Auto-connect socket for real-time updates
-    if (!webSocketManager.isConnectedToServer()) {
-      webSocketManager.connect(roomId);
-    }
+    syncEngine.joinRoom(roomId);
 
     const onRoomUpdate = (data: any) => {
-      if (data.roomId !== roomId) return;
+      const updatedRoomId = data?.roomId || data?.room?.id || data?.room?._id;
+      if (updatedRoomId !== roomId || !data?.room) return;
       setRoom(prev => {
         const next = prev ? { ...prev, ...data.room } : data.room;
         roomStorage.set(roomKey(roomId), JSON.stringify(next));
@@ -249,11 +248,48 @@ export function useRoomDetail(roomId: string) {
 
     const onMemberUpdate = (data: any) => {
       if (data.roomId !== roomId) return;
+      const userIdFromPayload = data.userId || data.user?.id || data.user?._id || data.member?.userId || data.member?.id;
       setMembers(prev => {
-        const next = data.member && !prev.find(m => m.id === data.member.id) ? [...prev, data.member] : prev;
+        const incoming = data.member || data.user;
+        if (!incoming) return prev;
+        const next = !prev.find(m => m.id === incoming.id || m.userId === userIdFromPayload)
+          ? [...prev, incoming]
+          : prev.map(m => (m.id === incoming.id || m.userId === userIdFromPayload ? { ...m, ...incoming } : m));
         roomStorage.set(membersKey(roomId), JSON.stringify(next));
         return next;
       });
+      if (userIdFromPayload) {
+        fetchFromAPI(true);
+      }
+    };
+
+    const removeUserFromRoomState = (data: any) => {
+      if (data.roomId !== roomId) return;
+      const removedUserId = data.userId || data.oderId || data.user?.id || data.user?._id;
+      if (!removedUserId) {
+        fetchFromAPI(true);
+        return;
+      }
+
+      setMembers(prev => {
+        const next = prev.filter(m => m.userId !== removedUserId && m.id !== removedUserId);
+        roomStorage.set(membersKey(roomId), JSON.stringify(next));
+        return next;
+      });
+
+      setTasks(prev => {
+        const next = prev.map(t => ({
+          ...t,
+          participants: (t.participants || []).filter(p => (p.userId || p.id) !== removedUserId),
+          completions: (t.completions || []).filter(c => c.userId !== removedUserId),
+          isJoined: removedUserId === user?.id ? false : t.isJoined,
+          status: removedUserId === user?.id ? 'spectator' : t.status,
+        }));
+        roomStorage.set(tasksKey(roomId), JSON.stringify(next));
+        return next;
+      });
+
+      fetchFromAPI(true);
     };
 
     const onTaskJoined = (data: any) => {
@@ -288,28 +324,28 @@ export function useRoomDetail(roomId: string) {
       });
     };
 
-    webSocketManager.on('room:updated', onRoomUpdate);
-    webSocketManager.on('task:created', onTaskCreated);
-    webSocketManager.on('task:updated', onTaskUpdated);
-    webSocketManager.on('task:deleted', onTaskDeleted);
-    webSocketManager.on('task:completed', onTaskCompleted);
-    webSocketManager.on('task:uncompleted', onTaskUncompleted);
-    webSocketManager.on('task:joined', onTaskJoined);
-    webSocketManager.on('task:left', onTaskLeft);
-    webSocketManager.on('member:joined', onMemberUpdate);
+    const unsubs = [
+      realtimeEvents.on('room:updated', onRoomUpdate),
+      realtimeEvents.on('room:premiumUpdated', onRoomUpdate),
+      realtimeEvents.on('task:created', onTaskCreated),
+      realtimeEvents.on('task:updated', onTaskUpdated),
+      realtimeEvents.on('task:deleted', onTaskDeleted),
+      realtimeEvents.on('task:completed', onTaskCompleted),
+      realtimeEvents.on('task:uncompleted', onTaskUncompleted),
+      realtimeEvents.on('task:joined', onTaskJoined),
+      realtimeEvents.on('task:left', onTaskLeft),
+      realtimeEvents.on('member:joined', onMemberUpdate),
+      realtimeEvents.on('member:left', removeUserFromRoomState),
+      realtimeEvents.on('member:kicked', removeUserFromRoomState),
+      realtimeEvents.on('room:expired', (data) => {
+        if (data?.roomId === roomId) fetchFromAPI(true);
+      }),
+    ];
 
     return () => {
-      webSocketManager.off('room:updated', onRoomUpdate);
-      webSocketManager.off('task:created', onTaskCreated);
-      webSocketManager.off('task:updated', onTaskUpdated);
-      webSocketManager.off('task:deleted', onTaskDeleted);
-      webSocketManager.off('task:completed', onTaskCompleted);
-      webSocketManager.off('task:uncompleted', onTaskUncompleted);
-      webSocketManager.off('task:joined', onTaskJoined);
-      webSocketManager.off('task:left', onTaskLeft);
-      webSocketManager.off('member:joined', onMemberUpdate);
+      unsubs.forEach(unsub => unsub());
     };
-  }, [roomId, user?.id]);
+  }, [fetchFromAPI, roomId, user?.id]);
 
   const refresh = useCallback(() => {
     setRefreshing(true);

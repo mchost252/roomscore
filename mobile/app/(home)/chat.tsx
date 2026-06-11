@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Platform, StatusBar, Image, KeyboardAvoidingView,
-  ActivityIndicator, Dimensions, Modal, Pressable, Keyboard
+  ActivityIndicator, Dimensions, Modal, Pressable
 } from 'react-native';
 import Animated, {
   FadeIn, FadeInDown, useSharedValue, useAnimatedStyle,
@@ -68,25 +68,11 @@ export default function ChatScreen() {
   const [menuVisible, setMenuVisible] = useState(false);
   const [clearChatModalVisible, setClearChatModalVisible] = useState(false);
   const [deleteFriendModalVisible, setDeleteFriendModalVisible] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   // Keep requestStatusRef in sync with requestStatus state
   useEffect(() => {
     requestStatusRef.current = requestStatus;
   }, [requestStatus]);
-
-  // Keyboard listeners
-  useEffect(() => {
-    const show = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      (e: any) => setKeyboardHeight(e.endCoordinates.height)
-    );
-    const hide = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setKeyboardHeight(0)
-    );
-    return () => { show.remove(); hide.remove(); };
-  }, []);
 
   // Refs
   const flatListRef = useRef<FlashList<LocalDirectMessage>>(null);
@@ -163,7 +149,7 @@ export default function ChatScreen() {
       }
 
       // 3. Background: check friendship + mark as read (non-blocking)
-      messageService.checkFriendship(friendId).then((friendship) => {
+      messageService.checkFriendship(friendId, true).then((friendship) => {
         if (!isSubscribed) return;
         
         // Don't override 'removed' status
@@ -869,7 +855,7 @@ export default function ChatScreen() {
           <View style={[styles.inputWrap, {
             backgroundColor: sheetBg,
             borderTopColor: borderColor,
-            paddingBottom: keyboardHeight > 0 ? 12 : Math.max(insets.bottom, 12),
+            paddingBottom: Math.max(insets.bottom, 12),
             paddingTop: 8,
           }]}>
             <MessageInput

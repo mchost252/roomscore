@@ -4,6 +4,7 @@ import { roomStorage } from '../db/roomDb';
 import { Task, TaskCompletion } from '../types/room';
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
+import realtimeEvents from './realtimeEvents';
 
 const PERSONAL_TASKS_CACHE_KEY = 'krios_personal_tasks_cache';
 
@@ -85,6 +86,16 @@ class TaskService {
     } catch (e) {
       console.warn('[taskService] Failed to hydrate from MMKV:', e);
     }
+
+    realtimeEvents.on('personal_task:created', (data) => {
+      if (data?.task) this.applyRemotePersonalTask(data.task).catch(() => {});
+    });
+    realtimeEvents.on('personal_task:updated', (data) => {
+      if (data?.task) this.applyRemotePersonalTask(data.task).catch(() => {});
+    });
+    realtimeEvents.on('personal_task:deleted', (data) => {
+      if (data?.taskId) this.removeRemotePersonalTask(data.taskId).catch(() => {});
+    });
   }
 
   /** Sync MMKV cache with current in-memory state */
@@ -124,6 +135,58 @@ class TaskService {
       priority: (row.priority as PersonalTask['priority']) || 'medium',
       dueDate: row.due_date || undefined,
     };
+  }
+
+  private mapRemotePersonalTask(raw: any): PersonalTask {
+    return {
+      id: raw.id || raw._id,
+      roomId: 'local',
+      title: raw.title,
+      description: raw.description || '',
+      taskType: raw.taskType || 'daily',
+      points: raw.points ?? 10,
+      isActive: raw.isActive !== false,
+      isCompleted: !!raw.isCompleted,
+      createdAt: raw.createdAt || new Date().toISOString(),
+      completions: [],
+      bucket: raw.bucket || undefined,
+      priority: (raw.priority as PersonalTask['priority']) || 'medium',
+      dueDate: raw.dueDate || undefined,
+    };
+  }
+
+  private async applyRemotePersonalTask(raw: any): Promise<void> {
+    const task = this.mapRemotePersonalTask(raw);
+    if (!task.id) return;
+    const index = this.personalTasks.findIndex(t => t.id === task.id);
+    if (index >= 0) {
+      this.personalTasks[index] = { ...this.personalTasks[index], ...task };
+    } else {
+      this.personalTasks = [task, ...this.personalTasks];
+    }
+    this.updateCache();
+    await this.ensureDb();
+    await sqliteService.savePersonalTask({
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      taskType: task.taskType,
+      roomId: task.roomId,
+      points: task.points,
+      isActive: task.isActive,
+      isCompleted: task.isCompleted,
+      dueDate: typeof task.dueDate === 'string' ? task.dueDate : undefined,
+      priority: task.priority,
+      bucket: task.bucket,
+      createdAt: task.createdAt,
+    });
+  }
+
+  private async removeRemotePersonalTask(taskId: string): Promise<void> {
+    this.personalTasks = this.personalTasks.filter(t => t.id !== taskId);
+    this.updateCache();
+    await this.ensureDb();
+    await sqliteService.deletePersonalTask(taskId);
   }
 
   async createPersonalTask(data: {

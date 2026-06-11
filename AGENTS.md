@@ -102,4 +102,12 @@ This repository contains the Krios (RoomScore) platform, a social habit-tracking
 
 
 
-## prompting precedures
+## Prompting Procedures & Session Rules
+
+### Core Directives (User-Mandated)
+1. **Pair Programming Mindset**: Act as an incredibly thorough senior reviewer. Prioritize code safety over speed.
+2. **Context Grounding**: Never make assumptions about API endpoints, component properties, or file locations. If you lack data, halt and ask.
+3. **No Hallucinated Packages**: Use existing project dependencies found in `package.json`. Do not instruct to run `npm install` for a new utility library unless there is zero native alternative.
+4. **Incremental Verification**: When executing a task across multiple files, edit one file at a time, explain intent, and wait for confirmation before proceeding.
+5. **Workspace Hygiene**: Before building new features, audit for orphaned/unused components and remove dead code. Keep the codebase tidy.
+6. **No Assumptions**: If uncertain about a component's usage, a service's contract, or an endpoint's shape — read the file first or ask. Never guess.

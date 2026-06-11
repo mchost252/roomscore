@@ -2,6 +2,7 @@ import { io, Socket } from 'socket.io-client';
 import NetInfo from '@react-native-community/netinfo';
 import sqliteService from './sqliteService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import realtimeEvents from './realtimeEvents';
 
 /**
  * PHASE 3: Real-Time Sync Engine
@@ -35,6 +36,8 @@ class SyncEngine {
   private eventHandlers: Map<string, SyncEventHandler[]> = new Map();
   private userId: string | null = null;
   private token: string | null = null;
+  private joinedRoomIds = new Set<string>();
+  private subscribedUserStatusIds = new Set<string>();
 
   /**
    * Initialize sync engine
@@ -79,6 +82,12 @@ class SyncEngine {
       this.reconnectAttempts = 0;
       // Request fresh online list (helps after reconnects)
       try { this.socket?.emit('users:getOnline'); } catch {}
+      this.joinedRoomIds.forEach((roomId) => {
+        try { this.socket?.emit('room:join', roomId); } catch {}
+      });
+      this.subscribedUserStatusIds.forEach((userId) => {
+        try { this.socket?.emit('dm:subscribe', userId); } catch {}
+      });
       this.processSyncQueue(); // Sync any offline changes
     });
 
@@ -138,14 +147,36 @@ class SyncEngine {
     if (!this.socket) return;
 
     // Room events
+    this.socket.on('room:created', (data) => this.handleEvent('room:created', data));
     this.socket.on('room:updated', (data) => this.handleEvent('room:updated', data));
-    this.socket.on('room:task:created', (data) => this.handleEvent('room:task:created', data));
-    this.socket.on('room:task:updated', (data) => this.handleEvent('room:task:updated', data));
-    this.socket.on('room:task:deleted', (data) => this.handleEvent('room:task:deleted', data));
+    this.socket.on('room:deleted', (data) => this.handleEvent('room:deleted', data));
+    this.socket.on('room:expired', (data) => this.handleEvent('room:expired', data));
+    this.socket.on('room:joinApproved', (data) => this.handleEvent('room:joinApproved', data));
+    this.socket.on('room:joinRejected', (data) => this.handleEvent('room:joinRejected', data));
+    this.socket.on('room:joinRequest', (data) => this.handleEvent('room:joinRequest', data));
+    this.socket.on('member:joined', (data) => this.handleEvent('member:joined', data));
+    this.socket.on('member:left', (data) => this.handleEvent('member:left', data));
+    this.socket.on('member:kicked', (data) => this.handleEvent('member:kicked', data));
+    this.socket.on('room:premiumUpdated', (data) => this.handleEvent('room:premiumUpdated', data));
+    this.socket.on('room:task:created', (data) => this.handleEvent('task:created', data));
+    this.socket.on('room:task:updated', (data) => this.handleEvent('task:updated', data));
+    this.socket.on('room:task:deleted', (data) => this.handleEvent('task:deleted', data));
     
     // Task events
+    this.socket.on('task:created', (data) => this.handleEvent('task:created', data));
     this.socket.on('task:updated', (data) => this.handleEvent('task:updated', data));
+    this.socket.on('task:deleted', (data) => this.handleEvent('task:deleted', data));
     this.socket.on('task:completed', (data) => this.handleEvent('task:completed', data));
+    this.socket.on('task:uncompleted', (data) => this.handleEvent('task:uncompleted', data));
+    this.socket.on('task:joined', (data) => this.handleEvent('task:joined', data));
+    this.socket.on('task:left', (data) => this.handleEvent('task:left', data));
+    this.socket.on('task:assigned', (data) => this.handleEvent('task:assigned', data));
+    this.socket.on('task:assignment_updated', (data) => this.handleEvent('task:assignment_updated', data));
+
+    // Personal task events (same user on another device)
+    this.socket.on('personal_task:created', (data) => this.handleEvent('personal_task:created', data));
+    this.socket.on('personal_task:updated', (data) => this.handleEvent('personal_task:updated', data));
+    this.socket.on('personal_task:deleted', (data) => this.handleEvent('personal_task:deleted', data));
     
     // Thread events
     this.socket.on('thread:message', (data) => this.handleEvent('thread:message', data));
@@ -173,6 +204,14 @@ class SyncEngine {
    */
   private handleEvent(eventType: string, data: any): void {
     console.log('[SyncEngine] Real-time event received:', eventType, data);
+    realtimeEvents.emit(eventType, data);
+    realtimeEvents.emit('realtime:any', { type: eventType, data });
+    if (eventType.startsWith('room:') || eventType.startsWith('member:')) {
+      realtimeEvents.emit('rooms:changed', { type: eventType, data });
+    }
+    if (eventType.startsWith('task:') || eventType.startsWith('personal_task:')) {
+      realtimeEvents.emit('tasks:changed', { type: eventType, data });
+    }
     
     // Call all registered handlers for this event
     const handlers = this.eventHandlers.get(eventType) || [];
@@ -339,6 +378,26 @@ class SyncEngine {
     }
   }
 
+  joinRoom(roomId: string): void {
+    if (!roomId) return;
+    this.joinedRoomIds.add(roomId);
+    if (this.socket?.connected) {
+      try { this.socket.emit('room:join', roomId); } catch {}
+    }
+  }
+
+  joinRooms(roomIds: string[]): void {
+    roomIds.filter(Boolean).forEach((roomId) => this.joinRoom(roomId));
+  }
+
+  leaveRoom(roomId: string): void {
+    if (!roomId) return;
+    this.joinedRoomIds.delete(roomId);
+    if (this.socket?.connected) {
+      try { this.socket.emit('room:leave', roomId); } catch {}
+    }
+  }
+
   /**
    * Ask server for a fresh snapshot of online users.
    * Used by the Messages screen so presence is always up to date on focus.
@@ -361,6 +420,8 @@ class SyncEngine {
    * Subscribe to a user's online status (when opening DM chat)
    */
   subscribeToUserStatus(userId: string): void {
+    if (!userId) return;
+    this.subscribedUserStatusIds.add(userId);
     if (this.socket?.connected) {
       this.socket.emit('dm:subscribe', userId);
     }
@@ -370,6 +431,8 @@ class SyncEngine {
    * Unsubscribe from a user's online status (when closing DM chat)
    */
   unsubscribeFromUserStatus(userId: string): void {
+    if (!userId) return;
+    this.subscribedUserStatusIds.delete(userId);
     if (this.socket?.connected) {
       this.socket.emit('dm:unsubscribe', userId);
     }

@@ -12,6 +12,9 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { RoomDetail } from '../../types/room';
 import { roomStorage, getRoomDb } from '../../db/roomDb';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
+import syncEngine from '../../services/syncEngine';
+import realtimeEvents from '../../services/realtimeEvents';
 
 // ─── MMKV keys ───────────────────────────────────────────────────────────────
 const ROOMS_LIST_KEY = 'rooms_list_cache';
@@ -30,6 +33,15 @@ function cacheRoomsList(rooms: RoomDetail[]) {
     roomStorage.set(ROOMS_LIST_KEY, JSON.stringify(rooms));
     roomStorage.set(ROOMS_LIST_TS_KEY, Date.now().toString());
   } catch {}
+}
+
+function isExpired(room: RoomDetail) {
+  const end = room.endDate || room.doomClockExpiry;
+  return !!end && new Date(end).getTime() <= Date.now();
+}
+
+function pruneExpiredRooms(rooms: RoomDetail[]) {
+  return rooms.filter(room => !isExpired(room));
 }
 
 function mapApiRoom(raw: any): RoomDetail {
@@ -69,8 +81,10 @@ function mapApiRoom(raw: any): RoomDetail {
 
 // ─── Hook ────────────────────────────────────────────────────────────────────
 export function useRoomsInstant() {
+  const { user } = useAuth();
+
   // Step 1: Instant paint from MMKV (synchronous, 0ms)
-  const [myRooms, setMyRooms] = useState<RoomDetail[]>(() => getCachedRoomsList());
+  const [myRooms, setMyRooms] = useState<RoomDetail[]>(() => pruneExpiredRooms(getCachedRoomsList()));
   const [publicRooms, setPublicRooms] = useState<RoomDetail[]>([]);
   const [loading, setLoading] = useState(() => getCachedRoomsList().length === 0);
   const [refreshing, setRefreshing] = useState(false);
@@ -93,9 +107,10 @@ export function useRoomsInstant() {
       // My rooms
       if (results[0].status === 'fulfilled') {
         const rawRooms = results[0].value.data.rooms || [];
-        const mapped = rawRooms.map(mapApiRoom);
+        const mapped = pruneExpiredRooms(rawRooms.map(mapApiRoom));
         setMyRooms(mapped);
         cacheRoomsList(mapped);
+        syncEngine.joinRooms(mapped.map(room => room.id));
 
         // Also persist to SQLite for cross-hook consistency
         try {
@@ -120,7 +135,7 @@ export function useRoomsInstant() {
       // Public rooms
       if (results[1].status === 'fulfilled') {
         const rawPublic = results[1].value.data.rooms || [];
-        setPublicRooms(rawPublic.map(mapApiRoom));
+        setPublicRooms(pruneExpiredRooms(rawPublic.map(mapApiRoom)));
       }
     } catch (err) {
       console.error('[useRoomsInstant] fetch error:', err);
@@ -137,6 +152,10 @@ export function useRoomsInstant() {
   useEffect(() => {
     fetchFromAPI(myRooms.length > 0);
   }, [fetchFromAPI]);
+
+  useEffect(() => {
+    syncEngine.joinRooms(myRooms.map(room => room.id));
+  }, [myRooms]);
 
   useEffect(() => {
     return () => { isMounted.current = false; };
@@ -164,6 +183,76 @@ export function useRoomsInstant() {
       return next;
     });
   }, []);
+
+  // Real-time synchronization via the app-level socket.
+  useEffect(() => {
+    const onRoomDeleted = (data: any) => {
+      const roomId = data?.roomId || data?.room?.id || data?.room?._id;
+      if (!roomId) return;
+      removeRoom(roomId);
+      setPublicRooms(prev => prev.filter(r => r.id !== roomId));
+    };
+
+    const onRoomCreated = (data: any) => {
+      if (!data?.room) return;
+      const room = mapApiRoom(data.room);
+      if (isExpired(room)) return;
+      setPublicRooms(prev => {
+        if (prev.some(r => r.id === room.id)) return prev;
+        return [room, ...prev];
+      });
+    };
+
+    const onRoomUpdated = (data: any) => {
+      if (!data?.room) return;
+      const incoming = mapApiRoom(data.room);
+      if (isExpired(incoming)) {
+        removeRoom(incoming.id);
+        setPublicRooms(prev => prev.filter(r => r.id !== incoming.id));
+        return;
+      }
+      setMyRooms(prev => {
+        const next = prev.map(r => r.id === incoming.id ? { ...r, ...incoming } : r);
+        cacheRoomsList(next);
+        return next;
+      });
+      setPublicRooms(prev => prev.map(r => r.id === incoming.id ? { ...r, ...incoming } : r));
+    };
+
+    const onMemberLeft = (data: any) => {
+      // If we are the ones who left, remove it from our dashboard
+      if (data.userId === user?.id) {
+        removeRoom(data.roomId);
+        fetchFromAPI(true);
+      }
+    };
+
+    const onMemberKicked = (data: any) => {
+      // Backwards compatible check for both userId and oderId typo
+      if (data.oderId === user?.id || data.userId === user?.id) {
+        removeRoom(data.roomId);
+        fetchFromAPI(true);
+      }
+    };
+
+    const refreshSilent = () => fetchFromAPI(true);
+    const unsubs = [
+      realtimeEvents.on('room:created', onRoomCreated),
+      realtimeEvents.on('room:deleted', onRoomDeleted),
+      realtimeEvents.on('room:expired', onRoomDeleted),
+      realtimeEvents.on('room:updated', onRoomUpdated),
+      realtimeEvents.on('room:premiumUpdated', onRoomUpdated),
+      realtimeEvents.on('member:left', onMemberLeft),
+      realtimeEvents.on('member:kicked', onMemberKicked),
+      realtimeEvents.on('member:joined', refreshSilent),
+      realtimeEvents.on('room:joinApproved', refreshSilent),
+      realtimeEvents.on('room:joinRejected', refreshSilent),
+    ];
+
+    return () => {
+      unsubs.forEach(unsub => unsub());
+    };
+  }, [fetchFromAPI, removeRoom, user?.id]);
 
   return {
     myRooms,

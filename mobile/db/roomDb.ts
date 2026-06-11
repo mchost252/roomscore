@@ -37,6 +37,10 @@ const webMemoryStore: Record<string, any[]> = {
 };
 
 const mockWebDb = {
+  withTransactionAsync: async (callback: () => Promise<void>) => {
+    // Web mock: just run the callback directly (no real transaction needed)
+    await callback();
+  },
   execAsync: async () => {},
   getAllAsync: async (query: string, params?: any[]) => {
     if (query.includes('FROM room_tasks')) {

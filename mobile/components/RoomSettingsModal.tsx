@@ -18,6 +18,8 @@ import * as Haptics from 'expo-haptics';
 import { useTheme } from '../context/ThemeContext';
 import RoomService from '../services/roomService';
 import type { RoomDetail } from '../types/room';
+import { roomStorage } from '../db/roomDb';
+import ConfirmationModal from './ConfirmationModal';
 
 interface RoomSettingsModalProps {
   visible: boolean;
@@ -58,6 +60,10 @@ export function RoomSettingsModal({
   // ── Track dirty state ───────────────────────────────────────────────────
   const [hasChanges, setHasChanges] = useState(false);
 
+  // ── Confirmation Modal States ───────────────────────────────────────────
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+
   useEffect(() => {
     if (visible && room) {
       setName(room.name);
@@ -86,12 +92,20 @@ export function RoomSettingsModal({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      // Call backend settings endpoint for supported fields
-      await RoomService.updateSettings(roomId, {
-        isPublic,
-        chatRetentionDays: retention,
-        requireApproval,
-      });
+      // Call both update endpoints in parallel
+      await Promise.all([
+        RoomService.updateRoom(roomId, {
+          name: name.trim() || room.name,
+          description: description.trim(),
+          isPublic,
+          maxMembers: parseInt(maxMembers, 10) || room.maxMembers,
+        }),
+        RoomService.updateSettings(roomId, {
+          isPublic,
+          chatRetentionDays: retention,
+          requireApproval,
+        })
+      ]);
 
       // Update local state with all fields (name/description are local-only for now)
       onSave({
@@ -113,61 +127,59 @@ export function RoomSettingsModal({
     }
   }, [room, roomId, name, description, isPublic, requireApproval, retention, maxMembers, hasChanges, onSave, onClose]);
 
+  const removeRoomFromLocalCache = useCallback(() => {
+    try {
+      const raw = roomStorage.getString('rooms_list_cache');
+      if (raw) {
+        const rooms = JSON.parse(raw);
+        roomStorage.set('rooms_list_cache', JSON.stringify(rooms.filter((r: any) => r.id !== roomId)));
+      }
+    } catch (e) {
+      console.error('Error clearing room cache:', e);
+    }
+  }, [roomId]);
+
   // ── Delete room handler (owner only) ────────────────────────────────────
   const handleDeleteRoom = useCallback(() => {
-    Alert.alert(
-      'Delete Room',
-      'This will permanently delete the room and all its data. This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setDeleting(true);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-            try {
-              await RoomService.deleteRoom(roomId);
-              onRoomDeleted?.();
-            } catch (error: any) {
-              const msg = error?.response?.data?.message || 'Failed to delete room';
-              Alert.alert('Error', msg);
-            } finally {
-              setDeleting(false);
-            }
-          },
-        },
-      ],
-    );
-  }, [roomId, onRoomDeleted]);
+    setShowDeleteConfirm(true);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+  }, []);
+
+  const executeDeleteRoom = useCallback(async () => {
+    setShowDeleteConfirm(false);
+    setDeleting(true);
+    try {
+      await RoomService.deleteRoom(roomId);
+      removeRoomFromLocalCache();
+      onRoomDeleted?.();
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || 'Failed to delete room';
+      Alert.alert('Error', msg);
+    } finally {
+      setDeleting(false);
+    }
+  }, [roomId, onRoomDeleted, removeRoomFromLocalCache]);
 
   // ── Leave room handler (member only) ────────────────────────────────────
   const handleLeaveRoom = useCallback(() => {
-    Alert.alert(
-      'Leave Room',
-      'Are you sure you want to leave this room? You will need to rejoin to access it again.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Leave',
-          style: 'destructive',
-          onPress: async () => {
-            setLeaving(true);
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-            try {
-              await RoomService.leaveRoom(roomId);
-              onRoomLeft?.();
-            } catch (error: any) {
-              const msg = error?.response?.data?.message || 'Failed to leave room';
-              Alert.alert('Error', msg);
-            } finally {
-              setLeaving(false);
-            }
-          },
-        },
-      ],
-    );
-  }, [roomId, onRoomLeft]);
+    setShowLeaveConfirm(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+  }, []);
+
+  const executeLeaveRoom = useCallback(async () => {
+    setShowLeaveConfirm(false);
+    setLeaving(true);
+    try {
+      await RoomService.leaveRoom(roomId);
+      removeRoomFromLocalCache();
+      onRoomLeft?.();
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || 'Failed to leave room';
+      Alert.alert('Error', msg);
+    } finally {
+      setLeaving(false);
+    }
+  }, [roomId, onRoomLeft, removeRoomFromLocalCache]);
 
   // ── Styling ─────────────────────────────────────────────────────────────
   const sheetBg = isDark ? '#141424' : '#ffffff';
@@ -608,6 +620,31 @@ export function RoomSettingsModal({
             <View style={{ height: 32 }} />
           </ScrollView>
         </View>
+
+        {/* ── Custom Confirmation Modals (Fix for native Alert bug inside Modals) ── */}
+        <ConfirmationModal
+          visible={showDeleteConfirm}
+          title="Delete Room"
+          message="This will permanently delete the room and all its data. This action cannot be undone."
+          confirmText="Delete Room"
+          cancelText="Cancel"
+          isDark={isDark}
+          destructive={true}
+          onConfirm={executeDeleteRoom}
+          onCancel={() => setShowDeleteConfirm(false)}
+        />
+
+        <ConfirmationModal
+          visible={showLeaveConfirm}
+          title="Leave Room"
+          message="Are you sure you want to leave this room? You will need to rejoin to access it again."
+          confirmText="Leave Room"
+          cancelText="Cancel"
+          isDark={isDark}
+          destructive={true}
+          onConfirm={executeLeaveRoom}
+          onCancel={() => setShowLeaveConfirm(false)}
+        />
       </KeyboardAvoidingView>
     </Modal>
   );

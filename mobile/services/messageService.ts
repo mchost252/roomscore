@@ -427,10 +427,10 @@ class MessageService {
     } catch {}
   }
 
-  async checkFriendship(friendId: string): Promise<{ isFriend: boolean; requestStatus: string; requestId?: string }> {
+  async checkFriendship(friendId: string, forceRefresh = false): Promise<{ isFriend: boolean; requestStatus: string; requestId?: string }> {
     // Check cache first (fast path)
     const cached = this.friendshipCache.get(friendId);
-    if (cached) return cached;
+    if (cached && !forceRefresh) return cached;
 
     // Fall back to server
     try {
@@ -776,6 +776,11 @@ class MessageService {
               request_id: conv.requestId || existing?.request_id || null,
             };
             await sqliteService.saveConversation(localConv);
+            this.friendshipCache.set(friendId, {
+              isFriend: localConv.request_status === 'none' || localConv.request_status === 'accepted',
+              requestStatus: localConv.request_status === 'accepted' ? 'accepted' : localConv.request_status,
+              requestId: localConv.request_id || undefined,
+            });
           }
 
           // Clean up stale pending conversations not in server response

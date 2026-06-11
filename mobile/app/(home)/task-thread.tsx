@@ -531,7 +531,10 @@ export default function TaskDetailScreen() {
 
       {/* Full Screen AI Action Flow / Chat (Triggered by input) */}
       <Modal visible={showAiInput} transparent animationType="slide">
-         <View style={[styles.modalBg, { paddingBottom: keyboardHeight }]}>
+         <KeyboardAvoidingView
+           style={styles.modalBg}
+           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+         >
             <View style={[styles.modalSheet, { paddingTop: insets.top + 20 }]}>
                <LinearGradient colors={['#080A12', '#11142A', '#090A14']} style={StyleSheet.absoluteFill} />
                  <View style={styles.modalHeader}>
@@ -597,7 +600,7 @@ export default function TaskDetailScreen() {
                    </TouchableOpacity>
                  </View>
               </View>
-         </View>
+         </KeyboardAvoidingView>
       </Modal>
     </View>
   );

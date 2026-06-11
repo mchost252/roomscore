@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList,
   StyleSheet, Platform, KeyboardAvoidingView, Image,
-  Animated, Keyboard, ActivityIndicator,
+  Animated, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -84,7 +84,6 @@ export default function AIChatScreen() {
   const flatListRef = useRef<FlatList>(null);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [initialMessages, setInitialMessages] = useState<UIMessage[]>([]);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   // Load history on mount
   useEffect(() => {
@@ -92,19 +91,6 @@ export default function AIChatScreen() {
       if (raw) setInitialMessages(JSON.parse(raw));
       setHistoryLoaded(true);
     });
-  }, []);
-
-  // Keyboard listeners
-  useEffect(() => {
-    const show = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      e => setKeyboardHeight(e.endCoordinates.height)
-    );
-    const hide = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setKeyboardHeight(0)
-    );
-    return () => { show.remove(); hide.remove(); };
   }, []);
 
   const {
@@ -204,7 +190,7 @@ export default function AIChatScreen() {
   return (
     <KeyboardAvoidingView 
       style={[styles.root, { backgroundColor: t.bg }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={0}
     >
       <LinearGradient colors={t.grad} locations={[0, 0.5, 1]} start={{ x: 0.3, y: 0 }} end={{ x: 0.7, y: 1 }} style={StyleSheet.absoluteFill} />
@@ -286,7 +272,7 @@ export default function AIChatScreen() {
       <View style={[styles.inputBar, {
         backgroundColor: t.isDark ? 'rgba(10,10,22,0.98)' : 'rgba(252,252,255,0.98)',
         borderTopColor: t.border,
-        paddingBottom: keyboardHeight > 0 ? 12 : Math.max(insets.bottom, 12),
+        paddingBottom: Math.max(insets.bottom, 12),
       }]}>
           <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
             <TextInput

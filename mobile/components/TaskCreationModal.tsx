@@ -40,19 +40,40 @@ export function TaskCreationModal({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [points, setPoints] = useState('10');
+  const [taskType, setTaskType] = useState<'daily' | 'weekly' | 'custom'>('daily');
+  const [taskDays, setTaskDays] = useState<number[]>([]);
 
   useEffect(() => {
     if (visible && taskData) {
       setTitle(taskData.title);
       setDescription(taskData.description || '');
       setPoints(String(taskData.points ?? 10));
+      setTaskType((taskData.taskType as any) || 'daily');
+      
+      // Parse days of week if stored as comma separated string
+      if (taskData.daysOfWeek) {
+        const parsed = String(taskData.daysOfWeek).split(',').map(Number).filter(n => !isNaN(n));
+        setTaskDays(parsed);
+      } else {
+        setTaskDays([]);
+      }
     }
     if (visible && !taskData) {
       setTitle('');
       setDescription('');
       setPoints('10');
+      setTaskType('daily');
+      setTaskDays([]);
     }
   }, [visible, taskData]);
+
+  const toggleDay = (day: number) => {
+    if (taskDays.includes(day)) {
+      setTaskDays(taskDays.filter(d => d !== day));
+    } else {
+      setTaskDays([...taskDays, day].sort());
+    }
+  };
 
   const submit = () => {
     if (!title.trim()) return;
@@ -61,7 +82,8 @@ export function TaskCreationModal({
       title: title.trim(),
       description: description.trim() || undefined,
       points: parseInt(points, 10) || 10,
-      taskType: 'daily',
+      taskType: taskType,
+      daysOfWeek: taskType === 'custom' ? taskDays : [],
     });
   };
 
@@ -135,6 +157,53 @@ export function TaskCreationModal({
               ]}
             />
             <Text style={[styles.label, { color: colors.textSecondary }]}>
+              Frequency
+            </Text>
+            <View style={styles.durationRow}>
+              {(['daily', 'weekly', 'custom'] as const).map((f) => (
+                <TouchableOpacity 
+                  key={f} 
+                  onPress={() => setTaskType(f)} 
+                  style={[
+                    styles.durationChip, 
+                    { backgroundColor: taskType === f ? colors.primary : colors.inputBg }
+                  ]}
+                >
+                  <Text style={[
+                    styles.durationChipText, 
+                    { color: taskType === f ? '#fff' : colors.textSecondary }
+                  ]}>
+                    {f.toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {taskType === 'custom' && (
+              <View style={styles.daysRow}>
+                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => (
+                  <TouchableOpacity 
+                    key={i} 
+                    onPress={() => toggleDay(i)} 
+                    style={[
+                      styles.dayBtn, 
+                      { borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' },
+                      taskDays.includes(i) && { backgroundColor: '#06b6d4', borderColor: '#06b6d4' }
+                    ]}
+                  >
+                    <Text style={[
+                      styles.dayBtnText, 
+                      { color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' },
+                      taskDays.includes(i) && { color: '#fff' }
+                    ]}>
+                      {day}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            <Text style={[styles.label, { color: colors.textSecondary }]}>
               Points
             </Text>
             <TextInput
@@ -200,6 +269,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   primaryTxt: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  durationRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  durationChip: { flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  durationChipText: { fontSize: 12, fontWeight: '800' },
+  daysRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
+  dayBtn: { width: 38, height: 38, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  dayBtnText: { fontSize: 14, fontWeight: '800' },
 });
 
 export default TaskCreationModal;

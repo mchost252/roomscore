@@ -44,6 +44,9 @@ router.post('/', protect, async (req, res, next) => {
       }
     });
 
+    const io = req.app.get('io');
+    io?.to(`user:${req.user.id}`).emit('personal_task:created', { task });
+
     res.json({ success: true, task });
   } catch (error) {
     next(error);
@@ -79,6 +82,9 @@ router.put('/:taskId', protect, async (req, res, next) => {
       }
     });
 
+    const io = req.app.get('io');
+    io?.to(`user:${req.user.id}`).emit('personal_task:updated', { task: updatedTask });
+
     res.json({ success: true, task: updatedTask });
   } catch (error) {
     next(error);
@@ -105,6 +111,9 @@ router.delete('/:taskId', protect, async (req, res, next) => {
     await prisma.personalTask.delete({
       where: { id: req.params.taskId }
     });
+
+    const io = req.app.get('io');
+    io?.to(`user:${req.user.id}`).emit('personal_task:deleted', { taskId: req.params.taskId });
 
     res.json({ success: true, message: 'Task deleted' });
   } catch (error) {
@@ -150,6 +159,9 @@ router.post('/:taskId/complete', protect, async (req, res, next) => {
         }
       }
     });
+
+    const io = req.app.get('io');
+    io?.to(`user:${req.user.id}`).emit('personal_task:updated', { task: updatedTask });
 
     res.json({ success: true, task: updatedTask });
   } catch (error) {

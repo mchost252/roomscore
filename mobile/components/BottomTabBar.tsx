@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePathname, useRouter } from 'expo-router';
 import { useTheme } from '../context/ThemeContext';
 import messageService from '../services/messageService';
+import realtimeEvents from '../services/realtimeEvents';
 
 /**
  * The app's real Bottom Tab Bar (the one used on Home screen).
@@ -30,22 +31,8 @@ export default function BottomTabBar({
   const border = colors.border.primary;
 
   const [unreadCount, setUnreadCount] = useState(0);
-
-  const refreshUnread = useCallback(async () => {
-    try {
-      const count = await messageService.getUnreadCount();
-      setUnreadCount(count);
-    } catch {}
-  }, []);
-
-  useEffect(() => {
-    refreshUnread();
-    const unsub = (messageService as any).on?.('conversation:list', refreshUnread);
-    return () => {
-      (messageService as any).off?.('conversation:list', refreshUnread);
-      if (typeof unsub === 'function') unsub();
-    };
-  }, [refreshUnread]);
+  const [hasHomeActivity, setHasHomeActivity] = useState(false);
+  const [hasRoomActivity, setHasRoomActivity] = useState(false);
 
   const pathTabIndex = pathname.includes('/rooms')
     ? 1
@@ -65,6 +52,42 @@ export default function BottomTabBar({
   const isRoomsRoute = pathname === '/rooms' || pathname === '/(home)/rooms';
   const isMessagesRoute = pathname === '/messages' || pathname === '/(home)/messages';
   const isProfileRoute = pathname === '/profile' || pathname === '/(home)/profile';
+
+  const refreshUnread = useCallback(async () => {
+    try {
+      const count = await messageService.getUnreadCount();
+      setUnreadCount(count);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    refreshUnread();
+    const unsub = (messageService as any).on?.('conversation:list', refreshUnread);
+    return () => {
+      (messageService as any).off?.('conversation:list', refreshUnread);
+      if (typeof unsub === 'function') unsub();
+    };
+  }, [refreshUnread]);
+
+  useEffect(() => {
+    const clearActive = () => {
+      if (isHomeActive) setHasHomeActivity(false);
+      if (isRoomsActive) setHasRoomActivity(false);
+    };
+    clearActive();
+  }, [isHomeActive, isRoomsActive]);
+
+  useEffect(() => {
+    const unsubs = [
+      realtimeEvents.on('tasks:changed', () => {
+        if (!isHomeActive) setHasHomeActivity(true);
+      }),
+      realtimeEvents.on('rooms:changed', () => {
+        if (!isRoomsActive) setHasRoomActivity(true);
+      }),
+    ];
+    return () => unsubs.forEach(unsub => unsub());
+  }, [isHomeActive, isRoomsActive]);
 
   const handleNavigation = useCallback((route: string, isActive: boolean) => {
     if (!isActive) {
@@ -95,8 +118,12 @@ export default function BottomTabBar({
             size={22} 
             color={isHomeActive ? primary : textHint} 
           />
+          <Text style={[s.tabLabel, { color: isHomeActive ? primary : textHint }]}>Home</Text>
           {isHomeActive && (
             <View style={[s.tabActiveDot, { backgroundColor: primary }]} />
+          )}
+          {!isHomeActive && hasHomeActivity && (
+            <View style={[s.notifyDot, { backgroundColor: primary }]} />
           )}
         </TouchableOpacity>
 
@@ -107,8 +134,12 @@ export default function BottomTabBar({
             size={22} 
             color={isRoomsActive ? primary : textHint} 
           />
+          <Text style={[s.tabLabel, { color: isRoomsActive ? primary : textHint }]}>Rooms</Text>
           {isRoomsActive && (
             <View style={[s.tabActiveDot, { backgroundColor: primary }]} />
+          )}
+          {!isRoomsActive && hasRoomActivity && (
+            <View style={[s.notifyDot, { backgroundColor: primary }]} />
           )}
         </TouchableOpacity>
 
@@ -128,6 +159,7 @@ export default function BottomTabBar({
               <Ionicons name="add" size={28} color="#fff" />
             </LinearGradient>
           </TouchableOpacity>
+          <Text style={[s.fabLabel, { color: textHint }]}>Add</Text>
         </View>
 
         {/* Messages */}
@@ -138,8 +170,9 @@ export default function BottomTabBar({
               size={22} 
               color={isMessagesActive ? primary : textHint} 
             />
+            <Text style={[s.tabLabel, { color: isMessagesActive ? primary : textHint }]}>Chats</Text>
             {isMessagesActive && (
-              <View style={[s.tabActiveDot, { backgroundColor: primary, position: 'absolute', bottom: -12, alignSelf: 'center' }]} />
+              <View style={[s.tabActiveDot, { backgroundColor: primary, alignSelf: 'center' }]} />
             )}
             {unreadCount > 0 && (
               <View style={s.unreadBadge}>
@@ -156,6 +189,7 @@ export default function BottomTabBar({
             size={22} 
             color={isProfileActive ? primary : textHint} 
           />
+          <Text style={[s.tabLabel, { color: isProfileActive ? primary : textHint }]}>Profile</Text>
           {isProfileActive && (
             <View style={[s.tabActiveDot, { backgroundColor: primary }]} />
           )}
@@ -167,14 +201,16 @@ export default function BottomTabBar({
 
 const s = StyleSheet.create({
   tabBarContent: {
-    height: 65,
+    height: 74,
     paddingHorizontal: 22,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  tabItem: { alignItems: 'center', justifyContent: 'center', width: 44, height: 44 },
-  tabActiveDot: { width: 4, height: 4, borderRadius: 2, marginTop: 4 },
+  tabItem: { alignItems: 'center', justifyContent: 'center', width: 54, height: 56 },
+  tabLabel: { fontSize: 10, fontWeight: '800', marginTop: 3 },
+  tabActiveDot: { width: 4, height: 4, borderRadius: 2, marginTop: 3 },
+  fabLabel: { fontSize: 10, fontWeight: '800', marginTop: 4 },
 
   fab: {
     width: 58,
@@ -200,4 +236,12 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   unreadText: { color: '#fff', fontSize: 9, fontWeight: '800' },
+  notifyDot: {
+    position: 'absolute',
+    top: 7,
+    right: 9,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+  },
 });

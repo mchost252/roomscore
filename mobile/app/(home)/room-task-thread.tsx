@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   View, Text, StyleSheet, TouchableOpacity, StatusBar, 
-  TextInput, KeyboardAvoidingView, Platform, Keyboard,
+  TextInput, KeyboardAvoidingView, Platform,
   RefreshControl
 } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
@@ -624,21 +624,21 @@ export default function RoomTaskThread() {
         <PinWallNode proofs={pinProofs} onDateChangePress={() => showToast({ message: 'Filter active' })} />
       </View>
 
-      <View style={{ flex: 1, minHeight: 200 }}>
-        <FlashList
-          ref={listRef} data={flattenedData} renderItem={renderItem} keyExtractor={i => i.id} getItemType={i => i.type} estimatedItemSize={120}
-          contentContainerStyle={{ paddingBottom: 140, paddingHorizontal: 16 }} showsVerticalScrollIndicator={false}
-          onEndReached={handleLoadMore} onEndReachedThreshold={0.5}
-          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refreshAll} tintColor={isDark ? '#fff' : '#000'} />}
-          onViewableItemsChanged={({ viewableItems }) => {
-            const top = viewableItems.find(v => v.item.type !== 'date_divider');
-            if (top) setFloatingDate(new Date(top.item.data.createdAt).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }));
-          }}
-          onScrollBeginDrag={() => { isScrolling.value = 1; }} onMomentumScrollEnd={() => { setTimeout(() => { isScrolling.value = 0; }, 1500); }}
-        />
-      </View>
-
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={styles.threadBody} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={styles.threadList}>
+          <FlashList
+            ref={listRef} data={flattenedData} renderItem={renderItem} keyExtractor={i => i.id} getItemType={i => i.type} estimatedItemSize={120}
+            contentContainerStyle={{ paddingBottom: 24, paddingHorizontal: 16 }} showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            onEndReached={handleLoadMore} onEndReachedThreshold={0.5}
+            refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refreshAll} tintColor={isDark ? '#fff' : '#000'} />}
+            onViewableItemsChanged={({ viewableItems }) => {
+              const top = viewableItems.find(v => v.item.type !== 'date_divider');
+              if (top) setFloatingDate(new Date(top.item.data.createdAt).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }));
+            }}
+            onScrollBeginDrag={() => { isScrolling.value = 1; }} onMomentumScrollEnd={() => { setTimeout(() => { isScrolling.value = 0; }, 1500); }}
+          />
+        </View>
         <BlurView intensity={isDark ? 90 : 60} tint={isDark ? "dark" : "light"} style={[styles.inputBarBlur, { paddingBottom: insets.bottom || 16, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }]}>
           <View style={styles.inputRow}>
             <TouchableOpacity style={[styles.mediaBtn, { backgroundColor: isDark ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.1)' }]} onPress={() => { setUploadMode('chat'); setShowUploadModal(true); }}>
@@ -672,6 +672,8 @@ const styles = StyleSheet.create({
   doneTickBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   doneTickActive: { opacity: 0.8 },
   stickyTopZone: { paddingTop: 12, zIndex: 10 },
+  threadBody: { flex: 1, minHeight: 200 },
+  threadList: { flex: 1, minHeight: 0 },
   floatingDateContainer: { position: 'absolute', left: 0, right: 0, alignItems: 'center', zIndex: 100 },
   floatingDateBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, overflow: 'hidden' },
   floatingDateText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
