@@ -66,27 +66,35 @@ app.use(helmet());
 
 // CORS configuration - allow web and mobile apps
 const allowedOrigins = [
-  process.env.FRONTEND_URL || 'http://localhost:3000',
+  process.env.FRONTEND_URL,
+  'https://krios-hub.vercel.app',
   'http://localhost',
   'https://localhost',
   'capacitor://localhost',
   'ionic://localhost',
-  'http://localhost:5173', // Vite dev server
+  'http://localhost:5173',
   'http://localhost:3000',
-  'http://localhost:8081', // Expo web dev server
-  'http://localhost:19006' // Expo web alternative port
-];
+  'http://localhost:8081',
+  'http://localhost:19006'
+].filter(Boolean);
+
+const isProduction = process.env.NODE_ENV === 'production';
 
 app.use(cors({
   origin: function(origin, callback) {
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
     
-    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
-      callback(null, true);
-    } else {
-      callback(null, true); // Allow all origins for now to support mobile apps
+    // Allow if in dev mode or origin is explicitly allowed
+    const isAllowed = !isProduction || allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app');
+    if (isAllowed) {
+      return callback(null, true);
     }
+    
+    // Reject with a clear error instead of silently allowing
+    const error = new Error(`Origin ${origin} not allowed by CORS`);
+    error.code = 'CORS_ERROR';
+    callback(error);
   },
   credentials: true
 }));
