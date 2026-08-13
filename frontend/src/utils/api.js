@@ -2,7 +2,7 @@ import axios from 'axios';
 import cacheManager from './cache';
 
 // Production API URL
-const PRODUCTION_API_URL = 'https://roomscore-backend.onrender.com'; // Update this to your new Render URL
+const PRODUCTION_API_URL = 'https://roomscore-production.up.railway.app';
 
 // Use environment variable if available, otherwise use production URL
 const getApiUrl = () => {
