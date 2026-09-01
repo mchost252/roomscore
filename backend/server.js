@@ -47,6 +47,7 @@ const { setIO } = require('./socket/io');
 
 const app = express();
 const server = http.createServer(app);
+console.log('[boot] http server created');
 const io = new Server(server, {
   cors: {
     origin: function(origin, callback) {
