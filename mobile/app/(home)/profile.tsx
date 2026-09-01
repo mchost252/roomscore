@@ -17,11 +17,12 @@ import {
   TouchableOpacity,
   UIManager,
   View,
+  InteractionManager,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import Animated, {
   Extrapolation,
   interpolate,
@@ -30,6 +31,7 @@ import Animated, {
   useSharedValue,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import trophyService, { Trophy as ServerTrophy, RarityMeta } from '../../services/trophyService';
 
 import ConfirmationModal from '../../components/ConfirmationModal';
 import { ActivityHeatmap } from '../../components/profile/ActivityHeatmap';
@@ -37,6 +39,8 @@ import { useAuth } from '../../context/AuthContext';
 import { HomeNavContext } from '../../context/HomeNavContext';
 import { useTheme } from '../../context/ThemeContext';
 import { imageStorageService } from '../../services/imageStorageService';
+import { uploadImage as uploadToCloudinary } from '../../services/cloudinaryService';
+import activityService, { toHeatmapData, ActivityData } from '../../services/activityService';
 
 let ImagePicker: any = null;
 if (Platform.OS !== 'web') {
@@ -109,20 +113,6 @@ function formatMonthYear(value?: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Unknown';
   return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-}
-
-function buildProfileActivity(total: number, streak: number) {
-  const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
-  const data = Array.from({ length: daysInMonth }, () => 0);
-  if (total <= 0) return data;
-
-  const todayIndex = new Date().getDate() - 1;
-  const visibleStreak = Math.min(streak || 1, daysInMonth, total);
-  for (let offset = 0; offset < visibleStreak; offset += 1) {
-    const index = todayIndex - offset;
-    if (index >= 0) data[index] = Math.min(4, Math.max(1, Math.ceil(total / 20)));
-  }
-  return data;
 }
 
 function Surface({
@@ -288,11 +278,36 @@ const rarityMap: Record<TrophyRarity, { label: string; color: string }> = {
   legendary: { label: 'Legendary', color: '#f59e0b' },
 };
 
+const SERVER_ICON_FALLBACK: Record<string, string> = {
+  beginning: 'rocket-outline',
+  consistency: 'pulse-outline',
+  task_master: 'checkmark-done-circle-outline',
+  focused: 'scan-outline',
+  community: 'people-outline',
+  communication: 'chatbubbles-outline',
+  growth: 'trending-up-outline',
+  learning: 'book-outline',
+  legendary: 'trophy-outline',
+};
+
+function iconForServerTrophy(t: ServerTrophy): string {
+  return SERVER_ICON_FALLBACK[t.category] ?? 'trophy-outline';
+}
+
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, logout, updateProfile } = useAuth();
   const { isDark } = useTheme();
   const insets = useSafeAreaInsets();
+
+  // Profile is reached from the More sheet rather than a tab slot, so it needs its
+  // own way out. canGoBack is false when Profile is the stack root (e.g. opened
+  // directly), in which case the nav bar is the exit and no chevron is shown.
+  const canGoBack = router.canGoBack();
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/(home)');
+  }, [router]);
 
   const [activeTab, setActiveTab] = useState<TabKey>('identity');
   const [expanded, setExpanded] = useState<Record<ExpandKey, boolean>>({
@@ -329,12 +344,52 @@ export default function ProfileScreen() {
   const total = user?.totalTasksCompleted || 0;
   const streak = user?.streak || 0;
   const longest = user?.longestStreak || 0;
-  const rate = total > 0 ? Math.min(Math.round((total / (total + 8)) * 100), 99) : 0;
   const initial = user?.username?.charAt(0).toUpperCase() || 'U';
   const displayBio = user?.bio || localBio || '';
   const archetype = getArchetype(total, streak, longest);
   const profileComplete = Boolean(displayBio && user?.avatar);
-  const activityData = useMemo(() => buildProfileActivity(total, streak), [streak, total]);
+  // Real activity from GET /api/activity/me — powers both the Rhythm heatmap
+  // preview and the Consistency metric. No synthesized data: the heatmap reflects
+  // real per-day completions (empty until loaded) and refreshes on focus, exactly
+  // like the full Activity screen.
+  const [activity, setActivity] = useState<ActivityData | null>(null);
+  const realHeatmap = useMemo(() => (activity ? toHeatmapData(activity) : null), [activity]);
+  const consistency = activity?.consistency ?? 0;
+
+  // Server-driven trophy data. The local fake list in `trophies` below is
+  // kept for backward compatibility with existing styles, but `serverTrophies`
+  // is what the trophies tab actually renders.
+  const [serverTrophies, setServerTrophies] = useState<ServerTrophy[]>([]);
+  const serverTrophyCount = serverTrophies.length;
+  const serverUnlockedCount = useMemo(
+    () => serverTrophies.filter((t) => t.unlocked).length,
+    [serverTrophies],
+  );
+  const earnedTrophies = useMemo(
+    () => serverTrophies.filter((t) => t.unlocked).slice(0, 4),
+    [serverTrophies],
+  );
+
+  const loadActivity = useCallback(async () => {
+    const data = await activityService.getMyActivity();
+    if (data) setActivity(data);
+  }, []);
+
+  const loadTrophies = useCallback(async () => {
+    try {
+      const unlocked = await trophyService.fetchUnlocked();
+      if (unlocked) setServerTrophies(unlocked);
+    } catch {
+      // Swallow — the trophies tab will show its own empty state.
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadActivity();
+      loadTrophies();
+    }, [loadActivity, loadTrophies])
+  );
 
   const scrollY = useSharedValue(0);
   const onScroll = useAnimatedScrollHandler({
@@ -373,9 +428,9 @@ export default function ProfileScreen() {
   useEffect(() => {
     if (!user?.id) return;
     imageStorageService.getBanner(user.id).then((uri) => {
-      if (uri) setBannerUri(uri);
+      setBannerUri(user.coverImage || uri || null);
     });
-  }, [user?.id]);
+  }, [user?.coverImage, user?.id]);
 
   const toggleExpanded = useCallback((key: ExpandKey) => {
     animateLayout();
@@ -432,20 +487,19 @@ export default function ProfileScreen() {
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.75,
-        base64: true,
+        base64: false,
       });
 
       if (result.canceled) return;
       const asset = result.assets?.[0];
-      if (!asset?.base64) {
+      if (!asset?.uri) {
         showProfileError('Could not read image data. Try another image.');
         return;
       }
 
-      const mime = asset.mimeType || 'image/jpeg';
-      const dataUri = `data:${mime};base64,${asset.base64}`;
-      if (user?.id) await imageStorageService.saveAvatar(user.id, dataUri);
-      const updated = await updateProfile({ avatar: dataUri } as any);
+      const cloudinaryUrl = await uploadToCloudinary(asset.uri, `krios/avatars/${user?.id}`);
+      if (user?.id) await imageStorageService.saveAvatar(user.id, cloudinaryUrl);
+      const updated = await updateProfile({ avatar: cloudinaryUrl });
       if (!updated.success) showProfileError(updated.message || 'Could not update profile photo.');
     } catch (error: any) {
       showProfileError(error?.message || 'Could not pick image.');
@@ -477,20 +531,23 @@ export default function ProfileScreen() {
         allowsEditing: true,
         aspect: [16, 9],
         quality: 0.82,
-        base64: true,
+        base64: false,
       });
 
       if (result.canceled) return;
       const asset = result.assets?.[0];
-      if (!asset?.base64) {
+      if (!asset?.uri) {
         showProfileError('Could not read image data. Try another image.');
         return;
       }
 
-      const mime = asset.mimeType || 'image/jpeg';
-      const dataUri = `data:${mime};base64,${asset.base64}`;
-      if (user?.id) await imageStorageService.saveBanner(user.id, dataUri);
-      setBannerUri(dataUri);
+      const cloudinaryUrl = await uploadToCloudinary(asset.uri, `krios/banners/${user?.id}`);
+      const updated = await updateProfile({ coverImage: cloudinaryUrl });
+      if (!updated.success) {
+        throw new Error(updated.message || 'Could not save banner image.');
+      }
+      if (user?.id) await imageStorageService.saveBanner(user.id, cloudinaryUrl);
+      setBannerUri(cloudinaryUrl);
     } catch (error: any) {
       showProfileError(error?.message || 'Could not pick banner image.');
     } finally {
@@ -509,16 +566,21 @@ export default function ProfileScreen() {
     setProfileEditorVisible(true);
   }, [displayBio]);
 
-  useEffect(() => {
-    setOpenAddTask(openProfileEditor);
-  }, [openProfileEditor, setOpenAddTask]);
+  useFocusEffect(
+    useCallback(() => {
+      const handle = InteractionManager.runAfterInteractions(() => {
+        setOpenAddTask(openProfileEditor);
+      });
+      return () => handle.cancel();
+    }, [openProfileEditor, setOpenAddTask])
+  );
 
   const metrics = useMemo(() => [
     { icon: 'flame', label: 'Current streak', value: `${streak}d`, color: '#f59e0b' },
     { icon: 'checkmark-done', label: 'Tasks done', value: total, color: '#10b981' },
-    { icon: 'pulse', label: 'Completion rate', value: `${rate}%`, color: '#38bdf8' },
+    { icon: 'pulse', label: 'Consistency', value: `${consistency}%`, color: '#38bdf8' },
     { icon: 'trophy', label: 'Best streak', value: `${longest}d`, color: '#a855f7' },
-  ], [longest, rate, streak, total]);
+  ], [consistency, longest, streak, total]);
 
   const trophies = useMemo<Trophy[]>(() => [
     {
@@ -657,9 +719,20 @@ export default function ProfileScreen() {
           />
           <Animated.View style={[styles.heroOverlay, { paddingTop: insets.top + 52 }, heroOverlayStyle]}>
             <View style={styles.heroTopRow}>
-              <View style={styles.profileWordmark}>
-                <Text style={styles.profileWordmarkText}>PROFILE</Text>
-                <View style={styles.profileWordmarkLine} />
+              <View style={styles.heroTopLeft}>
+                {/* Back affordance — Profile is reached from the More sheet and no
+                    longer owns a tab slot, so without this it can be a dead end.
+                    Guarded on canGoBack so it stays hidden when Profile is the
+                    root of the stack. */}
+                {canGoBack && (
+                  <TouchableOpacity onPress={handleBack} style={styles.heroButton} activeOpacity={0.75}>
+                    <Ionicons name="chevron-back" size={20} color="#fff" />
+                  </TouchableOpacity>
+                )}
+                <View style={styles.profileWordmark}>
+                  <Text style={styles.profileWordmarkText}>PROFILE</Text>
+                  <View style={styles.profileWordmarkLine} />
+                </View>
               </View>
               <TouchableOpacity onPress={() => router.push('/(home)/settings')} style={styles.heroButton} activeOpacity={0.75}>
                 <Ionicons name="settings-outline" size={19} color="#fff" />
@@ -789,9 +862,17 @@ export default function ProfileScreen() {
 
   const renderRhythm = () => (
     <View style={styles.sectionStack}>
-      <Surface C={C} style={styles.heatmapPanel}>
-        <ActivityHeatmap isDark={isDark} data={activityData} />
-      </Surface>
+      <TouchableOpacity activeOpacity={0.85} onPress={() => router.push('/(home)/activity')}>
+        <Surface C={C} style={styles.heatmapPanel}>
+          <View>
+            <ActivityHeatmap isDark={isDark} data={realHeatmap ?? []} activeDays={activity?.activeDays} />
+            {/* Chevron hint anchored to the panel corner */}
+            <View style={{ position: 'absolute', top: 0, right: 0 }}>
+              <Ionicons name="chevron-forward" size={14} color={C.faint} />
+            </View>
+          </View>
+        </Surface>
+      </TouchableOpacity>
 
       <ExpandablePanel
         id="insights"
@@ -823,37 +904,60 @@ export default function ProfileScreen() {
 
   const renderTrophies = () => (
     <View style={styles.sectionStack}>
-      <Surface C={C} style={styles.trophySummary}>
-        <View>
-          <Text style={[styles.summaryEyebrow, { color: C.muted }]}>Trophy case</Text>
-          <Text style={[styles.summaryTitle, { color: C.text }]}>{unlockedTrophies}/{trophies.length} unlocked</Text>
-        </View>
-        <View style={styles.summaryMedal}>
-          <Ionicons name="trophy" size={24} color="#f59e0b" />
+      <Surface C={C} style={[styles.trophySummary, { paddingVertical: 14 }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flex: 1 }}>
+          <View>
+            <Text style={[styles.summaryEyebrow, { color: C.muted }]}>Trophy case</Text>
+            <Text style={[styles.summaryTitle, { color: C.text }]}>
+              {serverUnlockedCount}/{Math.max(serverTrophyCount, trophies.length)} unlocked
+            </Text>
+          </View>
+          <TouchableOpacity onPress={() => router.push('/(home)/trophies')} style={{ paddingVertical: 6, paddingHorizontal: 12 }} activeOpacity={0.7}>
+            <Text style={{ color: '#6366f1', fontWeight: '900', fontSize: 13, letterSpacing: 0.5 }}>See all</Text>
+          </TouchableOpacity>
         </View>
       </Surface>
 
-      {trophyGroups.map((group) => (
-        <ExpandablePanel
-          key={group.key}
-          id={group.key}
-          title={group.title}
-          subtitle={group.subtitle}
-          icon={group.icon}
-          C={C}
-          expanded={expanded[group.key]}
-          onToggle={toggleExpanded}
-        >
-          <View style={styles.trophyGrid}>
-            {group.items.map((trophy) => (
-              <TrophyCard key={trophy.id} trophy={trophy} C={C} />
-            ))}
-          </View>
-          <Text style={[styles.groupNote, { color: C.faint }]}>
-            {group.items.find((item) => !item.unlocked)?.detail || 'This group is fully lit.'}
-          </Text>
-        </ExpandablePanel>
-      ))}
+      {/* Minimal earned row — server data when available, fall back to local list */}
+      <View style={{ gap: 10 }}>
+        <Text style={{ fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.5, color: C.muted, marginBottom: 4 }}>Earned</Text>
+        <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
+          {earnedTrophies.length > 0
+            ? earnedTrophies.map((trophy) => {
+                const r = rarityMap[trophy.rarity];
+                return (
+                  <TouchableOpacity
+                    key={trophy.id}
+                    onPress={() => router.push('/(home)/trophies')}
+                    style={{ width: (SCREEN_WIDTH - 58) / 2, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: `${r.color}33`, backgroundColor: C.elevated }}
+                    activeOpacity={0.85}
+                  >
+                    <LinearGradient colors={[`${r.color}15`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 12 }}>
+                      <View style={{ width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: `${r.color}22`, marginBottom: 8 }}>
+                        <Ionicons name={iconForServerTrophy(trophy) as any} size={18} color={r.color} />
+                      </View>
+                      <Text style={{ fontSize: 13, fontWeight: '900', color: C.text, marginBottom: 3 }} numberOfLines={1}>{trophy.title}</Text>
+                      <Text style={{ fontSize: 11, fontWeight: '600', color: C.muted }} numberOfLines={1}>{r.label}</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                );
+              })
+            : trophies.filter((t) => t.unlocked).slice(0, 4).map((trophy) => (
+                <TouchableOpacity key={trophy.id} onPress={() => router.push('/(home)/trophies')} style={{ width: (SCREEN_WIDTH - 58) / 2, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: `${rarityMap[trophy.rarity].color}33`, backgroundColor: C.elevated }} activeOpacity={0.85}>
+                  <LinearGradient colors={[`${rarityMap[trophy.rarity].color}15`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 12 }}>
+                    <View style={{ width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: `${rarityMap[trophy.rarity].color}22`, marginBottom: 8 }}>
+                      <Ionicons name={trophy.icon as any} size={18} color={rarityMap[trophy.rarity].color} />
+                    </View>
+                    <Text style={{ fontSize: 13, fontWeight: '900', color: C.text, marginBottom: 3 }} numberOfLines={1}>{trophy.title}</Text>
+                    <Text style={{ fontSize: 11, fontWeight: '600', color: C.muted }} numberOfLines={1}>{rarityMap[trophy.rarity].label}</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              ))}
+        </View>
+        {serverUnlockedCount === 0 && earnedTrophies.length === 0 && (
+          <Text style={{ color: C.muted, fontSize: 12, fontWeight: '600', marginTop: 6 }}>No trophies earned yet. Complete tasks to unlock.</Text>
+        )}
+      </View>
     </View>
   );
 
@@ -869,6 +973,14 @@ export default function ProfileScreen() {
       <View style={[styles.fixedHeader, { paddingTop: insets.top + 8 }]}>
         <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: C.bg, borderBottomColor: C.border, borderBottomWidth: 1 }, headerStyle]} />
         <Animated.View style={[styles.fixedHeaderRow, headerContentStyle]}>
+          {canGoBack && (
+            <TouchableOpacity
+              onPress={handleBack}
+              style={[styles.fixedHeaderButton, { borderColor: C.border, backgroundColor: C.surface }]}
+            >
+              <Ionicons name="chevron-back" size={18} color={C.text} />
+            </TouchableOpacity>
+          )}
           {renderAvatar(32, true)}
           <Text style={[styles.fixedHeaderTitle, { color: C.text }]} numberOfLines={1}>{user?.username || 'Profile'}</Text>
           <TouchableOpacity onPress={() => router.push('/(home)/settings')} style={[styles.fixedHeaderButton, { borderColor: C.border, backgroundColor: C.surface }]}>
@@ -1030,6 +1142,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  heroTopLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   profileWordmark: {
     alignItems: 'flex-start',
@@ -1522,3 +1639,9 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
 });
+
+
+
+
+
+
