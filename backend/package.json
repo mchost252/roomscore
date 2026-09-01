@@ -12,7 +12,9 @@
     "db:push": "prisma db push --accept-data-loss",
     "db:push:local": "prisma generate --schema=prisma/schema.local.prisma && prisma db push --schema=prisma/schema.local.prisma --accept-data-loss",
     "build": "prisma generate",
-    "test": "jest --coverage"
+    "test": "jest --coverage",
+    "backfill:trophies": "node scripts/backfill-trophies.js",
+    "backfill:trophies:user": "node scripts/backfill-trophies.js --user"
   },
   "keywords": [
     "habit-tracking",
