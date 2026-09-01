@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dimensions,
   RefreshControl,
@@ -176,14 +176,16 @@ export default function TrophiesScreen() {
   const summary = data?.summary;
   const rarityMap = data?.rarity ?? ({} as Record<TrophyRarity, RarityMeta>);
 
-  // Only the first category is expanded by default. Re-derived when the
-  // grouped data changes (e.g. after a recompute) so it tracks order.
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Only the first category is expanded by default. Seed once when the
+  // grouped data first arrives; never re-seed (which would re-open the
+  // first category the moment the user collapses it).
+  const seededRef = useRef(false);
   useEffect(() => {
-    if (grouped.length > 0 && expanded.size === 0) {
+    if (!seededRef.current && grouped.length > 0) {
+      seededRef.current = true;
       setExpanded(new Set([grouped[0].id]));
     }
-  }, [grouped, expanded.size]);
+  }, [grouped]);
 
   const toggleCategory = useCallback((id: string) => {
     setExpanded((prev) => {
