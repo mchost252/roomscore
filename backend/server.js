@@ -35,6 +35,7 @@ const orbitSummaryRoutes = require('./routes/orbitSummary');
 const personalTaskRoutes = require('./routes/personalTasks');
 const aiRoutes = require('./routes/ai');
 const internalRoutes = require('./routes/internal');
+const activityRoutes = require('./routes/activity');
 
 
 // Import socket handler
@@ -103,8 +104,13 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Session configuration for Google OAuth
+const sessionSecret = process.env.SESSION_SECRET || (process.env.NODE_ENV === 'production' ? null : 'dev-session-secret');
+if (!sessionSecret) {
+  console.error('❌ SESSION_SECRET is required in production');
+  process.exit(1);
+}
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'your-secret-key',
+  secret: sessionSecret,
   resave: false,
   saveUninitialized: false,
   cookie: {
@@ -197,6 +203,7 @@ app.use('/api/orbit-summary', orbitSummaryRoutes);
 app.use('/api/personal-tasks', personalTaskRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/internal', internalRoutes);
+app.use('/api/activity', activityRoutes);
 
 // Health check
 
