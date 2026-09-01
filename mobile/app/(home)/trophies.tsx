@@ -176,6 +176,24 @@ export default function TrophiesScreen() {
   const summary = data?.summary;
   const rarityMap = data?.rarity ?? ({} as Record<TrophyRarity, RarityMeta>);
 
+  // Only the first category is expanded by default. Re-derived when the
+  // grouped data changes (e.g. after a recompute) so it tracks order.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (grouped.length > 0 && expanded.size === 0) {
+      setExpanded(new Set([grouped[0].id]));
+    }
+  }, [grouped, expanded.size]);
+
+  const toggleCategory = useCallback((id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
   const allTrophies: Trophy[] = useMemo(
     () => grouped.flatMap((g) => g.trophies),
     [grouped],
@@ -311,6 +329,8 @@ export default function TrophiesScreen() {
               category={group}
               rarityMap={rarityMap}
               C={C}
+              expanded={expanded.has(group.id)}
+              onToggle={() => toggleCategory(group.id)}
             />
           ))
         )}
@@ -375,36 +395,54 @@ function CategorySection({
   category,
   rarityMap,
   C,
+  expanded,
+  onToggle,
 }: {
   category: CategoryMeta & { trophies: Trophy[] };
   rarityMap: Record<TrophyRarity, RarityMeta>;
   C: any;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
   const unlockedCount = category.trophies.filter((t) => t.unlocked).length;
   const total = category.trophies.length;
   const parentIcon = ICON_FOR_CATEGORY[category.id] ?? 'trophy-outline';
+  const allUnlocked = unlockedCount === total;
 
   return (
-    <View style={{ paddingHorizontal: 20, marginTop: 28 }}>
-      <View style={styles.sectionHeader}>
+    <View style={{ paddingHorizontal: 20, marginTop: 22 }}>
+      <TouchableOpacity
+        onPress={onToggle}
+        activeOpacity={0.7}
+        style={styles.sectionHeader}
+      >
         <View style={[styles.sectionIcon, { backgroundColor: 'rgba(99,102,241,0.12)' }]}>
           <Ionicons name={parentIcon as any} size={16} color="#818cf8" />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={[styles.sectionTitle, { color: C.text }]}>{category.title}</Text>
-          <Text style={[styles.sectionSub, { color: C.muted }]}>{unlockedCount} of {total}</Text>
+          <Text style={[styles.sectionSub, { color: C.muted }]}>
+            {unlockedCount} of {total}{allUnlocked ? ' · complete' : ''}
+          </Text>
         </View>
-      </View>
-      <View style={styles.trophyGrid}>
-        {category.trophies.map((trophy) => (
-          <TrophyCell
-            key={trophy.id}
-            trophy={trophy}
-            rarity={rarityFor(rarityMap[trophy.rarity], rarityMap)}
-            C={C}
-          />
-        ))}
-      </View>
+        <Ionicons
+          name={expanded ? 'chevron-up' : 'chevron-down'}
+          size={18}
+          color={C.muted}
+        />
+      </TouchableOpacity>
+      {expanded && (
+        <View style={styles.trophyGrid}>
+          {category.trophies.map((trophy) => (
+            <TrophyCell
+              key={trophy.id}
+              trophy={trophy}
+              rarity={rarityFor(rarityMap[trophy.rarity], rarityMap)}
+              C={C}
+            />
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -526,7 +564,7 @@ const styles = StyleSheet.create({
   featuredDesc: { fontSize: 13, fontWeight: '600', textAlign: 'center', marginTop: 6, lineHeight: 19 },
   featuredBadge: { marginTop: 16, paddingHorizontal: 14, paddingVertical: 5, borderRadius: 12, borderWidth: 1 },
   featuredBadgeText: { fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14, paddingVertical: 6 },
   sectionIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   sectionTitle: { fontSize: 16, fontWeight: '900' },
   sectionSub: { fontSize: 11, fontWeight: '700', marginTop: 2 },
