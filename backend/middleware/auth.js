@@ -74,15 +74,43 @@ exports.isAdmin = (req, res, next) => {
 exports.isRoomOwner = async (req, res, next) => {
   try {
     const roomId = req.params.id || req.params.roomId;
-    
+
+    // Fetch only the fields needed for the ownership check first.
+    // Route handlers that need full room data (members, tasks) will re-query
+    // via req.room, but most owner-only routes (update, delete, settings, premium)
+    // already do their own targeted Prisma call, so the heavy include is wasted here.
     const room = await prisma.room.findUnique({
       where: { id: roomId },
       include: {
-        members: true,
-        tasks: true
+        members: {
+          select: {
+            id: true,
+            userId: true,
+            role: true,
+            points: true,
+            status: true,
+            joinedAt: true,
+            user: { select: { id: true, username: true, avatar: true } }
+          }
+        },
+        tasks: {
+          where: { isActive: true },
+          select: {
+            id: true,
+            roomId: true,
+            title: true,
+            description: true,
+            taskType: true,
+            daysOfWeek: true,
+            points: true,
+            isActive: true,
+            createdAt: true
+          }
+        },
+        owner: { select: { id: true, username: true } }
       }
     });
-    
+
     if (!room) {
       return res.status(404).json({
         success: false,
@@ -98,6 +126,58 @@ exports.isRoomOwner = async (req, res, next) => {
     }
 
     req.room = room;
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Check if user is room owner OR a promoted room admin.
+// Sets req.roomRole to 'owner' or 'admin' so handlers can apply the extra
+// restrictions that apply to admins (e.g. an admin cannot kick another admin).
+exports.isRoomAdmin = async (req, res, next) => {
+  try {
+    const roomId = req.params.id || req.params.roomId;
+
+    const room = await prisma.room.findUnique({
+      where: { id: roomId },
+      include: {
+        members: {
+          select: {
+            id: true,
+            userId: true,
+            role: true,
+            points: true,
+            status: true,
+            joinedAt: true,
+            user: { select: { id: true, username: true, avatar: true } }
+          }
+        },
+        owner: { select: { id: true, username: true } }
+      }
+    });
+
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: 'Room not found'
+      });
+    }
+
+    const isOwner = room.ownerId === req.user.id;
+    const membership = room.members.find(
+      m => m.userId === req.user.id && m.status === 'active'
+    );
+
+    if (!isOwner && membership?.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the room owner or an admin can perform this action'
+      });
+    }
+
+    req.room = room;
+    req.roomRole = isOwner ? 'owner' : 'admin';
     next();
   } catch (error) {
     next(error);

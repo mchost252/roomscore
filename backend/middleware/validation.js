@@ -43,6 +43,7 @@ exports.loginSchema = Joi.object({
 exports.updateProfileSchema = Joi.object({
   username: Joi.string().min(3).max(30),
   avatar: Joi.string().uri().allow(null, ''),
+  coverImage: Joi.string().uri().allow(null, ''),
   bio: Joi.string().max(500).allow(''),
   notificationSettings: Joi.object({
     taskReminders: Joi.boolean(),
@@ -60,13 +61,16 @@ exports.createRoomSchema = Joi.object({
   duration: Joi.string().valid('1_week', '2_weeks', '1_month'),
   requireApproval: Joi.boolean(),
   chatRetentionDays: Joi.number().min(1).max(5), // How long to keep chat messages
+  coverImage: Joi.string().uri().allow(null, ''),
+  roomDp: Joi.string().uri().allow(null, ''),
   tasks: Joi.array().items(Joi.object({
     title: Joi.string().min(1).max(100).required(),
     description: Joi.string().max(500).allow('', null),
     points: Joi.number().min(1).max(10), // Points limited to 1-10
     taskType: Joi.string().valid('daily', 'weekly', 'custom'),
     frequency: Joi.string().valid('daily', 'weekly', 'custom'),
-    daysOfWeek: Joi.array().items(Joi.number().min(0).max(6)) // For custom frequency
+    daysOfWeek: Joi.array().items(Joi.number().min(0).max(6)), // For custom frequency
+    hasThread: Joi.boolean() // Owner opt-in: social thread enabled
   })),
   settings: Joi.object({
     timezone: Joi.string(),
@@ -81,12 +85,22 @@ exports.updateRoomSchema = Joi.object({
   description: Joi.string().max(500).allow(''),
   isPublic: Joi.boolean(),
   maxMembers: Joi.number().min(2).max(100),
+  coverImage: Joi.string().uri().allow(null, ''),
+  roomDp: Joi.string().uri().allow(null, ''),
   settings: Joi.object({
     timezone: Joi.string(),
     allowMemberTaskCreation: Joi.boolean(),
     messageRetentionDays: Joi.number().min(1).max(365),
     requireApproval: Joi.boolean()
   })
+});
+
+exports.updateRoomDpSchema = Joi.object({
+  roomDp: Joi.string().uri().allow(null, '').required()
+});
+
+exports.updateMemberRoleSchema = Joi.object({
+  role: Joi.string().valid('admin', 'member').required()
 });
 
 exports.joinRoomSchema = Joi.object({
@@ -103,7 +117,8 @@ exports.createTaskSchema = Joi.object({
   frequency: Joi.string().valid('daily', 'weekly', 'custom').allow('', null),
   taskType: Joi.string().valid('daily', 'weekly', 'custom').allow('', null),
   daysOfWeek: Joi.array().items(Joi.number().min(0).max(6)).allow(null), // For custom frequency
-  deadline: Joi.date().iso().allow('', null)
+  deadline: Joi.date().iso().allow('', null),
+  hasThread: Joi.boolean() // Owner opt-in: social thread enabled
 }).or('frequency', 'taskType'); // At least one of frequency or taskType must be present
 
 exports.updateTaskSchema = Joi.object({
@@ -115,7 +130,8 @@ exports.updateTaskSchema = Joi.object({
   taskType: Joi.string().valid('daily', 'weekly', 'custom').allow('', null),
   daysOfWeek: Joi.array().items(Joi.number().min(0).max(6)).allow(null), // For custom frequency
   deadline: Joi.date().iso().allow('', null),
-  isActive: Joi.boolean()
+  isActive: Joi.boolean(),
+  hasThread: Joi.boolean() // Owner opt-in: social thread enabled
 });
 
 // Chat schema

@@ -30,8 +30,9 @@ interface MemberHUDModalProps {
   isOwner: boolean;
   ownerId?: string;
   roomId?: string;
-  onKickMember?: (id: string) => void;
-  onPromoteMember?: (id: string) => void;
+  currentUserId?: string;
+  onKickMember: (id: string) => void | Promise<void>;
+  onPromoteMember: (id: string, role: 'admin' | 'member') => void | Promise<void>;
 }
 
 // ── Point computation ───────────────────────────────────────────────────────
@@ -49,6 +50,7 @@ export default function MemberHUDModal({
   isOwner,
   ownerId,
   roomId,
+  currentUserId,
   onKickMember,
   onPromoteMember,
 }: MemberHUDModalProps) {
@@ -59,6 +61,21 @@ export default function MemberHUDModal({
   const [pendingLoading, setPendingLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'members' | 'requests'>('members');
+
+  // Member the owner/admin tapped "⋮" on — drives the action sheet below.
+  const [actionTarget, setActionTarget] = useState<MemberWithPoints | null>(null);
+  // Confirmation happens inside this sheet rather than via Alert.alert: an alert
+  // raised while this Modal is presented never surfaces, so the tap looks dead.
+  const [pendingAction, setPendingAction] = useState<'kick' | 'admin' | 'member' | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const closeActionSheet = useCallback(() => {
+    setActionTarget(null);
+    setPendingAction(null);
+    setActionBusy(false);
+    setActionError(null);
+  }, []);
 
   // ── Compute points per member from task completions ─────────────────────
   const rankedMembers: MemberWithPoints[] = useMemo(() => {
@@ -107,6 +124,7 @@ export default function MemberHUDModal({
     }
     if (!visible) {
       setActiveTab('members');
+      closeActionSheet();
     }
   }, [visible, isOwner, roomId]);
 
@@ -168,6 +186,48 @@ export default function MemberHUDModal({
   const isMemberOwner = (m: MemberWithPoints) => {
     const uid = m.userId || m.id;
     return uid === ownerId;
+  };
+
+  const isMemberAdmin = (m: MemberWithPoints) => !isMemberOwner(m) && m.role === 'admin';
+
+  // Admins can moderate too, but only the owner can hand out or take back admin.
+  const viewerIsAdmin = useMemo(() => {
+    if (!currentUserId) return false;
+    const me = members.find(m => (m.userId || m.id) === currentUserId);
+    return me?.role === 'admin';
+  }, [members, currentUserId]);
+
+  const canModerate = isOwner || viewerIsAdmin;
+
+  // An admin may act on regular members only; the owner may act on anyone else.
+  const canModerateMember = (m: MemberWithPoints) => {
+    if (isMemberOwner(m)) return false;
+    if ((m.userId || m.id) === currentUserId) return false;
+    if (isOwner) return true;
+    return viewerIsAdmin && !isMemberAdmin(m);
+  };
+
+  const runPendingAction = async () => {
+    if (!actionTarget || !pendingAction || actionBusy) return;
+    const targetId = actionTarget.userId || actionTarget.id;
+
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      if (pendingAction === 'kick') {
+        await onKickMember(targetId);
+      } else {
+        await onPromoteMember(targetId, pendingAction);
+      }
+      closeActionSheet();
+    } catch (error: any) {
+      setActionBusy(false);
+      setActionError(
+        error?.response?.data?.message ||
+          error?.message ||
+          'Something went wrong. Please try again.',
+      );
+    }
   };
 
   return (
@@ -353,6 +413,12 @@ export default function MemberHUDModal({
                             <Text style={styles.ownerPillText}>Owner</Text>
                           </View>
                         )}
+                        {isMemberAdmin(m) && (
+                          <View style={[styles.adminPill, { backgroundColor: isDark ? 'rgba(99,102,241,0.16)' : 'rgba(99,102,241,0.1)' }]}>
+                            <Ionicons name="shield-checkmark" size={8} color="#6366f1" />
+                            <Text style={styles.adminPillText}>Admin</Text>
+                          </View>
+                        )}
                       </View>
                       <Text style={[styles.metaText, { color: colors.textTertiary }]}>
                         {m.completedCount} task{m.completedCount !== 1 ? 's' : ''} done
@@ -369,11 +435,14 @@ export default function MemberHUDModal({
                       </Text>
                     </View>
 
-                    {/* Owner actions */}
-                    {isOwner && !memberIsOwner && (
+                    {/* Owner / admin actions */}
+                    {canModerate && canModerateMember(m) && (
                       <TouchableOpacity
                         style={styles.moreBtn}
-                        onPress={() => onKickMember?.(m.id)}
+                        onPress={() => {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          setActionTarget(m);
+                        }}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
                         <Ionicons
@@ -504,6 +573,150 @@ export default function MemberHUDModal({
           )}
         </ScrollView>
       </View>
+
+      {/* ── Member action sheet (owner / admin) ───────────────────────────── */}
+      {actionTarget && (
+        <>
+          <TouchableOpacity
+            style={[styles.scrim, { backgroundColor: colors.overlay }]}
+            activeOpacity={1}
+            onPress={closeActionSheet}
+          />
+
+          <View style={[styles.actionSheet, { backgroundColor: sheetBg }]}>
+            <View style={styles.handleBar}>
+              <View style={[styles.handle, { backgroundColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)' }]} />
+            </View>
+
+            {/* Who you're acting on */}
+            <View style={[styles.actionHeader, { borderBottomColor: colors.borderColor }]}>
+              {actionTarget.avatar ? (
+                <Image source={{ uri: actionTarget.avatar }} style={styles.avatar} />
+              ) : (
+                <View style={[styles.avatarFallback, { backgroundColor: isDark ? '#1e1b4b' : '#e0e7ff' }]}>
+                  <Text style={[styles.avatarInitial, { color: isDark ? '#c4b5fd' : '#4f46e5' }]}>
+                    {actionTarget.username.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+              )}
+              <View style={styles.infoCol}>
+                <Text style={[styles.memberName, { color: colors.text }]} numberOfLines={1}>
+                  {actionTarget.username}
+                </Text>
+                <Text style={[styles.metaText, { color: colors.textTertiary }]}>
+                  {isMemberAdmin(actionTarget) ? 'Room admin' : 'Member'}
+                </Text>
+              </View>
+            </View>
+
+            {pendingAction ? (
+              /* ── Confirm step ──────────────────────────────────────────── */
+              <>
+                <Text style={[styles.confirmText, { color: colors.textSecondary }]}>
+                  {pendingAction === 'kick'
+                    ? `Remove ${actionTarget.username} from the room? Their points and completions here are cleared.`
+                    : pendingAction === 'admin'
+                      ? `Give ${actionTarget.username} admin access? They'll be able to remove members from the room.`
+                      : `Remove ${actionTarget.username}'s admin access? They'll go back to being a regular member.`}
+                </Text>
+
+                {actionError && (
+                  <Text style={styles.errorText}>{actionError}</Text>
+                )}
+
+                <View style={styles.confirmRow}>
+                  <TouchableOpacity
+                    style={[styles.confirmBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}
+                    onPress={() => { setPendingAction(null); setActionError(null); }}
+                    disabled={actionBusy}
+                  >
+                    <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.confirmBtn,
+                      { backgroundColor: pendingAction === 'admin' ? '#6366f1' : '#ef4444', opacity: actionBusy ? 0.7 : 1 },
+                    ]}
+                    onPress={runPendingAction}
+                    disabled={actionBusy}
+                  >
+                    {actionBusy ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.confirmBtnText}>
+                        {pendingAction === 'kick'
+                          ? 'Remove'
+                          : pendingAction === 'admin'
+                            ? 'Make admin'
+                            : 'Remove admin'}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              /* ── Options ───────────────────────────────────────────────── */
+              <>
+                {/* Promote / demote — owner only, mirrors the backend rule */}
+                {isOwner && (
+                  <TouchableOpacity
+                    style={styles.actionRow}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setPendingAction(isMemberAdmin(actionTarget) ? 'member' : 'admin');
+                    }}
+                  >
+                    <View style={[styles.actionIcon, { backgroundColor: isDark ? 'rgba(99,102,241,0.16)' : 'rgba(99,102,241,0.1)' }]}>
+                      <Ionicons
+                        name={isMemberAdmin(actionTarget) ? 'shield-outline' : 'shield-checkmark'}
+                        size={17}
+                        color="#6366f1"
+                      />
+                    </View>
+                    <View style={styles.infoCol}>
+                      <Text style={[styles.actionLabel, { color: colors.text }]}>
+                        {isMemberAdmin(actionTarget) ? 'Remove admin' : 'Make admin'}
+                      </Text>
+                      <Text style={[styles.actionHint, { color: colors.textTertiary }]}>
+                        {isMemberAdmin(actionTarget)
+                          ? 'They go back to being a regular member'
+                          : 'Admins can remove members from the room'}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
+
+                {/* Remove from room */}
+                <TouchableOpacity
+                  style={styles.actionRow}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setPendingAction('kick');
+                  }}
+                >
+                  <View style={[styles.actionIcon, { backgroundColor: isDark ? 'rgba(239,68,68,0.14)' : 'rgba(239,68,68,0.08)' }]}>
+                    <Ionicons name="person-remove-outline" size={17} color="#ef4444" />
+                  </View>
+                  <View style={styles.infoCol}>
+                    <Text style={[styles.actionLabel, { color: '#ef4444' }]}>Remove from room</Text>
+                    <Text style={[styles.actionHint, { color: colors.textTertiary }]}>
+                      Their points and completions in this room are cleared
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.cancelBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}
+                  onPress={closeActionSheet}
+                >
+                  <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </>
+      )}
     </Modal>
   );
 }
@@ -691,6 +904,19 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#f59e0b',
   },
+  adminPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  adminPillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#6366f1',
+  },
   metaText: {
     fontSize: 11,
     fontWeight: '500',
@@ -713,6 +939,93 @@ const styles = StyleSheet.create({
     height: 24,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+
+  // ── Member action sheet ─────────────────────────────────────────────────
+  actionSheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: 28,
+    overflow: 'hidden',
+  },
+  actionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+  },
+  actionIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  actionHint: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  cancelBtn: {
+    marginTop: 6,
+    marginHorizontal: 20,
+    paddingVertical: 13,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  cancelBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  confirmText: {
+    fontSize: 13,
+    fontWeight: '500',
+    lineHeight: 19,
+    paddingHorizontal: 20,
+    paddingTop: 14,
+  },
+  errorText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#ef4444',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+  },
+  confirmRow: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  confirmBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 46,
+  },
+  confirmBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#fff',
   },
 
   // ── Request card ────────────────────────────────────────────────────────

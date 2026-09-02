@@ -86,7 +86,7 @@ async function syncToSQLite(roomId: string, room: Room, tasks: Task[], members: 
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [
             mId, roomId, m.userId || m.id || (m as any)._id || mId, m.username || 'Unknown', 
-            m.avatar || null, m.isOnline ? 1 : 0, 'member'
+            m.avatar || null, m.isOnline ? 1 : 0, m.role || 'member'
           ].map(sanitize)
         );
       }
@@ -263,6 +263,20 @@ export function useRoomDetail(roomId: string) {
       }
     };
 
+    const onMemberRoleChanged = (data: any) => {
+      if (data.roomId !== roomId) return;
+      const targetUserId = data.userId || data.user?.id || data.user?._id;
+      if (!targetUserId || !data.role) return;
+
+      setMembers(prev => {
+        const next = prev.map(m =>
+          m.userId === targetUserId || m.id === targetUserId ? { ...m, role: data.role } : m,
+        );
+        roomStorage.set(membersKey(roomId), JSON.stringify(next));
+        return next;
+      });
+    };
+
     const removeUserFromRoomState = (data: any) => {
       if (data.roomId !== roomId) return;
       const removedUserId = data.userId || data.oderId || data.user?.id || data.user?._id;
@@ -337,6 +351,7 @@ export function useRoomDetail(roomId: string) {
       realtimeEvents.on('member:joined', onMemberUpdate),
       realtimeEvents.on('member:left', removeUserFromRoomState),
       realtimeEvents.on('member:kicked', removeUserFromRoomState),
+      realtimeEvents.on('member:roleChanged', onMemberRoleChanged),
       realtimeEvents.on('room:expired', (data) => {
         if (data?.roomId === roomId) fetchFromAPI(true);
       }),
@@ -347,9 +362,9 @@ export function useRoomDetail(roomId: string) {
     };
   }, [fetchFromAPI, roomId, user?.id]);
 
-  const refresh = useCallback(() => {
+  const refresh = useCallback(async () => {
     setRefreshing(true);
-    fetchFromAPI(true);
+    await fetchFromAPI(true);
   }, [fetchFromAPI]);
 
   const addTask = useCallback((task: Task) => {

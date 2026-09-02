@@ -4,9 +4,17 @@ const { prisma } = require('../config/database');
 const { nanoid } = require('nanoid');
 const NotificationService = require('../services/notificationService');
 const PushNotificationService = require('../services/pushNotificationService');
-const { protect, isRoomOwner, isRoomMember } = require('../middleware/auth');
-const { validate, createRoomSchema, updateRoomSchema, joinRoomSchema, sendMessageSchema } = require('../middleware/validation');
+const { protect, isRoomOwner, isRoomAdmin, isRoomMember } = require('../middleware/auth');
+const { validate, createRoomSchema, updateRoomSchema, updateRoomDpSchema, updateMemberRoleSchema, joinRoomSchema, sendMessageSchema } = require('../middleware/validation');
 const logger = require('../utils/logger');
+const { evaluateAndUnlock } = require('../services/trophyService');
+
+function fireTrophyCheck(userId) {
+  if (!userId) return;
+  evaluateAndUnlock(userId).catch((err) =>
+    logger.error(`Trophy evaluation failed for ${userId}:`, err.message),
+  );
+}
 
 // Helper to generate join code
 const generateJoinCode = () => nanoid(8).toUpperCase();
@@ -38,6 +46,8 @@ const formatRoomResponse = (room) => ({
   requireApproval: room.requireApproval || false,
   isPremium: room.isPremium || false, // Room premium status
   premiumActivatedAt: room.premiumActivatedAt || null,
+  coverImage: room.coverImage || null,
+  roomDp: room.roomDp || null,
   owner: room.owner ? { ...room.owner, _id: room.owner.id } : { _id: room.ownerId },
   // IMPORTANT: Only return active members (exclude pending)
   members: room.members?.filter(m => m.status === 'active').map(m => ({
@@ -99,6 +109,7 @@ router.get('/', protect, async (req, res, next) => {
           startDate: true,
           endDate: true,
           isActive: true,
+          coverImage: true,
           createdAt: true,
           updatedAt: true,
           owner: { select: { id: true, username: true } },
@@ -131,21 +142,20 @@ router.get('/', protect, async (req, res, next) => {
     }
     
     // Get user's rooms (owned or member)
-    // Optimized: Use separate queries to avoid complex joins
+    // Parallelise the two independent ID lookups before combining.
     const t0 = Date.now();
-    
-    // Get room IDs user is a member of
-    const memberRoomIds = await prisma.roomMember.findMany({
-      where: { userId: req.user.id },
-      select: { roomId: true }
-    });
+
+    const [memberRoomIds, ownedRoomIds] = await Promise.all([
+      prisma.roomMember.findMany({
+        where: { userId: req.user.id },
+        select: { roomId: true }
+      }),
+      prisma.room.findMany({
+        where: { ownerId: req.user.id, ...activeRoomWhere() },
+        select: { id: true }
+      }),
+    ]);
     const memberIds = memberRoomIds.map(r => r.roomId);
-    
-    // Get owned room IDs
-    const ownedRoomIds = await prisma.room.findMany({
-      where: { ownerId: req.user.id, ...activeRoomWhere() },
-      select: { id: true }
-    });
     const ownedIds = ownedRoomIds.map(r => r.id);
     
     // Combine and dedupe
@@ -238,7 +248,7 @@ router.get('/', protect, async (req, res, next) => {
 // @access  Private
 router.post('/', protect, validate(createRoomSchema), async (req, res, next) => {
   try {
-    const { name, description, isPublic, maxMembers, tasks, duration, chatRetentionDays, requireApproval } = req.body;
+    const { name, description, isPublic, maxMembers, tasks, duration, chatRetentionDays, requireApproval, coverImage, roomDp } = req.body;
 
     // Calculate expiry date based on duration (max 1 month)
     const endDate = calculateExpiryDate(duration || '1_month');
@@ -258,6 +268,8 @@ router.post('/', protect, validate(createRoomSchema), async (req, res, next) => 
         maxMembers: maxMembers || 50,
         chatRetentionDays: retentionDays,
         endDate,
+        coverImage: coverImage || null,
+        roomDp: roomDp || null,
         members: {
           create: {
             userId: req.user.id,
@@ -278,7 +290,8 @@ router.post('/', protect, validate(createRoomSchema), async (req, res, next) => 
               description: task.description || null,
               taskType: taskType,
               daysOfWeek: daysOfWeek || null,
-              points: Math.min(10, Math.max(1, task.points || 5)) // Clamp points to 1-10
+              points: Math.min(10, Math.max(1, task.points || 5)), // Clamp points to 1-10
+              hasThread: task.hasThread === true
             };
           })
         } : undefined
@@ -299,6 +312,7 @@ router.post('/', protect, validate(createRoomSchema), async (req, res, next) => 
     io.emit('room:created', { room: formatRoomResponse(room) });
 
     logger.info(`Room created: ${room.name} by ${req.user.email}, expires: ${endDate}`);
+    fireTrophyCheck(req.user.id);
     res.status(201).json({
       success: true,
       room: formatRoomResponse(room)
@@ -313,9 +327,17 @@ router.post('/', protect, validate(createRoomSchema), async (req, res, next) => 
 // @access  Private (must be member)
 router.get('/:id', protect, isRoomMember, async (req, res, next) => {
   try {
+    const room = formatRoomResponse(req.room);
+
+    // Join code is owner-private unless the owner opts to reveal it to all members.
+    const isOwner = req.room.ownerId === req.user.id;
+    if (!isOwner && !req.room.showJoinCode) {
+      delete room.joinCode;
+    }
+
     res.json({
       success: true,
-      room: formatRoomResponse(req.room)
+      room
     });
   } catch (error) {
     next(error);
@@ -327,13 +349,15 @@ router.get('/:id', protect, isRoomMember, async (req, res, next) => {
 // @access  Private (owner only)
 router.put('/:id', protect, isRoomOwner, validate(updateRoomSchema), async (req, res, next) => {
   try {
-    const { name, description, isPublic, maxMembers } = req.body;
+    const { name, description, isPublic, maxMembers, coverImage, roomDp } = req.body;
 
     const updateData = {};
     if (name) updateData.name = name;
     if (description !== undefined) updateData.description = description;
     if (isPublic !== undefined) updateData.isPrivate = !isPublic;
     if (maxMembers) updateData.maxMembers = maxMembers;
+    if (coverImage !== undefined) updateData.coverImage = coverImage;
+    if (roomDp !== undefined) updateData.roomDp = roomDp;
 
     const room = await prisma.room.update({
       where: { id: req.params.id },
@@ -358,6 +382,33 @@ router.put('/:id', protect, isRoomOwner, validate(updateRoomSchema), async (req,
       success: true,
       room: formatRoomResponse(room)
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put('/:id/dp', protect, isRoomOwner, validate(updateRoomDpSchema), async (req, res, next) => {
+  try {
+    const { roomDp } = req.body;
+
+    const room = await prisma.room.update({
+      where: { id: req.params.id },
+      data: { roomDp },
+      include: {
+        owner: { select: { id: true, username: true } },
+        members: {
+          include: {
+            user: { select: { id: true, username: true, avatar: true } }
+          }
+        },
+        tasks: true
+      }
+    });
+
+    const io = req.app.get('io');
+    io.to(room.id).emit('room:updated', { room: formatRoomResponse(room) });
+
+    res.json({ success: true, room: formatRoomResponse(room) });
   } catch (error) {
     next(error);
   }
@@ -559,6 +610,7 @@ router.post('/join', protect, validate(joinRoomSchema), async (req, res, next) =
     });
 
     logger.info(`User ${req.user.email} joined room: ${room.name}`);
+    fireTrophyCheck(req.user.id);
     res.json({
       success: true,
       room: formatRoomResponse(updatedRoom)
@@ -663,8 +715,8 @@ router.delete('/:id/leave', protect, isRoomMember, async (req, res, next) => {
 
 // @route   DELETE /api/rooms/:id/members/:userId
 // @desc    Remove a member from room
-// @access  Private (owner only)
-router.delete('/:id/members/:userId', protect, isRoomOwner, async (req, res, next) => {
+// @access  Private (owner, or admin for regular members)
+router.delete('/:id/members/:userId', protect, isRoomAdmin, async (req, res, next) => {
   try {
     const { userId } = req.params;
 
@@ -672,6 +724,23 @@ router.delete('/:id/members/:userId', protect, isRoomOwner, async (req, res, nex
       return res.status(400).json({
         success: false,
         message: 'Cannot remove yourself. Use leave endpoint instead.'
+      });
+    }
+
+    if (userId === req.room.ownerId) {
+      return res.status(400).json({
+        success: false,
+        message: 'The room owner cannot be removed'
+      });
+    }
+
+    // Admins may only remove regular members; demoting/removing another admin
+    // stays an owner-only action.
+    const target = req.room.members.find(m => m.userId === userId);
+    if (req.roomRole === 'admin' && target?.role === 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the room owner can remove an admin'
       });
     }
 
@@ -720,7 +789,8 @@ router.delete('/:id/members/:userId', protect, isRoomOwner, async (req, res, nex
     const io = req.app.get('io');
     io.to(req.room.id).emit('member:kicked', {
       roomId: req.room.id,
-      oderId: userId,
+      userId,
+      oderId: userId, // legacy key — older clients still read this
       username: removedUser?.username || 'User'
     });
 
@@ -728,6 +798,109 @@ router.delete('/:id/members/:userId', protect, isRoomOwner, async (req, res, nex
     res.json({
       success: true,
       message: 'Member removed successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   PUT /api/rooms/:id/members/:userId/role
+// @desc    Promote a member to admin, or demote an admin back to member
+// @access  Private (owner only)
+router.put('/:id/members/:userId/role', protect, isRoomOwner, validate(updateMemberRoleSchema), async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    const { role } = req.body;
+
+    if (userId === req.room.ownerId) {
+      return res.status(400).json({
+        success: false,
+        message: "The room owner's role cannot be changed"
+      });
+    }
+
+    const member = await prisma.roomMember.findFirst({
+      where: {
+        roomId: req.room.id,
+        userId: userId,
+        status: 'active'
+      }
+    });
+
+    if (!member) {
+      return res.status(404).json({
+        success: false,
+        message: 'Member not found in this room'
+      });
+    }
+
+    if (member.role === role) {
+      return res.status(400).json({
+        success: false,
+        message: role === 'admin' ? 'Member is already an admin' : 'Member is already a regular member'
+      });
+    }
+
+    await prisma.roomMember.update({
+      where: { id: member.id },
+      data: { role }
+    });
+
+    const targetUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, username: true, avatar: true }
+    });
+
+    const promoted = role === 'admin';
+    const username = targetUser?.username || 'User';
+
+    // Create system message
+    await prisma.chatMessage.create({
+      data: {
+        roomId: req.room.id,
+        userId: req.user.id,
+        content: promoted
+          ? `${username} is now a room admin`
+          : `${username} is no longer a room admin`,
+        type: 'system'
+      }
+    });
+
+    // Notify the affected member
+    await NotificationService.createNotification({
+      recipientId: userId,
+      type: promoted ? 'room_role_promoted' : 'room_role_demoted',
+      title: promoted ? `You're now an admin` : 'Admin access removed',
+      message: promoted
+        ? `You can now help manage ${req.room.name}`
+        : `You're now a regular member of ${req.room.name}`,
+      roomId: req.room.id
+    });
+
+    // Emit socket events
+    const io = req.app.get('io');
+    io.to(req.room.id).emit('member:roleChanged', {
+      roomId: req.room.id,
+      userId,
+      role,
+      username
+    });
+    io.to(`user:${userId}`).emit('room:roleChanged', {
+      roomId: req.room.id,
+      roomName: req.room.name,
+      role
+    });
+
+    logger.info(`User ${userId} role set to ${role} in room: ${req.room.name}`);
+    res.json({
+      success: true,
+      message: promoted ? 'Member promoted to admin' : 'Admin demoted to member',
+      member: {
+        id: member.id,
+        _id: member.id,
+        userId: targetUser ? { ...targetUser, _id: targetUser.id } : { _id: userId },
+        role
+      }
     });
   } catch (error) {
     next(error);
@@ -847,6 +1020,8 @@ router.post('/:id/chat', protect, isRoomMember, validate(sendMessageSchema), asy
         req.params.id
       ).catch(err => logger.error('Push notification error:', err));
     }
+
+    fireTrophyCheck(req.user.id);
   } catch (error) {
     next(error);
   }
@@ -1170,7 +1345,7 @@ router.put('/:id/premium', protect, isRoomOwner, async (req, res, next) => {
 // @access  Private (owner only)
 router.put('/:id/settings', protect, isRoomOwner, async (req, res, next) => {
   try {
-    const { isPublic, chatRetentionDays, requireApproval } = req.body;
+    const { isPublic, chatRetentionDays, requireApproval, showJoinCode } = req.body;
 
     const updateData = {};
     if (typeof isPublic === 'boolean') {
@@ -1178,6 +1353,9 @@ router.put('/:id/settings', protect, isRoomOwner, async (req, res, next) => {
     }
     if (typeof requireApproval === 'boolean') {
       updateData.requireApproval = requireApproval;
+    }
+    if (typeof showJoinCode === 'boolean') {
+      updateData.showJoinCode = showJoinCode;
     }
 
     if (chatRetentionDays !== undefined) {

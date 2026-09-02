@@ -36,6 +36,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useToast } from '../../context/ToastContext';
 import { useRoomDetail } from '../../hooks/room/useRoomDetail';
 import { taskService } from '../../services/taskService';
+import { RoomService } from '../../services/roomService';
 import { Task } from '../../types/room';
 import { roomStorage } from '../../db/roomDb';
 
@@ -46,15 +47,15 @@ import RoomHeader from '../../components/room-detail/RoomHeader';
 import RoomCalendar from '../../components/room-detail/RoomCalendar';
 import RoomPulse from '../../components/room-detail/RoomPulse';
 import TaskCard from '../../components/room-detail/TaskCard';
-import TaskSection from '../../components/room-detail/TaskSection';
-import { TacticalBackground, GhostTaskCard } from '../../components/room-detail/VisualEffects';
-import { TacticalOverview } from '../../components/room-detail/TacticalOverview';
+import { GhostTaskCard } from '../../components/room-detail/VisualEffects';
+import RoomChatPreview from '../../components/room-detail/RoomChatPreview';
 import { ScoutInterface } from '../../components/ai/ScoutInterface';
 
 // ── Shared modals / sheets (unchanged) ──────────────────────────────────────
 import TaskOptionsSheet from '../../components/room-detail/TaskOptionsSheet';
 import MemberHUDModal from '../../components/room-detail/MemberHUDModal';
 import MissionBriefModal from '../../components/room-detail/MissionBriefModal';
+import LeaveTaskModal from '../../components/room-detail/LeaveTaskModal';
 import RoomOnboardingModal from '../../components/room-detail/RoomOnboardingModal';
 import TaskCompletionModal from '../../components/TaskCompletionModal';
 import TaskCreationModal from '../../components/TaskCreationModal';
@@ -122,31 +123,14 @@ const RoomDetailScreen: React.FC = () => {
   const [optionsTask, setOptionsTask] = useState<Task | null>(null);
   const [showBriefModal, setShowBriefModal] = useState(false);
   const [briefTask, setBriefTask] = useState<Task | null>(null);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [leaveTask, setLeaveTask] = useState<Task | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showMemberHUD, setShowMemberHUD] = useState(false);
   const [showScout, setShowScout] = useState(false);
+  const [activeTab, setActiveTab] = useState<'active' | 'pending' | 'spectating'>('active');
 
-  // ── Section Expansion State ──────────────────────────────────────────────
-  const [openSections, setOpenSections] = useState({
-    active: true,
-    pending: true,
-    spectating: false,
-  });
-
-  const allSectionsClosed = useMemo(() => 
-    !openSections.active && !openSections.pending && !openSections.spectating,
-  [openSections]);
-
-  const roomStats = useMemo(() => {
-    const total = tasks.length;
-    const completed = tasks.filter(t => t.isCompleted).length;
-    const sync = total > 0 ? (completed / total) * 100 : 0;
-    const points = tasks.reduce((acc, t) => acc + (t.points || 0), 0);
-    const online = members.filter(m => m.isOnline).length;
-    return { sync, total, points, squadOnline: online };
-  }, [tasks, members]);
-
-  // ── Date Filtering Logic (PRESERVED) ──────────────────────────────────────
+  // ── Derived data (PRESERVED) ──────────────────────────────────────────────
   const filteredTasks = useMemo(() => {
     if (!selectedDate) return tasks;
     
@@ -167,14 +151,6 @@ const RoomDetailScreen: React.FC = () => {
     const diffMs = expiry.getTime() - now.getTime();
     return Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
   }, [room?.doomClockExpiry]);
-
-  // ── Days active (for header metadata) ─────────────────────────────────────
-  const daysActive = useMemo(() => {
-    if (!room?.createdAt) return 0;
-    const created = new Date(room.createdAt);
-    const now = new Date();
-    return Math.max(1, Math.ceil((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24)));
-  }, [room?.createdAt]);
 
   // ── Task categorization (SAME LOGIC as sortedTasks, split into 3 arrays) ─
   const { activeTaskList, pendingTaskList, spectatingTaskList } = useMemo(() => {
@@ -260,7 +236,7 @@ const RoomDetailScreen: React.FC = () => {
           // Rollback local state if needed (optional for now)
         })
       ));
-      showToast({ message: `Successfully joined ${selectedTaskIds.length} missions!`, type: 'success' });
+      showToast({ message: `Successfully added ${selectedTaskIds.length} tasks!`, type: 'success' });
     } catch (e) {
       console.error('Onboarding network error:', e);
     }
@@ -322,7 +298,7 @@ const RoomDetailScreen: React.FC = () => {
         updateTask(taskData.id, updatedTask);
         showToast({ message: 'Task updated successfully', type: 'success' });
       } catch (error) {
-        refresh();
+        await refresh();
         showToast({ message: 'Failed to update task', type: 'error' });
       }
       return;
@@ -332,7 +308,7 @@ const RoomDetailScreen: React.FC = () => {
       await taskService.createTask(roomId, taskData);
       showToast({ message: 'Task created successfully', type: 'success' });
     } catch (error) {
-      refresh(); 
+      await refresh();
       showToast({ message: 'Failed to create task', type: 'error' });
     }
   }, [roomId, updateTask, refresh, showToast]);
@@ -395,8 +371,13 @@ const RoomDetailScreen: React.FC = () => {
     }
   }, [roomId, showToast]);
 
-  const handleLeaveTask = useCallback(async (task: Task) => {
+  const handleLeaveTask = useCallback((task: Task) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setLeaveTask(task);
+    setShowLeaveModal(true);
+  }, []);
+
+  const handleLeaveTaskConfirm = useCallback(async (task: Task) => {
     try {
       updateTask(task.id, { isJoined: false, status: 'spectator' });
       showToast({ message: `Left "${task.title}"`, type: 'success' });
@@ -417,15 +398,29 @@ const RoomDetailScreen: React.FC = () => {
     }
   }, [updateRoom, showToast]);
 
-  const handleKickMember = useCallback((id: string) => {
+  // NOTE: these run while MemberHUDModal is presented, so they must not use
+  // Alert.alert — an alert raised behind a presented Modal never surfaces and
+  // the tap looks dead. The modal owns the confirm step and shows errors inline,
+  // so these just perform the action and let it throw on failure.
+  const handleKickMember = useCallback(async (targetUserId: string) => {
+    const target = members.find(m => (m.userId || m.id) === targetUserId);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    showToast({ message: 'Operative removed from squad', type: 'info' });
-  }, [showToast]);
+    await RoomService.removeMember(roomId, targetUserId);
+    showToast({ message: `${target?.username || 'Member'} removed`, type: 'success' });
+    await refresh();
+  }, [members, roomId, showToast, refresh]);
 
-  const handlePromoteMember = useCallback((id: string) => {
+  const handlePromoteMember = useCallback(async (targetUserId: string, role: 'admin' | 'member') => {
+    const target = members.find(m => (m.userId || m.id) === targetUserId);
+    const name = target?.username || 'Member';
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    showToast({ message: 'Operative promoted', type: 'success' });
-  }, [showToast]);
+    await RoomService.updateMemberRole(roomId, targetUserId, role);
+    showToast({
+      message: role === 'admin' ? `${name} is now an admin` : `${name} is no longer an admin`,
+      type: 'success',
+    });
+    await refresh();
+  }, [members, roomId, showToast, refresh]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RENDER
@@ -452,19 +447,20 @@ const RoomDetailScreen: React.FC = () => {
       <Stack.Screen options={{ headerShown: false }} />
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
-      <TacticalBackground isDark={isDark} />
-
       {/* ── Fixed Navigation Bar ────────────────────────────────────────── */}
       <View style={[styles.fixedNav, { paddingTop: insets.top, height: 50 + insets.top }]}>
         <Animated.View style={[StyleSheet.absoluteFill, navBgStyle]}>
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? '#080810' : '#ffffff', opacity: 0.95 }]} />
+          <View style={[StyleSheet.absoluteFill, { 
+            backgroundColor: isDark ? '#080810' : '#f5f5fa', 
+            opacity: 0.95 
+          }]} />
           <BlurView 
             intensity={100} 
-            tint={isDark ? 'dark' : 'light'} 
+            tint={isDark ? "dark" : "light"}
             style={StyleSheet.absoluteFill} 
           />
           {/* Subtle bottom border for the sticky state */}
-          <View style={[styles.navBorder, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)' }]} />
+          <View style={[styles.navBorder, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
         </Animated.View>
         
         <View style={styles.navContent}>
@@ -473,49 +469,35 @@ const RoomDetailScreen: React.FC = () => {
 
 
 
-          <TouchableOpacity onPress={() => router.back()} style={styles.navIconBtn}>
-            <Ionicons name="chevron-back" size={24} color={isDark ? '#fff' : '#000'} />
-          </TouchableOpacity>
-          
+           <TouchableOpacity onPress={() => router.back()} style={styles.navIconBtn}>
+             <Ionicons name="chevron-back" size={24} color="#fff" />
+           </TouchableOpacity>
+           
           <Animated.View style={[styles.navTitleContainer, stickyNavStyle]}>
-            <Text style={[styles.navTitle, { color: isDark ? '#fff' : '#000' }]} numberOfLines={1}>
-              {room?.name || 'Room'}
-            </Text>
-            <View style={styles.navStatusLine}>
-              <View style={styles.navStatusItem}>
-                <View style={[styles.navStatusDot, { backgroundColor: '#22c55e' }]} />
-                <Text style={[styles.navStatusText, { color: '#22c55e' }]}>
-                  {activeTasks.length} ACTIVE OPS
-                </Text>
-              </View>
-              <View style={styles.navStatusItem}>
-                <Ionicons name="wifi" size={10} color="#22c55e" />
-                <Text style={[styles.navStatusText, { color: '#22c55e' }]}>
-                  CONNECTED
-                </Text>
-              </View>
-            </View>
-          </Animated.View>
+             <Text style={[styles.navTitle, { color: isDark ? '#fff' : '#000' }]} numberOfLines={1}>
+               {room?.name || 'Room'}
+             </Text>
+             <Text style={[styles.navSubtitle, { color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)' }]}>
+               {members.length} member{members.length !== 1 ? 's' : ''}
+             </Text>
+           </Animated.View>
 
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <TouchableOpacity onPress={() => setShowMemberHUD(true)} style={styles.navIconBtn}>
-              <Ionicons name="people-outline" size={21} color={isDark ? '#fff' : '#000'} />
-            </TouchableOpacity>
-            {isOwner && (
-              <TouchableOpacity 
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  setSelectedTask(null);
-                  setShowTaskModal(true);
-                }} 
-                style={styles.navIconBtn}
-              >
-                <Ionicons name="add" size={26} color={isDark ? '#fff' : '#000'} />
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity onPress={() => setShowSettingsModal(true)} style={styles.navIconBtn}>
-              <Ionicons name="ellipsis-horizontal" size={22} color={isDark ? '#fff' : '#000'} />
-            </TouchableOpacity>
+             <TouchableOpacity onPress={() => setShowMemberHUD(true)} style={styles.navIconBtn}>
+               <Ionicons name="people-outline" size={21} color="#fff" />
+             </TouchableOpacity>
+             {isOwner && (
+               <TouchableOpacity
+                 onPress={() => {
+                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                   setSelectedTask(null);
+                   setShowTaskModal(true);
+                 }}
+                 style={styles.navIconBtn}
+               >
+                 <Ionicons name="add" size={26} color="#fff" />
+               </TouchableOpacity>
+             )}
           </View>
         </View>
       </View>
@@ -524,7 +506,7 @@ const RoomDetailScreen: React.FC = () => {
         onScroll={onScroll}
         scrollEventThrottle={16}
         style={styles.scrollView}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100, paddingTop: insets.top + 60 }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100, paddingTop: 0 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -534,104 +516,121 @@ const RoomDetailScreen: React.FC = () => {
           />
         }
       >
-        {/* ── Layer A: Header (Swipeable) ──────────────────────────────────── */}
+        {/* ── Layer A: Room Identity Header ─────────────────────────────────── */}
         <RoomHeader
           roomName={room?.name || 'Room'}
-          roomCode={room?.joinCode || 'KRI-000'}
           members={members}
-          tasks={tasks}
-          daysActive={daysActive}
-          chatRetentionDays={room?.chatRetentionDays ?? 3}
-          scrollOffset={scrollY}
-          onMembersPress={() => setShowMemberHUD(true)}
+          coverImage={room?.coverImage}
+          roomDp={room?.roomDp}
+          topInset={insets.top}
+          onSettingsPress={() => setShowSettingsModal(true)}
+          joinCode={room?.joinCode}
+          isOwner={isOwner}
+          showJoinCode={room?.showJoinCode}
         />
 
-        {/* ── Layer B: Calendar (3-Level Expandable) ──────────────────────── */}
+        {/* ── Layer B: Calendar + Activity Pill ────────────────────────── */}
         <RoomCalendar
           selectedDate={selectedDate}
           onSelectDate={setSelectedDate}
           taskDates={taskDates}
           completedDates={completedDates}
+          footer={<RoomPulse tasks={tasks} members={members} />}
         />
-
-        {/* ── Layer C: Room Pulse (Live Activity) ─────────────────────────── */}
-        <RoomPulse tasks={tasks} members={members} />
 
         {/* ── Layer D: Task Sections ──────────────────────────────────────── */}
         <View style={styles.taskSections}>
-          {/* Active Tasks — open by default */}
-          <TaskSection
-            title="Active Tasks"
-            count={activeTaskList.length}
-            accentColor="#6366f1"
-            defaultOpen={openSections.active}
-            onToggle={(isOpen) => setOpenSections(prev => ({ ...prev, active: isOpen }))}
-          >
-            {activeTaskList.length === 0 ? (
-              <GhostTaskCard isDark={isDark} />
-            ) : (
-              activeTaskList.map((task, i) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  index={i}
-                  variant="active"
-                  accentColor="#6366f1"
-                  onPress={() => handleTaskPress(task)}
-                  onMenuPress={handleTaskMenuPress}
-                />
-              ))
+          {/* Tab Bar */}
+          <View style={styles.tabBar}>
+            {(['active', 'pending', 'spectating'] as const).map((tab) => {
+              let label = 'Active Tasks';
+              let count = activeTaskList.length;
+              if (tab === 'pending') { label = 'Pending'; count = pendingTaskList.length; }
+              if (tab === 'spectating') { label = 'Spectating'; count = spectatingTaskList.length; }
+              const isActive = activeTab === tab;
+              return (
+                <TouchableOpacity
+                  key={tab}
+                  onPress={() => setActiveTab(tab)}
+                  style={[styles.tabBtn, isActive && styles.tabBtnActive]}
+                >
+                  <Text style={[styles.tabLabel, isActive && styles.tabLabelActive, { color: isActive ? (isDark ? '#fff' : '#000') : (isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)') }]}>
+                    {label}
+                  </Text>
+                  {count > 0 && (
+                    <View style={[styles.tabBadge, isActive && { backgroundColor: '#6366f1' }]}>
+                      <Text style={[styles.tabBadgeText, isActive && { color: '#fff' }]}>{count}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Active Tab Content */}
+          <View style={styles.tabContent}>
+            {activeTab === 'active' && (
+              <>
+                {activeTaskList.length === 0 ? (
+                  <GhostTaskCard isDark={isDark} />
+                ) : (
+                  activeTaskList.map((task, i) => (
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      index={i}
+                      variant="active"
+                      accentColor="#6366f1"
+                      onPress={() => handleTaskPress(task)}
+                      onMenuPress={handleTaskMenuPress}
+                    />
+                  ))
+                )}
+              </>
             )}
-          </TaskSection>
 
-          {/* Pending Tasks (user completed, others haven't) — open by default */}
-          <TaskSection
-            title="Pending"
-            count={pendingTaskList.length}
-            accentColor="#22c55e"
-            defaultOpen={openSections.pending}
-            onToggle={(isOpen) => setOpenSections(prev => ({ ...prev, pending: isOpen }))}
-          >
-            {pendingTaskList.map((task, i) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                index={i}
-                variant="completed"
-                accentColor="#22c55e"
-                onPress={() => handleTaskPress(task)}
-                onMenuPress={handleTaskMenuPress}
-              />
-            ))}
-          </TaskSection>
+            {activeTab === 'pending' && (
+              <>
+                {pendingTaskList.map((task, i) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    index={i}
+                    variant="completed"
+                    accentColor="#22c55e"
+                    onPress={() => handleTaskPress(task)}
+                    onMenuPress={handleTaskMenuPress}
+                  />
+                ))}
+              </>
+            )}
 
-          {/* Spectating Tasks (user not joined) — collapsed */}
-          <TaskSection
-            title="Spectating"
-            count={spectatingTaskList.length}
-            accentColor="#64748b"
-            defaultOpen={openSections.spectating}
-            onToggle={(isOpen) => setOpenSections(prev => ({ ...prev, spectating: isOpen }))}
-          >
-            {spectatingTaskList.map((task, i) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                index={i}
-                variant="spectating"
-                accentColor="#64748b"
-                onPress={() => {
-                  // PRESERVED: Spectating tasks open brief modal, not navigate
-                  setBriefTask(task);
-                  setShowBriefModal(true);
-                }}
-                onMenuPress={handleTaskMenuPress}
-              />
-            ))}
-          </TaskSection>
-
-          <TacticalOverview visible={allSectionsClosed} stats={roomStats} />
+            {activeTab === 'spectating' && (
+              <>
+                {spectatingTaskList.map((task, i) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    index={i}
+                    variant="spectating"
+                    accentColor="#64748b"
+                    onPress={() => {
+                      setBriefTask(task);
+                      setShowBriefModal(true);
+                    }}
+                    onMenuPress={handleTaskMenuPress}
+                  />
+                ))}
+              </>
+            )}
+          </View>
         </View>
+
+        {/* ── Layer F: Room Chat Preview ──────────────────────────────────── */}
+        <RoomChatPreview
+          roomId={roomId}
+          onSeeAll={() => router.push({ pathname: '/(home)/room-chat', params: { roomId, roomName: room?.name || 'Room' } })}
+        />
       </Animated.ScrollView>
 
       {/* ═══════════════════════════════════════════════════════════════════════
@@ -658,6 +657,13 @@ const RoomDetailScreen: React.FC = () => {
         onAcceptMission={(task) => { handleTaskJoin(task); setShowBriefModal(false); setBriefTask(null); }}
       />
 
+      <LeaveTaskModal
+        visible={showLeaveModal}
+        task={leaveTask}
+        onClose={() => { setShowLeaveModal(false); setLeaveTask(null); }}
+        onConfirmLeave={handleLeaveTaskConfirm}
+      />
+
       <MemberHUDModal
         visible={showMemberHUD}
         onClose={() => setShowMemberHUD(false)}
@@ -666,6 +672,7 @@ const RoomDetailScreen: React.FC = () => {
         isOwner={isOwner}
         ownerId={room?.ownerId}
         roomId={roomId}
+        currentUserId={user?.id}
         onKickMember={handleKickMember}
         onPromoteMember={handlePromoteMember}
       />
@@ -735,8 +742,10 @@ const styles = StyleSheet.create({
   navIconBtn: {
     width: 40,
     height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
   },
   navTitleContainer: {
     flex: 1,
@@ -746,6 +755,11 @@ const styles = StyleSheet.create({
   navTitle: {
     fontSize: 17,
     fontWeight: '800',
+  },
+  navSubtitle: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2,
   },
   navStatusLine: {
     flexDirection: 'row',
@@ -787,6 +801,46 @@ const styles = StyleSheet.create({
   taskSections: {
     paddingHorizontal: 16,
     marginTop: 6,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(150,150,150,0.2)',
+  },
+  tabBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+    gap: 6,
+  },
+  tabBtnActive: {
+    borderBottomColor: '#6366f1',
+  },
+  tabLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  tabLabelActive: {
+    fontWeight: '800',
+  },
+  tabBadge: {
+    backgroundColor: 'rgba(150,150,150,0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  tabBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: 'rgba(150,150,150,0.6)',
+  },
+  tabContent: {
+    minHeight: 200,
   },
   emptySection: {
     alignItems: 'center',

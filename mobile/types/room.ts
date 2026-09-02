@@ -18,9 +18,12 @@ export interface RoomDetail {
   ownerId: string;
   isActive: boolean;
   requireApproval?: boolean;  // Whether join requests need approval
+  showJoinCode?: boolean;     // Whether to show join code to all members
   createdAt: string;
   updatedAt: string;
   endDate?: string;           // Room expiry date
+  coverImage?: string | null; // Room banner image URL
+  roomDp?: string | null;     // Room display picture / avatar image URL
   // Design spec additions
   doomClockExpiry?: string;   // ISO timestamp — 5-day cycle end
   userRole?: RoomRole;        // Current user's role in this room
@@ -32,6 +35,8 @@ export interface RoomDetail {
   tasks?: RoomTask[];
 }
 
+export type RoomMemberRole = 'owner' | 'admin' | 'member';
+
 export interface RoomMember {
   id: string;
   userId?: string;            // The actual user ID (for matching currentUser)
@@ -40,6 +45,7 @@ export interface RoomMember {
   isOnline: boolean;
   aura: AuraTier;
   hasHeat: boolean;           // 3+ tasks in 24h
+  role?: RoomMemberRole;      // owner | admin | member
 }
 
 export interface TaskCompletion {
@@ -59,6 +65,7 @@ export interface RoomTask {
   daysOfWeek?: string;
   points: number;
   isActive: boolean;
+  hasThread?: boolean;         // Owner opt-in: social thread enabled
   isCompleted?: boolean;      // Whether current user has completed this task
   createdAt: string;
   createdBy?: string;         // User ID of the task creator

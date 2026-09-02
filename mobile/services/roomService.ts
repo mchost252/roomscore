@@ -28,6 +28,9 @@ function mapRoom(raw: any): RoomDetail {
     ownerId,
     isActive: raw.isActive !== false,
     requireApproval: raw.requireApproval,
+    showJoinCode: raw.showJoinCode ?? false,
+    coverImage: raw.coverImage ?? null,
+    roomDp: raw.roomDp ?? raw.room_image ?? raw.dp ?? null,
     createdAt: raw.createdAt || new Date().toISOString(),
     updatedAt: raw.updatedAt || new Date().toISOString(),
     doomClockExpiry: raw.doomClockExpiry,
@@ -59,6 +62,7 @@ function mapMember(m: any): RoomMember {
     isOnline: !!m.isOnline,
     aura: mapAura(userObj?.aura),
     hasHeat: !!m.hasHeat,
+    role: m.role === 'owner' || m.role === 'admin' ? m.role : 'member',
   };
 }
 
@@ -90,6 +94,37 @@ export interface RoomSettingsPayload {
   isPublic?: boolean;
   chatRetentionDays?: number;
   requireApproval?: boolean;
+  showJoinCode?: boolean;
+}
+
+// ── Room Chat ─────────────────────────────────────────────────────────────
+export interface RoomChatMessage {
+  id: string;
+  roomId: string;
+  userId: string | null;
+  username: string;
+  avatar: string | null;
+  content: string;
+  type: 'user' | 'system';
+  replyToId?: string | null;
+  replyToText?: string | null;
+  createdAt: string;
+}
+
+function mapChatMessage(raw: any): RoomChatMessage {
+  const userObj = typeof raw.userId === 'object' && raw.userId ? raw.userId : null;
+  return {
+    id: raw._id || raw.id,
+    roomId: raw.roomId,
+    userId: typeof raw.userId === 'object' ? raw.userId?._id || raw.userId?.id : raw.userId,
+    username: userObj?.username ?? raw.username ?? 'Member',
+    avatar: userObj?.avatar ?? raw.avatar ?? null,
+    content: raw.content ?? '',
+    type: raw.type || 'user',
+    replyToId: raw.replyToId,
+    replyToText: raw.replyToText,
+    createdAt: raw.createdAt || new Date().toISOString(),
+  };
 }
 
 export const RoomService = {
@@ -108,9 +143,14 @@ export const RoomService = {
   // ── Core Update (owner only) ─────────────────────────────────────────────
   async updateRoom(
     roomId: string,
-    data: { name?: string; description?: string; isPublic?: boolean; maxMembers?: number }
+    data: { name?: string; description?: string; isPublic?: boolean; maxMembers?: number; coverImage?: string | null; roomDp?: string | null }
   ): Promise<RoomDetail> {
     const res = await api.put(`/rooms/${roomId}`, data);
+    return mapRoom(res.data.room);
+  },
+
+  async updateRoomDp(roomId: string, roomDp: string | null): Promise<RoomDetail> {
+    const res = await api.put(`/rooms/${roomId}/dp`, { roomDp });
     return mapRoom(res.data.room);
   },
 
@@ -148,6 +188,43 @@ export const RoomService = {
   // ── Reject pending member (owner only) ───────────────────────────────────
   async rejectMember(roomId: string, userId: string): Promise<void> {
     await api.delete(`/rooms/${roomId}/members/${userId}/reject`);
+  },
+
+  // ── Remove an active member (owner only) ─────────────────────────────────
+  async removeMember(roomId: string, userId: string): Promise<void> {
+    await api.delete(`/rooms/${roomId}/members/${userId}`);
+  },
+
+  // ── Promote to admin / demote to member (owner only) ─────────────────────
+  async updateMemberRole(roomId: string, userId: string, role: 'admin' | 'member'): Promise<void> {
+    await api.put(`/rooms/${roomId}/members/${userId}/role`, { role });
+  },
+
+  // ── Room Chat ──────────────────────────────────────────────────────────
+  async getRoomChat(
+    roomId: string,
+    opts?: { limit?: number; before?: string; lastId?: string },
+  ): Promise<RoomChatMessage[]> {
+    const params: Record<string, string> = {};
+    if (opts?.limit) params.limit = String(opts.limit);
+    if (opts?.before) params.before = opts.before;
+    if (opts?.lastId) params.last_id = opts.lastId;
+    const res = await api.get(`/rooms/${roomId}/chat`, { params });
+    return (res.data.messages || []).map(mapChatMessage);
+  },
+
+  async sendRoomChat(
+    roomId: string,
+    content: string,
+    replyTo?: { id: string; text: string },
+  ): Promise<RoomChatMessage> {
+    const body: Record<string, any> = { message: content };
+    if (replyTo) {
+      body.replyToId = replyTo.id;
+      body.replyToText = replyTo.text;
+    }
+    const res = await api.post(`/rooms/${roomId}/chat`, body);
+    return mapChatMessage(res.data.message);
   },
 };
 
