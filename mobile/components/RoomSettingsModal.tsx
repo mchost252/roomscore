@@ -30,6 +30,7 @@ interface RoomSettingsModalProps {
   room: RoomDetail | null;
   roomId: string;
   isOwner: boolean;
+  canManageRoom?: boolean;
   onSave: (updated: RoomDetail) => void;
   onRoomDeleted?: () => void;
   onRoomLeft?: () => void;
@@ -41,6 +42,7 @@ export function RoomSettingsModal({
   room,
   roomId,
   isOwner,
+  canManageRoom = isOwner,
   onSave,
   onRoomDeleted,
   onRoomLeft,
@@ -262,7 +264,7 @@ export function RoomSettingsModal({
           {/* ── Header ───────────────────────────────────────────────────── */}
           <View style={styles.handleRow}>
             <Text style={[styles.title, { color: colors.text }]}>
-              {isOwner ? 'Room Settings' : 'Room Info'}
+              {canManageRoom ? 'Room Settings' : 'Room Info'}
             </Text>
             <TouchableOpacity onPress={onClose}>
               <Ionicons name="close" size={24} color={colors.icon} />
@@ -276,7 +278,7 @@ export function RoomSettingsModal({
             {/* ══════════════════════════════════════════════════════════════
                 SECTION 1: Room Identity (owner only)
                 ══════════════════════════════════════════════════════════════ */}
-            {isOwner && (
+            {canManageRoom && (
               <View style={[styles.section, { backgroundColor: sectionBg }]}>
                 <View style={styles.sectionHeader}>
                   <Ionicons name="flag" size={14} color={colors.primary} />
@@ -416,7 +418,7 @@ export function RoomSettingsModal({
             {/* ══════════════════════════════════════════════════════════════
                 SECTION 2: Visibility & Access (owner only)
                 ══════════════════════════════════════════════════════════════ */}
-            {isOwner && (
+            {canManageRoom && (
               <View style={[styles.section, { backgroundColor: sectionBg }]}>
                 <View style={styles.sectionHeader}>
                   <Ionicons name="shield" size={14} color="#8b5cf6" />
@@ -518,7 +520,7 @@ export function RoomSettingsModal({
             {/* ══════════════════════════════════════════════════════════════
                 SECTION 3: Logistics (owner only)
                 ══════════════════════════════════════════════════════════════ */}
-            {isOwner && (
+            {canManageRoom && (
               <View style={[styles.section, { backgroundColor: sectionBg }]}>
                 <View style={styles.sectionHeader}>
                   <Ionicons name="settings" size={14} color="#f59e0b" />
@@ -701,7 +703,7 @@ export function RoomSettingsModal({
             {/* ══════════════════════════════════════════════════════════════
                 SAVE BUTTON (owner only, when there are changes)
                 ══════════════════════════════════════════════════════════════ */}
-            {isOwner && (
+            {canManageRoom && (
               <TouchableOpacity
                 style={[
                   styles.saveBtn,

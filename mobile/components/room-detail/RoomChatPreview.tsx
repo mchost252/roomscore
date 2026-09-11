@@ -43,10 +43,11 @@ function timeAgo(dateStr: string): string {
 
 interface Props {
   roomId: string;
+  currentUserId?: string;
   onSeeAll: () => void;
 }
 
-const RoomChatPreview: React.FC<Props> = ({ roomId, onSeeAll }) => {
+const RoomChatPreview: React.FC<Props> = ({ roomId, currentUserId, onSeeAll }) => {
   const { isDark } = useTheme();
   const [messages, setMessages] = useState<RoomChatMessage[]>([]);
 
@@ -111,7 +112,9 @@ const RoomChatPreview: React.FC<Props> = ({ roomId, onSeeAll }) => {
                 {/* Content */}
                 <View style={st.rowContent}>
                   <View style={st.nameRow}>
-                    <Text style={[st.name, { color: textColor }]} numberOfLines={1}>{msg.username}</Text>
+                    <Text style={[st.name, { color: textColor }]} numberOfLines={1}>
+                      {msg.userId === currentUserId ? 'You' : msg.username}
+                    </Text>
                     <Text style={[st.time, { color: subtextColor }]}>{timeAgo(msg.createdAt)}</Text>
                   </View>
                   <View style={st.messageRow}>

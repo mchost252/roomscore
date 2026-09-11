@@ -109,6 +109,7 @@ const RoomDetailScreen: React.FC = () => {
     loading,
     refreshing,
     isOwner,
+    canManageRoom,
     userId,
     refresh,
     addTask,
@@ -529,7 +530,7 @@ const RoomDetailScreen: React.FC = () => {
              <TouchableOpacity onPress={() => setShowMemberHUD(true)} style={styles.navIconBtn}>
                <Ionicons name="people-outline" size={21} color="#fff" />
              </TouchableOpacity>
-             {isOwner && (
+             {canManageRoom && (
                <TouchableOpacity
                  onPress={() => {
                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -578,7 +579,7 @@ const RoomDetailScreen: React.FC = () => {
           onSelectDate={setSelectedDate}
           taskDates={taskDates}
           completedDates={completedDates}
-          footer={<RoomPulse tasks={tasks} members={members} />}
+          footer={<RoomPulse tasks={tasks} members={members} currentUserId={user?.id} />}
         />
 
         {/* ── Layer D: Task Sections ──────────────────────────────────────── */}
@@ -703,6 +704,7 @@ const RoomDetailScreen: React.FC = () => {
         {/* ── Layer F: Room Chat Preview ──────────────────────────────────── */}
         <RoomChatPreview
           roomId={roomId}
+          currentUserId={user?.id}
           onSeeAll={() => router.push({ pathname: '/(home)/room-chat', params: { roomId, roomName: room?.name || 'Room' } })}
         />
       </Animated.ScrollView>
@@ -715,7 +717,7 @@ const RoomDetailScreen: React.FC = () => {
         visible={showOptionsSheet}
         task={optionsTask}
         currentUserId={userId}
-        isRoomOwner={isOwner}
+        isRoomOwner={canManageRoom}
         isParticipant={isOptionsTaskParticipant}
         onClose={() => { setShowOptionsSheet(false); setOptionsTask(null); }}
         onEdit={(t) => { setShowOptionsSheet(false); setSelectedTask(t); setShowTaskModal(true); }}
@@ -784,6 +786,7 @@ const RoomDetailScreen: React.FC = () => {
         room={room}
         roomId={roomId}
         isOwner={isOwner}
+        canManageRoom={canManageRoom}
         onSave={(updatedRoom: any) => {
           updateRoom(updatedRoom);
           showToast({ message: 'Room settings updated', type: 'success' });

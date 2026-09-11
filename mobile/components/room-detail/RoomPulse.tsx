@@ -32,10 +32,11 @@ function getTimeAgo(date: Date): string {
 interface RoomPulseProps {
   tasks: Task[];
   members: RoomMember[];
+  currentUserId?: string;
   onViewActivity?: () => void;
 }
 
-const RoomPulse: React.FC<RoomPulseProps> = ({ tasks, members, onViewActivity }) => {
+const RoomPulse: React.FC<RoomPulseProps> = ({ tasks, members, currentUserId, onViewActivity }) => {
   const { isDark } = useTheme();
 
   const pulseItems = useMemo<PulseItem[]>(() => {
@@ -45,7 +46,7 @@ const RoomPulse: React.FC<RoomPulseProps> = ({ tasks, members, onViewActivity })
         for (const c of task.completions) {
           items.push({
             id: `${task.id}_${c.userId || c.id}`,
-            username: c.user?.username || 'Someone',
+            username: c.userId === currentUserId ? 'You' : (c.user?.username || 'Someone'),
             message: `completed ${task.title}`,
             timestamp: c.completedAt ? new Date(c.completedAt) : new Date(),
           });
@@ -54,7 +55,7 @@ const RoomPulse: React.FC<RoomPulseProps> = ({ tasks, members, onViewActivity })
     }
     items.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
     return items.slice(0, 10);
-  }, [tasks]);
+  }, [tasks, currentUserId]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);

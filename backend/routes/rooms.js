@@ -363,6 +363,12 @@ router.post('/', protect, validate(createRoomSchema), async (req, res, next) => 
 router.get('/:id', protect, isRoomMember, async (req, res, next) => {
   try {
     const room = formatRoomResponse(req.room);
+    const membership = req.room.members?.find(member => member.userId === req.user.id);
+    room.userRole = req.room.ownerId === req.user.id
+      ? 'owner'
+      : membership?.status === 'pending'
+        ? 'pending'
+        : membership?.role || 'member';
 
     // Join code is owner-private unless the owner opts to reveal it to all members.
     const isOwner = req.room.ownerId === req.user.id;

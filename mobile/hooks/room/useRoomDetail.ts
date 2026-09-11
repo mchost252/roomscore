@@ -113,6 +113,10 @@ export function useRoomDetail(roomId: string) {
     if (!room || !user) return false;
     return room.ownerId === user.id || (room as any).adminId === user.id || room.userRole === 'owner';
   }, [room, user]);
+  const canManageRoom = useMemo(
+    () => isOwner || room?.userRole === 'admin',
+    [isOwner, room?.userRole],
+  );
 
   const activeTasks = tasks.filter(t => !t.isCompleted);
 
@@ -394,7 +398,7 @@ export function useRoomDetail(roomId: string) {
 
   return {
     room, tasks, members, activeTasks,
-    loading, refreshing, isOwner,
+    loading, refreshing, isOwner, canManageRoom,
     userId: user?.id || '',
     refresh, addTask, updateTask, updateRoom,
   };
