@@ -22,8 +22,6 @@ const ROOMS_LIST_KEY = 'rooms_list_cache';
 const ROOMS_LIST_TS_KEY = 'rooms_list_ts';
 const ROOMS_LIST_TTL = 60_000; // skip re-fetch within this window
 
-let lastFetchedAt = 0;
-
 // ─── Sync MMKV helpers (0ms) ─────────────────────────────────────────────────
 function getCachedRoomsList(): RoomDetail[] {
   try {
@@ -97,16 +95,17 @@ export function useRoomsInstant() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isMounted = useRef(true);
+  const lastFetchedAt = useRef(0);
 
   // Step 2: Background API fetch
   const fetchFromAPI = useCallback(async (silent = false) => {
-    if (Date.now() - lastFetchedAt < ROOMS_LIST_TTL) {
+    if (Date.now() - lastFetchedAt.current < ROOMS_LIST_TTL) {
       setLoading(false);
       return;
     }
     if (!silent) setLoading(true);
     setError(null);
-    lastFetchedAt = Date.now();
+    lastFetchedAt.current = Date.now();
 
     try {
       const results = await Promise.allSettled([
@@ -154,6 +153,8 @@ export function useRoomsInstant() {
       if (results[1].status === 'fulfilled') {
         const rawPublic = results[1].value.data.rooms || [];
         setPublicRooms(pruneExpiredRooms(rawPublic.map(mapApiRoom)));
+      } else if (!silent) {
+        setError('Failed to load discover rooms');
       }
     } catch (err) {
       console.error('[useRoomsInstant] fetch error:', err);

@@ -133,6 +133,7 @@ router.get('/', protect, async (req, res, next) => {
           endDate: true,
           isActive: true,
           coverImage: true,
+          roomDp: true,
           createdAt: true,
           updatedAt: true,
           owner: { select: { id: true, username: true } },

@@ -360,7 +360,9 @@ export default function RoomsScreen() {
             room={item} isDark={isDark} user={user} 
             isMember={manager.activeTab === 'my-rooms'}
             index={index} 
-            onPress={(room) => handleRoomPress(room, manager.activeTab === 'my-rooms' ? 'my' : 'public')} 
+            onPress={(room) => {
+              if (manager.activeTab === 'my-rooms') handleRoomPress(room, 'my');
+            }} 
             onLongPress={handleRoomLongPress} 
             onJoin={manager.handleJoinPublicRoom}
           />
@@ -496,8 +498,22 @@ export default function RoomsScreen() {
       <ConfirmationModal visible={showDeleteConfirm} title="Delete Room" message={`This will permanently destroy ${longPressRoom?.name} and all data. Proceed?`} onConfirm={handleDeleteRoom} onCancel={() => setShowDeleteConfirm(false)} confirmText="DELETE" destructive isDark={isDark} />
       
       {/* Alerts */}
-      {manager.error && <Animated.View entering={FadeInDown} style={s.alertError}><Text style={s.alertText}>{manager.error}</Text></Animated.View>}
-      {manager.success && <Animated.View entering={FadeInDown} style={s.alertSuccess}><Text style={s.alertText}>{manager.success}</Text></Animated.View>}
+      {manager.error && (
+        <Animated.View
+          entering={FadeInDown}
+          style={[s.alertError, { bottom: insets.bottom + 86 }]}
+        >
+          <Text style={s.alertText}>{manager.error}</Text>
+        </Animated.View>
+      )}
+      {manager.success && (
+        <Animated.View
+          entering={FadeInDown}
+          style={[s.alertSuccess, { bottom: insets.bottom + 86 }]}
+        >
+          <Text style={s.alertText}>{manager.success}</Text>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -620,7 +636,7 @@ const s = StyleSheet.create({
   quickActionIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 1, elevation: 4 },
 
   // ── Alerts ──
-  alertError: { position: 'absolute', bottom: 100, left: 20, right: 20, backgroundColor: '#ef4444', padding: 16, borderRadius: 12, zIndex: 100 },
-  alertSuccess: { position: 'absolute', bottom: 100, left: 20, right: 20, backgroundColor: '#22c55e', padding: 16, borderRadius: 12, zIndex: 100 },
-  alertText: { color: '#fff', fontWeight: '800', textAlign: 'center' },
+  alertError: { position: 'absolute', left: 28, right: 28, backgroundColor: '#ef4444', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, zIndex: 100 },
+  alertSuccess: { position: 'absolute', left: 28, right: 28, backgroundColor: '#22c55e', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, zIndex: 100 },
+  alertText: { color: '#fff', fontSize: 13, fontWeight: '800', textAlign: 'center' },
 });

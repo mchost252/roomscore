@@ -69,7 +69,7 @@ export function useRoomsManager() {
       }, 1000);
     } catch (err: any) {
       console.error('Error joining room:', err);
-      setError(err.response?.data?.message || 'Failed to join room');
+      setError(err.response?.data?.message || err.message || 'Failed to join room');
       setTimeout(() => setError(null), 5000);
     } finally {
       setJoiningRoom(false);
@@ -78,9 +78,12 @@ export function useRoomsManager() {
 
   const handleJoinPublicRoom = useCallback(async (room: RoomDetail) => {
     try {
+      if (!room.joinCode?.trim()) {
+        throw new Error('This room is missing a join code. Refresh Discover and try again.');
+      }
       setError(null);
       const response = await api.post('/rooms/join', {
-        joinCode: room.joinCode,
+        joinCode: room.joinCode.trim().toUpperCase(),
       });
 
       if (response.data.pending) {
@@ -92,16 +95,15 @@ export function useRoomsManager() {
 
       setSuccess('Successfully joined room!');
       setTimeout(() => setSuccess(null), 3000);
+      await hookRefresh();
 
-      setTimeout(() => {
-        router.push({
-          pathname: '/(home)/room-detail',
-          params: { roomId: response.data.room._id || response.data.room.id },
-        });
-      }, 1000);
+      router.push({
+        pathname: '/(home)/room-detail',
+        params: { roomId: response.data.room._id || response.data.room.id },
+      });
     } catch (err: any) {
       console.error('Error joining room:', err);
-      setError(err.response?.data?.message || 'Failed to join room');
+      setError(err.response?.data?.message || err.message || 'Failed to join room');
       setTimeout(() => setError(null), 5000);
     }
   }, [router, hookRefresh]);
