@@ -28,6 +28,7 @@ import AIClarificationSheet from '../../components/AIClarificationSheet';
 import AIBlobToast from '../../components/ai/AIBlobToast';
 import { checkVagueness, ClarificationQuestion, fetchAINote } from '../../services/aiNoteService';
 import { useRoomsInstant } from '../../hooks/room/useRoomsInstant';
+import api from '../../services/api';
 
 import { secureStorage } from '../../services/storage';
 import { TOKEN_KEY } from '../../constants/config';
@@ -172,6 +173,14 @@ export default function HomeScreen() {
     }
     return { pendingCount: pending, ongoingCount: ongoing, upcomingCount: upcoming, dueCount: due, done: completed };
   }, [tasks]);
+  const earnedXp = useMemo(() => {
+    const priorityMultiplier: Record<string, number> = { low: 1, medium: 1.25, high: 1.5, urgent: 2 };
+    const taskXp = done.reduce((total, task) => {
+      const base = task.points || 10;
+      return total + Math.round(base * (priorityMultiplier[task.priority || 'medium'] || 1.25));
+    }, 0);
+    return taskXp + Math.max(0, (user?.streak || 0) - 1) * 5;
+  }, [done, user?.streak]);
 
   const openTaskSheet = useCallback((task: PersonalTask) => {
     router.push({
@@ -240,6 +249,9 @@ export default function HomeScreen() {
   const [newTaskAllDay, setNewTaskAllDay] = useState(false);
   const [statsExpanded, setStatsExpanded] = useState(false);
   const [showHomeGuide, setShowHomeGuide] = useState(false);
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
+  const [recentNotifications, setRecentNotifications] = useState<Array<{ id: string; title?: string; body?: string; createdAt?: string }>>([]);
+  const notificationPanelAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     AsyncStorage.getItem('krios.homeGuideSeen').then(seen => {
@@ -253,6 +265,20 @@ export default function HomeScreen() {
       console.warn('[HomeScreen] Could not save Home guide state:', error);
     });
   }, []);
+
+  const toggleNotificationPanel = useCallback(async () => {
+    const opening = !notificationPanelOpen;
+    setNotificationPanelOpen(opening);
+    Animated.timing(notificationPanelAnim, { toValue: opening ? 1 : 0, duration: 180, useNativeDriver: true }).start();
+    if (opening) {
+      try {
+        const response = await api.get('/notifications?limit=3');
+        setRecentNotifications(response.data?.notifications || []);
+      } catch (error) {
+        console.warn('[HomeScreen] Could not load recent notifications:', error);
+      }
+    }
+  }, [notificationPanelAnim, notificationPanelOpen]);
   const [newTaskDue, setNewTaskDue]         = useState<Date>(today);
   const [newTaskTime, setNewTaskTime]       = useState<string>('09:00');
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -688,7 +714,7 @@ export default function HomeScreen() {
         {!statsExpanded&&<View style={{flexDirection:'row',justifyContent:'space-between',paddingHorizontal:8,marginBottom:16}}>
           <Text style={{fontSize:12,color:t.textSub}}>🔥 {user?.streak ?? 0} day streak</Text>
           <Text style={{fontSize:12,color:t.textSub}}>✓ {todayCompleted} done</Text>
-          <Text style={{fontSize:12,color:t.textSub}}>✦ {user?.totalTasksCompleted ?? 0} tasks done</Text>
+          <Text style={{fontSize:12,color:t.textSub}}>✦ {earnedXp} XP earned</Text>
         </View>}
         {statsExpanded&&<View style={{flexDirection:'row',gap:10,marginBottom:14}}>
           <View style={{flex:1,padding:14,borderRadius:18,backgroundColor:`rgba(${t.surfRgb},0.72)`,borderWidth:1,borderColor:t.border}}>
@@ -1028,11 +1054,27 @@ export default function HomeScreen() {
           <TouchableOpacity onPress={()=>router.push('/(home)/settings')} style={[s.iconBtn,{backgroundColor:`rgba(${t.surfRgb},0.7)`,borderColor:t.border,marginLeft:8}]}>
             <Ionicons name="notifications-outline" size={18} color={t.textSub}/>
           </TouchableOpacity>
-          <TouchableOpacity onPress={()=>router.push('/(home)/settings')} style={[s.iconBtn,{backgroundColor:`rgba(${t.surfRgb},0.7)`,borderColor:t.border,marginLeft:8}]}>
-            <Ionicons name="settings-outline" size={18} color={t.textSub}/>
-          </TouchableOpacity>
         </View>
       </View>
+      {notificationPanelOpen && <Animated.View style={[s.notificationPanel, { top: insets.top + 66, backgroundColor: t.isDark ? '#17172a' : '#fff', borderColor: t.border, opacity: notificationPanelAnim, transform: [{ translateY: notificationPanelAnim.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }) }] }]}>
+        <View style={s.notificationPanelHeader}>
+          <Text style={{ color: t.text, fontSize: 15, fontWeight: '800' }}>Notifications</Text>
+          <TouchableOpacity onPress={() => toggleNotificationPanel()}><Ionicons name="close" size={18} color={t.textSub}/></TouchableOpacity>
+        </View>
+        {recentNotifications.length === 0 ? <Text style={{ color: t.textSub, fontSize: 13, paddingVertical: 16 }}>You’re all caught up.</Text> : recentNotifications.map(item => (
+          <View key={item.id} style={s.notificationRow}>
+            <Ionicons name="notifications-outline" size={17} color={t.primary}/>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: t.text, fontSize: 13, fontWeight: '700' }} numberOfLines={1}>{item.title || 'Notification'}</Text>
+              <Text style={{ color: t.textSub, fontSize: 12, marginTop: 2 }} numberOfLines={1}>{item.body || 'You have a new update.'}</Text>
+            </View>
+          </View>
+        ))}
+        <TouchableOpacity onPress={() => router.push('/(home)/notifications')} style={[s.viewAllButton, { borderTopColor: t.border }]}>
+          <Text style={{ color: t.primary, fontSize: 13, fontWeight: '800' }}>View all</Text>
+          <Ionicons name="arrow-forward" size={16} color={t.primary}/>
+        </TouchableOpacity>
+      </Animated.View>}
 
       {/* Bottom tab bar is rendered globally in (home)/_layout.tsx */}
 
@@ -1181,7 +1223,8 @@ export default function HomeScreen() {
                 {newTaskType !== 'one-time' && <Text style={[s.addTaskLabel,{color:t.textSub}]}>TIME</Text>}
                 <TouchableOpacity
                   onPress={()=>setShowDatePicker(true)}
-                  style={[s.chip,{borderColor:t.primary,backgroundColor:`rgba(99,102,241,0.12)`,paddingHorizontal:14,paddingVertical:8,flexDirection:'row',alignItems:'center',gap:6}]}>
+                  disabled={newTaskType === 'one-time' && newTaskAllDay}
+                  style={[s.chip,{borderColor:t.primary,backgroundColor:`rgba(99,102,241,0.12)`,paddingHorizontal:14,paddingVertical:8,flexDirection:'row',alignItems:'center',gap:6,opacity:newTaskType === 'one-time' && newTaskAllDay ? 0.45 : 1}]}>
                   <Ionicons name={newTaskType === 'daily' ? 'alarm-outline' : 'calendar-outline'} size={16} color={t.primary}/>
                   <Text style={{color:t.primary,fontSize:13,fontWeight:'600'}}>
                     {newTaskType === 'daily' ? `Every day · ${newTaskTime}` : newTaskType === 'custom' ? `Custom days · ${newTaskTime}` : `${newTaskDue.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})} · ${newTaskAllDay ? 'All day' : newTaskTime}`}
@@ -1360,6 +1403,10 @@ const s = StyleSheet.create({
   avatarInitial:     { fontSize:18, fontWeight:'800', color:'#fff' },
   iconBtn:           { width:36, height:36, borderRadius:18, alignItems:'center', justifyContent:'center', borderWidth:StyleSheet.hairlineWidth },
   streakHeaderBadge: { height:36, minWidth:48, paddingHorizontal:10, borderRadius:18, borderWidth:1, flexDirection:'row', alignItems:'center', justifyContent:'center', gap:5 },
+  notificationPanel: { position:'absolute', left:16, right:16, zIndex:95, borderRadius:18, borderWidth:1, padding:14, shadowColor:'#000', shadowOffset:{width:0,height:8}, shadowOpacity:0.18, shadowRadius:16, elevation:12 },
+  notificationPanelHeader: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingBottom:10 },
+  notificationRow: { flexDirection:'row', alignItems:'center', gap:10, paddingVertical:10 },
+  viewAllButton: { borderTopWidth:StyleSheet.hairlineWidth, flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingTop:12, marginTop:4 },
   calChevronRow:     { alignItems:'center', paddingVertical:8 },
   fabGrad:           { flex:1, alignItems:'center', justifyContent:'center', borderRadius:29 },
 
