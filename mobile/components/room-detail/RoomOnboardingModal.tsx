@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   Modal,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import type { RoomDetail, RoomMember, Task } from '../../types/room';
+import ConfettiCelebration from '../ConfettiCelebration';
 
 interface RoomOnboardingModalProps {
   visible: boolean;
@@ -38,6 +40,8 @@ export default function RoomOnboardingModal({
   const { colors, isDark } = useTheme();
   const [step, setStep] = useState(0);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [celebrating, setCelebrating] = useState(false);
+  const [roomImageFailed, setRoomImageFailed] = useState(false);
 
   const activeMembers = useMemo(() => members.filter(member => member.isOnline).length, [members]);
   const selectedCount = selectedIds.size;
@@ -59,11 +63,12 @@ export default function RoomOnboardingModal({
     onComplete(Array.from(selectedIds));
     setStep(0);
     setSelectedIds(new Set());
+    setCelebrating(false);
   };
 
   const next = () => {
     if (step === STEPS.length - 1) {
-      finish();
+      setCelebrating(true);
       return;
     }
     setStep(current => current + 1);
@@ -113,7 +118,17 @@ export default function RoomOnboardingModal({
             {step === 0 && (
               <View>
                 <View style={[styles.heroIcon, { backgroundColor: `${colors.primary}20` }]}>
-                  <Ionicons name="infinite-outline" size={44} color={colors.primary} />
+                  {room?.roomDp && !roomImageFailed ? (
+                    <Image
+                      source={{ uri: room.roomDp }}
+                      style={styles.roomImage}
+                      resizeMode="cover"
+                      onError={() => setRoomImageFailed(true)}
+                      accessibilityLabel={`${room.name || 'Room'} display picture`}
+                    />
+                  ) : (
+                    <Ionicons name="infinite-outline" size={44} color={colors.primary} />
+                  )}
                 </View>
                 <Text style={[styles.eyebrow, { color: colors.primary }]}>WELCOME TO YOUR ROOM</Text>
                 <Text style={[styles.title, { color: colors.text }]}>
@@ -239,6 +254,11 @@ export default function RoomOnboardingModal({
           </View>
           <Text style={[styles.footerHint, { color: muted }]}>You can revisit your mission choices anytime.</Text>
         </View>
+        <ConfettiCelebration
+          show={celebrating}
+          priority="medium"
+          onComplete={finish}
+        />
       </View>
     </Modal>
   );
@@ -268,6 +288,7 @@ const styles = StyleSheet.create({
   body: { paddingHorizontal: 22 },
   bodyContent: { paddingTop: 12, paddingBottom: 14 },
   heroIcon: { width: 76, height: 76, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+  roomImage: { width: '100%', height: '100%', borderRadius: 24 },
   eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1.2, marginBottom: 9 },
   title: { fontSize: 27, lineHeight: 32, fontWeight: '800', letterSpacing: -0.6, marginBottom: 11 },
   description: { fontSize: 14, lineHeight: 21, fontWeight: '500', marginBottom: 20 },
