@@ -43,6 +43,14 @@ class SyncEngine {
    * Initialize sync engine
    */
   async initialize(userId: string, token: string): Promise<void> {
+    // The API client can refresh an expired access token while restoring a
+    // cached session. Recreate the socket when its auth token changes so the
+    // app does not require a manual relogin to resume realtime sync.
+    if (this.socket && this.token && this.token !== token) {
+      this.socket.disconnect();
+      this.socket = null;
+    }
+
     this.userId = userId;
     this.token = token;
 

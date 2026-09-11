@@ -140,6 +140,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       setUser(response.data.user);
       setLoading(false);
+
+      // loadUser may have refreshed an expired access token during startup.
+      // Re-authenticate the realtime socket with the current token instead of
+      // leaving it connected with the stale token used for cached startup.
+      const currentToken = await secureStorage.getItem(TOKEN_KEY);
+      if (currentToken) {
+        await syncEngine.initialize(response.data.user.id.toString(), currentToken);
+      }
     } catch (error: any) {
       console.error('[Auth] Failed to load user:', error.response?.data || error.message);
       
