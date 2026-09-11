@@ -79,12 +79,12 @@ export function useRoomsManager() {
 
   const handleJoinPublicRoom = useCallback(async (room: RoomDetail) => {
     try {
-      if (!room.joinCode?.trim()) {
-        throw new Error('This room is missing a join code. Refresh Discover and try again.');
+      if (!room.id) {
+        throw new Error('This room is missing an ID. Refresh Discover and try again.');
       }
       setError(null);
       const response = await api.post('/rooms/join', {
-        joinCode: room.joinCode.trim().toUpperCase(),
+        roomId: room.id,
       });
 
       if (response.data.pending) {

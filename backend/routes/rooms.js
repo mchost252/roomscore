@@ -494,8 +494,9 @@ router.post('/join', protect, validate(joinRoomSchema), async (req, res, next) =
     const normalizedJoinCode = typeof req.body.joinCode === 'string'
       ? req.body.joinCode.trim().toUpperCase()
       : '';
+    const requestedRoomId = typeof req.body.roomId === 'string' ? req.body.roomId.trim() : '';
 
-    if (!normalizedJoinCode) {
+    if (!normalizedJoinCode && !requestedRoomId) {
       return res.status(400).json({
         success: false,
         message: 'A valid room code is required'
@@ -503,9 +504,9 @@ router.post('/join', protect, validate(joinRoomSchema), async (req, res, next) =
     }
 
     const room = await prisma.room.findFirst({
-      where: { 
-        joinCode: normalizedJoinCode,
-        isActive: true 
+      where: {
+        ...(requestedRoomId ? { id: requestedRoomId } : { joinCode: normalizedJoinCode }),
+        isActive: true
       },
       include: {
         members: true

@@ -115,8 +115,9 @@ exports.updateMemberRoleSchema = Joi.object({
 
 exports.joinRoomSchema = Joi.object({
   joinCode: Joi.string(),
+  roomId: Joi.string(),
   inviteLink: Joi.string()
-}).or('joinCode', 'inviteLink');
+}).or('joinCode', 'roomId', 'inviteLink');
 
 // Task schemas
 exports.createTaskSchema = Joi.object({
