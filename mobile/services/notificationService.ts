@@ -291,6 +291,7 @@ class NotificationService {
       } catch (e) {
         console.warn('Failed to cancel notification:', id);
       }
+
     }
 
     // Schedule new reminders
@@ -309,6 +310,40 @@ class NotificationService {
         identifier: `due-reminder-${task.id}`,
       });
     }
+  }
+
+  async scheduleTaskAlarm(task: Pick<PersonalTask, 'id' | 'title' | 'dueDate' | 'taskType'>) {
+    if (Platform.OS === 'web' || !this.preferences.enabled || !task.dueDate) return;
+
+    const dueDate = new Date(task.dueDate);
+    if (Number.isNaN(dueDate.getTime())) return;
+
+    const permission = await this.initialize();
+    if (!permission) return;
+
+    const isDaily = task.taskType === 'daily';
+    if (!isDaily && dueDate.getTime() <= Date.now()) return;
+
+    await Notifications.cancelScheduledNotificationAsync(`task-alarm-${task.id}`).catch(() => {});
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: isDaily ? 'Daily task reminder' : 'Task reminder',
+        body: task.title,
+        data: { type: 'task-reminder', taskId: task.id },
+        sound: 'default',
+      },
+      trigger: isDaily
+        ? {
+            type: Notifications.SchedulableTriggerInputTypes.DAILY,
+            hour: dueDate.getHours(),
+            minute: dueDate.getMinutes(),
+          }
+        : {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            date: dueDate,
+          },
+      identifier: `task-alarm-${task.id}`,
+    });
   }
 
   /**

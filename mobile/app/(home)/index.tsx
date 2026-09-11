@@ -143,6 +143,10 @@ export default function HomeScreen() {
       return isSameDay(new Date(t.dueDate), selectedDate);
     });
   }, [tasks, searchQuery, statusFilter, selectedDate]);
+  const todayCompleted = useMemo(
+    () => tasks.filter(task => task.isCompleted && task.dueDate && isSameDay(new Date(task.dueDate), today)).length,
+    [tasks, today],
+  );
   const { pendingCount, ongoingCount, upcomingCount, dueCount, done } = useMemo(() => {
     let pending = 0, ongoing = 0, upcoming = 0, due = 0;
     const completed: PersonalTask[] = [];
@@ -219,6 +223,7 @@ export default function HomeScreen() {
   const [newTaskTitle, setNewTaskTitle]     = useState('');
   const [newTaskBucket, setNewTaskBucket]   = useState<'today'|'week'|'someday'|'inbox'>('today');
   const [newTaskPriority, setNewTaskPriority] = useState<'urgent'|'low'|'medium'|'high'>('medium');
+  const [newTaskType, setNewTaskType]     = useState<'one-time'|'daily'>('one-time');
   const [newTaskDue, setNewTaskDue]         = useState<Date>(today);
   const [newTaskTime, setNewTaskTime]       = useState<string>('09:00');
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -268,11 +273,15 @@ export default function HomeScreen() {
       title: newTaskTitle.trim(),
       bucket: newTaskBucket,
       priority: newTaskPriority,
+      taskType: newTaskType,
       dueDate: due.toISOString(),
     });
     setTasks(prev=>[task,...prev]);
     closeAddTask();
     showToast('Task added!');
+    notificationService.scheduleTaskAlarm(task).catch(err => {
+      console.warn('[HomeScreen] Task alarm scheduling failed:', err);
+    });
 
     // Fire-and-forget: pre-cache AI Note so it's ready when user views the task thread
     secureStorage.getItem(TOKEN_KEY).then(tkn => {
@@ -280,7 +289,7 @@ export default function HomeScreen() {
         fetchAINote({
           taskId: task.id,
           taskTitle: newTaskTitle.trim(),
-          taskType: 'daily',
+          taskType: newTaskType,
           priority: newTaskPriority,
           token: tkn,
           forceRefresh: false,
@@ -304,7 +313,7 @@ export default function HomeScreen() {
       // If vagueness check fails, just navigate normally
       navigateToThread(task);
     }
-  },[newTaskTitle,newTaskBucket,newTaskPriority,newTaskDue,newTaskTime,closeAddTask,showToast,navigateToThread]);
+  },[newTaskTitle,newTaskBucket,newTaskPriority,newTaskType,newTaskDue,newTaskTime,closeAddTask,showToast,navigateToThread]);
 
   const handleClarificationSubmit = useCallback((answers: Record<string,string>) => {
     setShowClarification(false);
@@ -621,6 +630,24 @@ export default function HomeScreen() {
           </View>
           <TouchableOpacity onPress={()=>setCalView(v=>v==='week'?'month':'week')} style={[s.calIconBtn,{backgroundColor:calView==='month'?t.primary:`rgba(${t.surfRgb},0.7)`,borderColor:calView==='month'?t.primary:t.border}]}>
             <Ionicons name="calendar-outline" size={20} color={calView==='month'?'#fff':t.textSub}/>
+          </TouchableOpacity>
+        </View>
+
+        <View style={{flexDirection:'row',gap:10,marginBottom:14}}>
+          <View style={{flex:1,padding:14,borderRadius:18,backgroundColor:`rgba(${t.surfRgb},0.72)`,borderWidth:1,borderColor:t.border}}>
+            <Text style={{fontSize:11,fontWeight:'700',letterSpacing:0.5,color:t.textSub}}>TODAY'S PLAN</Text>
+            <Text style={{fontSize:22,fontWeight:'800',color:t.text,marginTop:5}}>{tasksForDate.length}</Text>
+            <Text style={{fontSize:11,color:t.textHint,marginTop:2}}>tasks scheduled</Text>
+          </View>
+          <View style={{flex:1,padding:14,borderRadius:18,backgroundColor:'rgba(99,102,241,0.12)',borderWidth:1,borderColor:`${t.primary}35`}}>
+            <Text style={{fontSize:11,fontWeight:'700',letterSpacing:0.5,color:t.primary}}>PROGRESS</Text>
+            <Text style={{fontSize:22,fontWeight:'800',color:t.text,marginTop:5}}>{todayCompleted}</Text>
+            <Text style={{fontSize:11,color:t.textHint,marginTop:2}}>completed today</Text>
+          </View>
+          <TouchableOpacity onPress={()=>router.push('/(home)/rooms')} style={{flex:1,padding:14,borderRadius:18,backgroundColor:`rgba(${t.surfRgb},0.72)`,borderWidth:1,borderColor:t.border}}>
+            <Ionicons name="people-outline" size={18} color={t.primary}/>
+            <Text style={{fontSize:13,fontWeight:'800',color:t.text,marginTop:7}}>Rooms</Text>
+            <Text style={{fontSize:11,color:t.textHint,marginTop:2}}>Open hub</Text>
           </TouchableOpacity>
         </View>
 
@@ -1056,6 +1083,24 @@ export default function HomeScreen() {
               />
               <ScrollView contentContainerStyle={{padding:20,gap:16,paddingBottom:40}} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                 <TextInput style={[s.addTaskInput,{backgroundColor:`rgba(${t.surfRgb},0.5)`,borderColor:t.border,color:t.text}]} value={newTaskTitle} onChangeText={setNewTaskTitle} placeholder="What needs to be done?" placeholderTextColor={t.textHint} autoFocus={showAddTask} multiline returnKeyType="done"/>
+                <Text style={[s.addTaskLabel,{color:t.textSub}]}>REPEAT</Text>
+                <View style={s.chipRow}>
+                  {([
+                    { value: 'one-time' as const, label: 'Once', icon: 'calendar-outline' as const },
+                    { value: 'daily' as const, label: 'Every day', icon: 'repeat-outline' as const },
+                  ]).map(option => (
+                    <TouchableOpacity
+                      key={option.value}
+                      onPress={()=>setNewTaskType(option.value)}
+                      style={[s.chip,{flex:1,borderColor:newTaskType===option.value?t.primary:t.border,backgroundColor:newTaskType===option.value?t.accentLight:'transparent'}]}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: newTaskType===option.value }}
+                    >
+                      <Ionicons name={option.icon} size={16} color={newTaskType===option.value?t.primary:t.textSub}/>
+                      <Text style={[s.chipText,{color:newTaskType===option.value?t.primary:t.textSub}]}>{option.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
                 <Text style={[s.addTaskLabel,{color:t.textSub}]}>WHEN</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8}}>
                   {getWeekDays(today).map((d,i)=>{
