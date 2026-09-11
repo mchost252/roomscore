@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../../context/ThemeContext';
+import { useToast } from '../../context/ToastContext';
 import { RoomMember, Task } from '../../types/room';
 import RoomService, { PendingMember } from '../../services/roomService';
 
@@ -55,6 +56,7 @@ export default function MemberHUDModal({
   onPromoteMember,
 }: MemberHUDModalProps) {
   const { isDark, colors } = useTheme();
+  const { showToast } = useToast();
 
   // ── Pending members state (owner only) ──────────────────────────────────
   const [pendingMembers, setPendingMembers] = useState<PendingMember[]>([]);
@@ -149,12 +151,14 @@ export default function MemberHUDModal({
     try {
       await RoomService.approveMember(roomId, userId);
       setPendingMembers(prev => prev.filter(m => m.userId !== userId));
+      showToast({ message: 'Join request approved', type: 'success' });
     } catch (error) {
       console.error('[MemberHUD] Failed to approve:', error);
+      showToast({ message: 'Could not approve this request', type: 'error' });
     } finally {
       setActionLoading(null);
     }
-  }, [roomId]);
+  }, [roomId, showToast]);
 
   const handleReject = useCallback(async (userId: string) => {
     if (!roomId) return;
@@ -163,12 +167,14 @@ export default function MemberHUDModal({
     try {
       await RoomService.rejectMember(roomId, userId);
       setPendingMembers(prev => prev.filter(m => m.userId !== userId));
+      showToast({ message: 'Join request declined', type: 'success' });
     } catch (error) {
       console.error('[MemberHUD] Failed to reject:', error);
+      showToast({ message: 'Could not decline this request', type: 'error' });
     } finally {
       setActionLoading(null);
     }
-  }, [roomId]);
+  }, [roomId, showToast]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   const getRankIcon = (rank: number) => {

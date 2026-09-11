@@ -513,6 +513,7 @@ router.post('/join', protect, validate(joinRoomSchema), async (req, res, next) =
     });
 
     if (!room) {
+      logger.warn(`Room join failed: no active room for code ${normalizedJoinCode}`);
       return res.status(404).json({
         success: false,
         message: 'Room not found with provided code'
