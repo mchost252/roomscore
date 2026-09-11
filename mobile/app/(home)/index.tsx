@@ -139,9 +139,12 @@ export default function HomeScreen() {
       return tasks.filter(t => !t.isCompleted && getTaskStatus(t.dueDate ? new Date(t.dueDate) : null) === statusFilter);
     }
     return tasks.filter(t => {
-      if (t.taskType === 'custom' && t.daysOfWeek?.length) {
+      const createdOn = new Date(t.createdAt);
+      if (selectedDate < new Date(createdOn.getFullYear(), createdOn.getMonth(), createdOn.getDate())) return false;
+      if (t.taskType === 'custom' && Array.isArray(t.daysOfWeek) && t.daysOfWeek.length) {
         return t.daysOfWeek.includes(selectedDate.getDay());
       }
+      if (t.taskType === 'daily') return true;
       if (!t.dueDate) return isSameDay(new Date(t.createdAt), selectedDate);
       return isSameDay(new Date(t.dueDate), selectedDate);
     });
@@ -230,6 +233,20 @@ export default function HomeScreen() {
   const [newTaskDays, setNewTaskDays]     = useState<number[]>([new Date().getDay()]);
   const [newTaskAllDay, setNewTaskAllDay] = useState(false);
   const [statsExpanded, setStatsExpanded] = useState(false);
+  const [showHomeGuide, setShowHomeGuide] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem('krios.homeGuideSeen').then(seen => {
+      if (!seen) setShowHomeGuide(true);
+    }).catch(error => console.warn('[HomeScreen] Could not read Home guide state:', error));
+  }, []);
+
+  const dismissHomeGuide = useCallback(() => {
+    setShowHomeGuide(false);
+    AsyncStorage.setItem('krios.homeGuideSeen', 'true').catch(error => {
+      console.warn('[HomeScreen] Could not save Home guide state:', error);
+    });
+  }, []);
   const [newTaskDue, setNewTaskDue]         = useState<Date>(today);
   const [newTaskTime, setNewTaskTime]       = useState<string>('09:00');
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -498,6 +515,33 @@ export default function HomeScreen() {
   return (
     <View style={[s.root,{backgroundColor:t.bg}]}>
       <StatusBar barStyle={t.isDark?'light-content':'dark-content'} />
+
+      <Modal visible={showHomeGuide} transparent animationType="fade" onRequestClose={dismissHomeGuide}>
+        <View style={s.homeGuideOverlay}>
+          <View style={[s.homeGuideCard,{backgroundColor:t.isDark?'#161629':'#fff',borderColor:t.border}]}>
+            <View style={[s.homeGuideIcon,{backgroundColor:t.accentLight}]}>
+              <Ionicons name="sparkles-outline" size={24} color={t.primary}/>
+            </View>
+            <Text style={[s.homeGuideTitle,{color:t.text}]}>Your daily command center</Text>
+            <Text style={[s.homeGuideBody,{color:t.textSub}]}>Home keeps the essentials together:</Text>
+            {[
+              ['person-circle-outline','Greeting and profile'],
+              ['flame-outline','Streak and activity'],
+              ['checkmark-circle-outline','Today’s tasks'],
+              ['people-outline','Rooms preview'],
+              ['trophy-outline','Progress and weekly XP'],
+            ].map(([icon,label]) => (
+              <View key={label} style={s.homeGuideRow}>
+                <Ionicons name={icon as keyof typeof Ionicons.glyphMap} size={18} color={t.primary}/>
+                <Text style={{color:t.text,fontSize:14,fontWeight:'600'}}>{label}</Text>
+              </View>
+            ))}
+            <TouchableOpacity onPress={dismissHomeGuide} style={[s.homeGuideButton,{backgroundColor:t.primary}]}>
+              <Text style={{color:'#fff',fontSize:14,fontWeight:'800'}}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* ════ CONFETTI CELEBRATION ════ */}
       <ConfettiCelebration show={showConfetti} priority={confettiPriority} onComplete={() => setShowConfetti(false)} />
@@ -1095,6 +1139,8 @@ export default function HomeScreen() {
               <KriosDatePicker
                 visible={showDatePicker}
                 initialDate={newTaskDue}
+                showDate={newTaskType !== 'daily'}
+                timeDisabled={newTaskAllDay}
                 onConfirm={(date)=>{
                   setNewTaskDue(date);
                   setNewTaskTime(`${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`);
@@ -1124,22 +1170,9 @@ export default function HomeScreen() {
                   ))}
                 </View>
                 <Text style={[s.addTaskLabel,{color:t.textSub}]}>WHEN</Text>
-                {newTaskType !== 'daily' && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8}}>
-                  {getWeekDays(today).map((d,i)=>{
-                    const isSel=isSameDay(d,newTaskDue);
-                    const isTod=isSameDay(d,today);
-                    return(
-                      <TouchableOpacity key={i} onPress={()=>setNewTaskDue(d)} style={[s.dueDatePill,{backgroundColor:isSel?t.primary:`rgba(${t.surfRgb},0.5)`,borderColor:isSel?t.primary:t.border}]}>
-                        <Text style={{fontSize:9,color:isSel?'#fff':t.textHint,fontWeight:'600'}}>{DAY_NAMES[d.getDay()].slice(0,3).toUpperCase()}</Text>
-                        <Text style={{fontSize:18,color:isSel?'#fff':t.text,fontWeight:'800'}}>{d.getDate()}</Text>
-                        {isTod&&<View style={{width:4,height:4,borderRadius:2,backgroundColor:isSel?'#fff':t.primary}}/>}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>}
                 {newTaskType === 'custom' && <View style={{gap:8}}>
                   <Text style={{fontSize:12,color:t.textSub}}>Repeat on</Text>
-                  <View style={s.chipRow}>
+                  <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>
                     {DAY_NAMES.map((day,index) => {
                       const selected = newTaskDays.includes(index);
                       return <TouchableOpacity key={day} onPress={()=>setNewTaskDays(days => selected ? days.filter(value=>value!==index) : [...days,index])} style={[s.chip,{paddingHorizontal:10,borderColor:selected?t.primary:t.border,backgroundColor:selected?t.accentLight:'transparent'}]}>
@@ -1346,6 +1379,13 @@ const s = StyleSheet.create({
   toastText:         { color:'#fff', fontSize:13, fontWeight:'600' },
   undoToast:         { position:'absolute', left:16, right:16, borderRadius:16, borderWidth:StyleSheet.hairlineWidth, paddingHorizontal:14, paddingVertical:10, flexDirection:'row', alignItems:'center', gap:10, shadowColor:'#000', shadowOffset:{width:0,height:4}, shadowOpacity:0.15, shadowRadius:12, elevation:8, zIndex:999 },
   undoBtn:           { paddingHorizontal:14, paddingVertical:6, borderRadius:12 },
+  homeGuideOverlay:  { flex:1, justifyContent:'center', padding:24, backgroundColor:'rgba(0,0,0,0.58)' },
+  homeGuideCard:     { borderRadius:24, borderWidth:1, padding:24, shadowColor:'#000', shadowOffset:{width:0,height:8}, shadowOpacity:0.2, shadowRadius:20, elevation:10 },
+  homeGuideIcon:     { width:48, height:48, borderRadius:16, alignItems:'center', justifyContent:'center', marginBottom:14 },
+  homeGuideTitle:    { fontSize:22, fontWeight:'900', letterSpacing:-0.5 },
+  homeGuideBody:     { fontSize:13, marginTop:7, marginBottom:14 },
+  homeGuideRow:      { flexDirection:'row', alignItems:'center', gap:12, paddingVertical:8 },
+  homeGuideButton:   { alignItems:'center', borderRadius:14, paddingVertical:13, marginTop:16 },
 
   // Sheets
   sheet:             { position:'absolute', top:0, left:0, right:0, height:'100%', zIndex:80 },

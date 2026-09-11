@@ -1,393 +1,175 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Animated,
-  Dimensions,
-  Modal,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  ScrollView,
+  Modal, Pressable, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 
 interface KriosDatePickerProps {
   visible: boolean;
   initialDate: Date;
+  showDate?: boolean;
+  timeDisabled?: boolean;
   onConfirm: (date: Date) => void;
   onCancel: () => void;
 }
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const SHEET_HEIGHT = Platform.OS === 'ios' ? 420 : 380;
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const HOURS = Array.from({ length: 12 }, (_, index) => index + 1);
+const MINUTES = Array.from({ length: 12 }, (_, index) => index * 5);
 
-const HOURS = Array.from({ length: 12 }, (_, i) => i + 1);
-const MINUTES = Array.from({ length: 60 }, (_, i) => i);
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-export default function KriosDatePicker({ visible, initialDate, onConfirm, onCancel }: KriosDatePickerProps) {
+export default function KriosDatePicker({
+  visible, initialDate, showDate = true, timeDisabled = false, onConfirm, onCancel,
+}: KriosDatePickerProps) {
   const { isDark, colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const translateY = useRef(new Animated.Value(SHEET_HEIGHT)).current;
-  const confirmedRef = useRef(false);
+  const [value, setValue] = useState(new Date(initialDate));
+  const [tab, setTab] = useState<'date' | 'time'>(showDate && !timeDisabled ? 'date' : 'date');
+  const [month, setMonth] = useState(new Date(initialDate));
 
-  const [selectedDate, setSelectedDate] = useState(new Date(initialDate));
-  const [mode, setMode] = useState<'time' | 'date' | 'ampm'>('time');
-
-  // Sync when initialDate changes from parent
   useEffect(() => {
     if (visible) {
-      setSelectedDate(new Date(initialDate));
-      setMode('time');
+      const next = new Date(initialDate);
+      setValue(next);
+      setMonth(next);
+      setTab(showDate ? 'date' : 'time');
     }
-  }, [visible, initialDate]);
+  }, [visible, initialDate, showDate]);
 
-  // Animate in/out
-  useEffect(() => {
-    if (visible) {
-      Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 5, speed: 14 }).start();
-    } else {
-      Animated.spring(translateY, { toValue: SHEET_HEIGHT, useNativeDriver: true, bounciness: 0, speed: 20 }).start();
-    }
-  }, [visible, translateY]);
+  const calendarDays = useMemo(() => {
+    const first = new Date(month.getFullYear(), month.getMonth(), 1).getDay();
+    const total = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+    return [...Array(first).fill(null), ...Array.from({ length: total }, (_, index) => index + 1)];
+  }, [month]);
 
-  const is24Hour = false; // Force 12-hour format like iOS alarms
-  const hour24 = selectedDate.getHours();
-  const hour12 = hour24 % 12 || 12;
-  const minute = selectedDate.getMinutes();
-  const ampm = hour24 >= 12 ? 'PM' : 'AM';
-
-  const setHour = useCallback((h: number) => {
-    setSelectedDate(prev => {
-      const next = new Date(prev);
-      const isPm = prev.getHours() >= 12;
-      next.setHours(isPm ? (h % 12) + 12 : h % 12, prev.getMinutes(), 0, 0);
-      return next;
-    });
-  }, []);
-
-  const setMinute = useCallback((m: number) => {
-    setSelectedDate(prev => {
-      const next = new Date(prev);
-      next.setHours(next.getHours(), m, 0, 0);
-      return next;
-    });
-  }, []);
-
-  const toggleAmPm = useCallback(() => {
-    setSelectedDate(prev => {
-      const next = new Date(prev);
-      const h = next.getHours();
-      next.setHours(h >= 12 ? h - 12 : h + 12, next.getMinutes(), 0, 0);
-      return next;
-    });
-  }, []);
-
-  const changeDay = useCallback((delta: number) => {
-    setSelectedDate(prev => {
-      const next = new Date(prev);
-      next.setDate(next.getDate() + delta);
-      return next;
-    });
-  }, []);
-
-  const handleConfirm = useCallback(() => {
-    if (confirmedRef.current) return;
-    confirmedRef.current = true;
-    onConfirm(selectedDate);
-    setTimeout(() => { confirmedRef.current = false; }, 500);
-  }, [selectedDate, onConfirm]);
-
-  const sheetBg = isDark ? 'rgba(10,10,22,0.99)' : 'rgba(248,248,255,0.99)';
-  const divider = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)';
-  const primary = '#6366f1';
-
-  const dateStr = selectedDate.toLocaleDateString('en-US', {
-    weekday: 'short', month: 'short', day: 'numeric',
-  });
-
-  // Generate next 7 days for the date strip
-  const dayStrips = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() + i);
-    return d;
-  });
-
-  const isToday = (d: Date) => {
-    const t = new Date();
-    return d.getDate() === t.getDate() && d.getMonth() === t.getMonth() && d.getFullYear() === t.getFullYear();
+  const hour = value.getHours() % 12 || 12;
+  const minute = Math.round(value.getMinutes() / 5) * 5 % 60;
+  const period = value.getHours() >= 12 ? 'PM' : 'AM';
+  const updateTime = (nextHour: number, nextMinute: number, nextPeriod = period) => {
+    const next = new Date(value);
+    const hour24 = nextPeriod === 'PM' ? (nextHour % 12) + 12 : nextHour % 12;
+    next.setHours(hour24, nextMinute, 0, 0);
+    setValue(next);
   };
 
+  const selectDay = (day: number) => {
+    const next = new Date(value);
+    next.setFullYear(month.getFullYear(), month.getMonth(), day);
+    setValue(next);
+  };
+
+  const changeMonth = (delta: number) => {
+    setMonth(current => new Date(current.getFullYear(), current.getMonth() + delta, 1));
+  };
+
+  const muted = isDark ? '#8b8ba7' : '#73738a';
+  const surface = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(99,102,241,0.06)';
+  const selectedBg = isDark ? 'rgba(99,102,241,0.25)' : 'rgba(99,102,241,0.12)';
+  const dateLabel = value.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const timeLabel = `${hour}:${String(minute).padStart(2, '0')} ${period}`;
+
   return (
-    <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={onCancel}>
-      <Pressable style={styles.scrim} onPress={onCancel} />
-      <Animated.View style={[styles.sheet, { backgroundColor: sheetBg, transform: [{ translateY }] }]}>
-        {/* Accent bar */}
-        <LinearGradient colors={['#6366f1', '#8b5cf6', '#a78bfa']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.accentBar} />
-        {/* Handle */}
-        <View style={[styles.handle, { backgroundColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.14)' }]} />
-
-        {/* Header */}
-        <View style={[styles.header, { borderBottomColor: divider }]}>
-          <TouchableOpacity onPress={onCancel} hitSlop={12}>
-            <Text style={[styles.headerBtn, { color: colors.textSecondary }]}>Cancel</Text>
-          </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <Text style={[styles.title, { color: colors.text }]}>Set Time</Text>
-            <Text style={[styles.preview, { color: colors.primary }]}>{dateStr}</Text>
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onCancel}>
+      <View style={styles.overlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} />
+        <View style={[styles.card, { backgroundColor: isDark ? '#10101d' : '#fbfbff', paddingBottom: Math.max(insets.bottom, 16) }]}>
+          <View style={styles.handle} />
+          <View style={styles.header}>
+            <TouchableOpacity onPress={onCancel}><Text style={[styles.action, { color: muted }]}>Cancel</Text></TouchableOpacity>
+            <View style={styles.headerCenter}>
+              <Text style={[styles.title, { color: colors.text }]}>Set schedule</Text>
+              <Text style={[styles.subtitle, { color: colors.primary }]}>{showDate ? dateLabel : `Every day · ${timeLabel}`}</Text>
+            </View>
+            <TouchableOpacity onPress={() => onConfirm(value)}><Text style={[styles.action, { color: colors.primary, fontWeight: '800' }]}>Done</Text></TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={handleConfirm} hitSlop={12}>
-            <Text style={[styles.headerBtn, { color: primary, fontWeight: '700' }]}>Done</Text>
+
+          <View style={[styles.tabs, { backgroundColor: surface }]}>
+            {showDate && <TouchableOpacity onPress={() => setTab('date')} style={[styles.tab, tab === 'date' && { backgroundColor: colors.primary }]}>
+              <Ionicons name="calendar-outline" size={16} color={tab === 'date' ? '#fff' : muted} />
+              <Text style={[styles.tabText, { color: tab === 'date' ? '#fff' : muted }]}>Date</Text>
+            </TouchableOpacity>}
+            <TouchableOpacity disabled={timeDisabled} onPress={() => setTab('time')} style={[styles.tab, tab === 'time' && { backgroundColor: colors.primary }, timeDisabled && { opacity: 0.35 }]}>
+              <Ionicons name="time-outline" size={16} color={tab === 'time' ? '#fff' : muted} />
+              <Text style={[styles.tabText, { color: tab === 'time' ? '#fff' : muted }]}>Time</Text>
+            </TouchableOpacity>
+          </View>
+
+          {tab === 'date' && showDate && (
+            <View style={styles.datePane}>
+              <View style={styles.monthHeader}>
+                <TouchableOpacity onPress={() => changeMonth(-1)} style={[styles.navButton, { backgroundColor: surface }]}><Ionicons name="chevron-back" size={18} color={colors.text} /></TouchableOpacity>
+                <Text style={[styles.monthTitle, { color: colors.text }]}>{MONTHS[month.getMonth()]} {month.getFullYear()}</Text>
+                <TouchableOpacity onPress={() => changeMonth(1)} style={[styles.navButton, { backgroundColor: surface }]}><Ionicons name="chevron-forward" size={18} color={colors.text} /></TouchableOpacity>
+              </View>
+              <View style={styles.weekHeader}>{DAYS.map(day => <Text key={day} style={[styles.weekday, { color: muted }]}>{day.slice(0, 2)}</Text>)}</View>
+              <View style={styles.grid}>{calendarDays.map((day, index) => {
+                const selected = day === value.getDate() && month.getMonth() === value.getMonth() && month.getFullYear() === value.getFullYear();
+                return <TouchableOpacity key={`${day}-${index}`} disabled={!day} onPress={() => day && selectDay(day)} style={[styles.day, selected && { backgroundColor: colors.primary }]}>
+                  <Text style={[styles.dayText, { color: selected ? '#fff' : day ? colors.text : 'transparent' }]}>{day || 0}</Text>
+                </TouchableOpacity>;
+              })}</View>
+            </View>
+          )}
+
+          {tab === 'time' && !timeDisabled && (
+            <View style={styles.timePane}>
+              <Text style={[styles.timePreview, { color: colors.text }]}>{timeLabel}</Text>
+              <Text style={[styles.helper, { color: muted }]}>Choose a reminder time</Text>
+              <View style={styles.pickerRow}>
+                <View style={styles.pickerColumn}>{HOURS.map(item => <TouchableOpacity key={item} onPress={() => updateTime(item, minute)} style={[styles.option, item === hour && { backgroundColor: selectedBg }]}><Text style={[styles.optionText, { color: item === hour ? colors.primary : colors.text }]}>{item}</Text></TouchableOpacity>)}</View>
+                <Text style={[styles.colon, { color: colors.text }]}>:</Text>
+                <View style={styles.pickerColumn}>{MINUTES.map(item => <TouchableOpacity key={item} onPress={() => updateTime(hour, item)} style={[styles.option, item === minute && { backgroundColor: selectedBg }]}><Text style={[styles.optionText, { color: item === minute ? colors.primary : colors.text }]}>{String(item).padStart(2, '0')}</Text></TouchableOpacity>)}</View>
+                <View style={styles.periodColumn}>{(['AM', 'PM'] as const).map(item => <TouchableOpacity key={item} onPress={() => updateTime(hour, minute, item)} style={[styles.period, item === period && { backgroundColor: selectedBg }]}><Text style={[styles.periodText, { color: item === period ? colors.primary : muted }]}>{item}</Text></TouchableOpacity>)}</View>
+              </View>
+            </View>
+          )}
+
+          {timeDisabled && <View style={styles.disabledNotice}><Ionicons name="sunny-outline" size={20} color={colors.primary} /><Text style={[styles.disabledText, { color: muted }]}>All day selected — no reminder time needed.</Text></View>}
+          <TouchableOpacity onPress={() => onConfirm(value)} style={[styles.doneButton, { backgroundColor: colors.primary }]}>
+            <Text style={styles.doneText}>{showDate && !timeDisabled ? `${dateLabel} · ${timeLabel}` : showDate ? dateLabel : `Every day · ${timeLabel}`}</Text>
           </TouchableOpacity>
         </View>
-
-        <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-          {/* ── INLINE TIME PICKER ── */}
-          <View style={styles.timeContainer}>
-            {/* Hour column */}
-            <ScrollView style={styles.timeColumn} contentContainerStyle={styles.timeColumnContent} showsVerticalScrollIndicator={false}>
-              {HOURS.map(h => (
-                <TouchableOpacity
-                  key={h}
-                  onPress={() => setHour(h)}
-                  style={[styles.timeCell, hour12 === h && { backgroundColor: isDark ? 'rgba(99,102,241,0.18)' : 'rgba(99,102,241,0.10)' }]}
-                >
-                  <Text style={[styles.timeCellText, { color: hour12 === h ? primary : colors.text }, hour12 === h && { fontWeight: '800' }]}>
-                    {String(h).padStart(2, '0')}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            {/* Separator */}
-            <Text style={[styles.timeSeparator, { color: colors.text }]}>:</Text>
-
-            {/* Minute column */}
-            <ScrollView style={styles.timeColumn} contentContainerStyle={styles.timeColumnContent} showsVerticalScrollIndicator={false}>
-              {MINUTES.map(m => (
-                <TouchableOpacity
-                  key={m}
-                  onPress={() => setMinute(m)}
-                  style={[styles.timeCell, minute === m && { backgroundColor: isDark ? 'rgba(99,102,241,0.18)' : 'rgba(99,102,241,0.10)' }]}
-                >
-                  <Text style={[styles.timeCellText, { color: minute === m ? primary : colors.text }, minute === m && { fontWeight: '800' }]}>
-                    {String(m).padStart(2, '0')}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            {/* AM/PM */}
-            <View style={styles.ampmColumn}>
-              <TouchableOpacity
-                onPress={() => { if (ampm === 'PM') toggleAmPm(); }}
-                style={[styles.ampmBtn, ampm === 'AM' && { backgroundColor: isDark ? 'rgba(99,102,241,0.18)' : 'rgba(99,102,241,0.10)' }]}
-              >
-                <Text style={[styles.ampmText, { color: ampm === 'AM' ? primary : colors.textSecondary }]}>AM</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => { if (ampm === 'AM') toggleAmPm(); }}
-                style={[styles.ampmBtn, ampm === 'PM' && { backgroundColor: isDark ? 'rgba(99,102,241,0.18)' : 'rgba(99,102,241,0.10)' }]}
-              >
-                <Text style={[styles.ampmText, { color: ampm === 'PM' ? primary : colors.textSecondary }]}>PM</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* ── DATE STRIP ── */}
-          <View style={[styles.dateStripHeader, { borderBottomColor: divider }]}>
-            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>DATE</Text>
-            <View style={styles.dateNavRow}>
-              <TouchableOpacity onPress={() => changeDay(-1)} hitSlop={8} style={styles.dateNavBtn}>
-                <Ionicons name="chevron-back" size={18} color={colors.textSecondary} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => changeDay(1)} hitSlop={8} style={styles.dateNavBtn}>
-                <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateStripContent}>
-            {dayStrips.map((d, i) => {
-              const sel = isSameDay(d, selectedDate);
-              const today = isToday(d);
-              return (
-                <TouchableOpacity
-                  key={i}
-                  onPress={() => setSelectedDate(d)}
-                  style={[styles.dayPill, { borderColor: sel ? primary : divider, backgroundColor: sel ? (isDark ? 'rgba(99,102,241,0.18)' : 'rgba(99,102,241,0.10)') : 'transparent' }]}
-                >
-                  <Text style={[styles.dayPillDay, { color: sel ? primary : colors.textSecondary }]}>
-                    {DAY_NAMES[d.getDay()]}
-                  </Text>
-                  <Text style={[styles.dayPillDate, { color: sel ? primary : colors.text }]}>
-                    {d.getDate()}
-                  </Text>
-                  {today && !sel && <View style={[styles.todayDot, { backgroundColor: primary }]} />}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </ScrollView>
-
-        {/* Confirm button */}
-        <View style={[styles.footer, { borderTopColor: divider, paddingBottom: Math.max(insets.bottom, 16) }]}>
-          <TouchableOpacity onPress={handleConfirm} style={[styles.confirmBtn, { backgroundColor: primary }]} activeOpacity={0.85}>
-            <Text style={styles.confirmText}>
-              {hour12}:{String(minute).padStart(2, '0')} {ampm}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </Animated.View>
+      </View>
     </Modal>
   );
 }
 
-function isSameDay(a: Date, b: Date) {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-}
-
 const styles = StyleSheet.create({
-  scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
-  sheet: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    height: SHEET_HEIGHT,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    overflow: 'hidden',
-  },
-  accentBar: { height: 3, width: '100%' },
-  handle: { alignSelf: 'center', marginTop: 10, width: 40, height: 4, borderRadius: 2 },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
+  overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' },
+  card: { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 10 },
+  handle: { alignSelf: 'center', width: 42, height: 4, borderRadius: 2, backgroundColor: 'rgba(128,128,150,0.45)', marginBottom: 12 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 52 },
   headerCenter: { alignItems: 'center', flex: 1 },
-  title: { fontSize: 15, fontWeight: '600' },
-  preview: { fontSize: 12, marginTop: 2, fontWeight: '500' },
-  headerBtn: { fontSize: 15, fontWeight: '500' },
-  body: { paddingHorizontal: 12, paddingBottom: 8 },
-  sectionLabel: {
-    fontSize: 11, fontWeight: '700', letterSpacing: 1,
-    paddingVertical: 8, paddingHorizontal: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    marginBottom: 4,
-  },
-  picker: { width: '100%' },
-  footer: { paddingHorizontal: 20, paddingVertical: 14, borderTopWidth: StyleSheet.hairlineWidth },
-  confirmBtn: { borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  confirmText: { color: '#ffffff', fontSize: 15, fontWeight: '600' },
-
-  // Inline time picker
-  timeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    gap: 8,
-  },
-  timeColumn: {
-    height: 180,
-    width: 80,
-  },
-  timeColumnContent: {
-    alignItems: 'center',
-    paddingVertical: 70,
-    gap: 4,
-  },
-  timeCell: {
-    width: 64,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 10,
-  },
-  timeCellText: {
-    fontSize: 22,
-    fontWeight: '500',
-  },
-  timeSeparator: {
-    fontSize: 28,
-    fontWeight: '300',
-    marginHorizontal: 4,
-  },
-  ampmColumn: {
-    flexDirection: 'column',
-    gap: 6,
-    marginLeft: 8,
-  },
-  ampmBtn: {
-    width: 52,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  ampmText: {
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-
-  // Date strip
-  dateStripHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    marginBottom: 4,
-  },
-  dateNavRow: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  dateNavBtn: {
-    width: 28,
-    height: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 14,
-  },
-  dateStripContent: {
-    paddingHorizontal: 8,
-    paddingBottom: 8,
-    gap: 8,
-    alignItems: 'center',
-  },
-  dayPill: {
-    width: 52,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 14,
-    borderWidth: 1,
-    gap: 2,
-  },
-  dayPillDay: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  dayPillDate: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  todayDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    marginTop: 1,
-  },
+  title: { fontSize: 17, fontWeight: '800' },
+  subtitle: { fontSize: 12, fontWeight: '700', marginTop: 3 },
+  action: { fontSize: 15, padding: 8 },
+  tabs: { flexDirection: 'row', borderRadius: 14, padding: 4, marginVertical: 14, gap: 4 },
+  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 10, paddingVertical: 10 },
+  tabText: { fontSize: 13, fontWeight: '800' },
+  datePane: { minHeight: 300 },
+  monthHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  monthTitle: { fontSize: 16, fontWeight: '800' },
+  navButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
+  weekHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  weekday: { width: '14.28%', textAlign: 'center', fontSize: 11, fontWeight: '800' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap' },
+  day: { width: '14.28%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 16, marginBottom: 3 },
+  dayText: { fontSize: 14, fontWeight: '700' },
+  timePane: { minHeight: 300, alignItems: 'center' },
+  timePreview: { fontSize: 36, fontWeight: '900', marginTop: 10 },
+  helper: { fontSize: 12, marginTop: 4, marginBottom: 16 },
+  pickerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  pickerColumn: { width: 140, flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  option: { width: 42, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  optionText: { fontSize: 18, fontWeight: '800' },
+  colon: { fontSize: 26, fontWeight: '900' },
+  periodColumn: { gap: 8, marginLeft: 6 },
+  period: { width: 58, paddingVertical: 12, alignItems: 'center', borderRadius: 10 },
+  periodText: { fontSize: 14, fontWeight: '900' },
+  disabledNotice: { minHeight: 300, alignItems: 'center', justifyContent: 'center', gap: 10 },
+  disabledText: { fontSize: 13, fontWeight: '600' },
+  doneButton: { borderRadius: 15, alignItems: 'center', paddingVertical: 15, marginTop: 12 },
+  doneText: { color: '#fff', fontSize: 13, fontWeight: '800' },
 });
-
-
