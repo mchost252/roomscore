@@ -491,11 +491,20 @@ router.delete('/:id', protect, isRoomOwner, async (req, res, next) => {
 // @access  Private
 router.post('/join', protect, validate(joinRoomSchema), async (req, res, next) => {
   try {
-    const { joinCode } = req.body;
+    const normalizedJoinCode = typeof req.body.joinCode === 'string'
+      ? req.body.joinCode.trim().toUpperCase()
+      : '';
+
+    if (!normalizedJoinCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'A valid room code is required'
+      });
+    }
 
     const room = await prisma.room.findFirst({
       where: { 
-        joinCode: joinCode.toUpperCase(), 
+        joinCode: normalizedJoinCode,
         isActive: true 
       },
       include: {

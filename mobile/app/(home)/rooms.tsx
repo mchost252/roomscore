@@ -636,7 +636,7 @@ const s = StyleSheet.create({
   quickActionIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 1, elevation: 4 },
 
   // ── Alerts ──
-  alertError: { position: 'absolute', left: 28, right: 28, backgroundColor: '#ef4444', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, zIndex: 100 },
-  alertSuccess: { position: 'absolute', left: 28, right: 28, backgroundColor: '#22c55e', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, zIndex: 100 },
+  alertError: { position: 'absolute', left: 28, right: 28, backgroundColor: '#ef4444', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, zIndex: 1000, elevation: 12 },
+  alertSuccess: { position: 'absolute', left: 28, right: 28, backgroundColor: '#22c55e', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, zIndex: 1000, elevation: 12 },
   alertText: { color: '#fff', fontSize: 13, fontWeight: '800', textAlign: 'center' },
 });
