@@ -15,7 +15,6 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
-  withSpring,
   withDelay,
   Easing,
 } from 'react-native-reanimated';
@@ -37,7 +36,10 @@ export default function AuthChoiceScreen() {
     AsyncStorage.getItem('userName').then((n) => setUserName(n || 'there'));
 
     // Staggered entrance: logo → content → pills → buttons
-    logoScale.value = withSpring(1, { damping: 12, stiffness: 90 });
+    logoScale.value = withTiming(1, {
+      duration: 500,
+      easing: Easing.out(Easing.cubic),
+    });
     screenOpacity.value = withTiming(1, { duration: 600 });
     screenSlide.value = withTiming(0, {
       duration: 500,
@@ -47,7 +49,10 @@ export default function AuthChoiceScreen() {
     buttonsOpacity.value = withDelay(550, withTiming(1, { duration: 500 }));
     buttonsSlide.value = withDelay(
       550,
-      withSpring(0, { damping: 14, stiffness: 100 }),
+      withTiming(0, {
+        duration: 450,
+        easing: Easing.out(Easing.cubic),
+      }),
     );
   }, []);
 

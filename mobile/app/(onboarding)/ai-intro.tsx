@@ -16,7 +16,6 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
-  withSpring,
   withDelay,
   withRepeat,
   withSequence,
@@ -113,7 +112,7 @@ interface BubbleProps {
 
 const MessageBubble = memo(({ msg, index }: BubbleProps) => (
   <Animated.View
-    entering={FadeInDown.duration(400).delay(50).springify().damping(14)}
+    entering={FadeInDown.duration(400).delay(50)}
     style={styles.messageRow}
   >
     {/* Avatar */}
@@ -169,7 +168,10 @@ export default function AIIntroScreen() {
         if (index === MESSAGES.length - 1) {
           const btn = setTimeout(() => {
             setShowButton(true);
-            buttonScale.value = withSpring(1, { damping: 10, stiffness: 100 });
+            buttonScale.value = withTiming(1, {
+              duration: 400,
+              easing: Easing.out(Easing.cubic),
+            });
             buttonOpacity.value = withTiming(1, { duration: 300 });
           }, 800);
           timeouts.push(btn);

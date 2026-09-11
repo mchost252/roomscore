@@ -18,7 +18,6 @@ import Animated, {
   useAnimatedStyle,
   useAnimatedScrollHandler,
   withTiming,
-  withSpring,
   withDelay,
   withRepeat,
   withSequence,
@@ -307,7 +306,10 @@ export default function LandingScreen() {
     buttonOpacity.value = withDelay(400, withTiming(1, { duration: 600 }));
     buttonSlide.value = withDelay(
       400,
-      withSpring(0, { damping: 14, stiffness: 100 }),
+      withTiming(0, {
+        duration: 450,
+        easing: Easing.out(Easing.cubic),
+      }),
     );
 
     // Logo breathe

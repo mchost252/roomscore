@@ -19,7 +19,6 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
-  withSpring,
   withDelay,
   interpolateColor,
   FadeIn,
@@ -42,7 +41,13 @@ export default function NameInputScreen() {
   useEffect(() => {
     // Staggered entrance: logo first, then content
     logoOpacity.value = withDelay(200, withTiming(1, { duration: 600 }));
-    logoScale.value = withDelay(200, withSpring(1, { damping: 12, stiffness: 90 }));
+    logoScale.value = withDelay(
+      200,
+      withTiming(1, {
+        duration: 500,
+        easing: Easing.out(Easing.cubic),
+      }),
+    );
     contentOpacity.value = withDelay(500, withTiming(1, { duration: 700 }));
     contentSlide.value = withDelay(
       500,
