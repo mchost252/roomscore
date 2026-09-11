@@ -58,6 +58,9 @@ const shouldRetry = (error: AxiosError): boolean => {
   return false;
 };
 
+const isLogoutRequest = (config?: InternalAxiosRequestConfig): boolean =>
+  Boolean(config?.url?.replace(/\/+$/, '').endsWith('/auth/logout'));
+
 // Sleep helper
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -106,6 +109,12 @@ api.interceptors.response.use(
     };
     
     if (!originalRequest) {
+      return Promise.reject(error);
+    }
+
+    // Logout is best-effort. Never refresh or retry it: local credentials and
+    // state are cleared by AuthContext even when the server is unreachable.
+    if (isLogoutRequest(originalRequest)) {
       return Promise.reject(error);
     }
 
