@@ -295,6 +295,10 @@ export default function HomeScreen() {
         return;
       }
     }
+    if (item.type === 'room_invite' && typeof data.roomId === 'string') {
+      router.push({ pathname: '/(home)/room-detail', params: { roomId: data.roomId, openRequests: '1' } });
+      return;
+    }
     if (item.type?.startsWith('room_') && typeof data.roomId === 'string') {
       router.push({ pathname: '/(home)/room-detail', params: { roomId: data.roomId } });
       return;

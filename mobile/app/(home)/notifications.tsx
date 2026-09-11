@@ -22,6 +22,8 @@ export default function NotificationsScreen() {
     const data = item.data || {};
     if ((item.type === 'task_reminder' || item.type === 'task_completed' || item.type === 'task_approved') && typeof data.taskId === 'string') {
       router.push({ pathname: '/(home)/task-thread', params: { taskId: data.taskId } });
+    } else if (item.type === 'room_invite' && typeof data.roomId === 'string') {
+      router.push({ pathname: '/(home)/room-detail', params: { roomId: data.roomId, openRequests: '1' } });
     } else if (item.type?.startsWith('room_') && typeof data.roomId === 'string') {
       router.push({ pathname: '/(home)/room-detail', params: { roomId: data.roomId } });
     } else if (item.type === 'direct_message' && typeof data.conversationId === 'string') {

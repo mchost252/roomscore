@@ -96,8 +96,9 @@ const RoomDetailScreen: React.FC = () => {
   }));
 
   // ── Route param ───────────────────────────────────────────────────────────
-  const { roomId: roomIdParam } = useLocalSearchParams<{ roomId: string | string[] }>();
+  const { roomId: roomIdParam, openRequests: openRequestsParam } = useLocalSearchParams<{ roomId: string | string[]; openRequests?: string | string[] }>();
   const roomId = Array.isArray(roomIdParam) ? roomIdParam[0] : roomIdParam || '';
+  const openRequests = Array.isArray(openRequestsParam) ? openRequestsParam[0] : openRequestsParam;
 
   // ── Data hook (MMKV-first → API → WebSocket) ─────────────────────────────
   const {
@@ -132,6 +133,7 @@ const RoomDetailScreen: React.FC = () => {
   const [showMemberHUD, setShowMemberHUD] = useState(false);
   const [showScout, setShowScout] = useState(false);
   const [activeTab, setActiveTab] = useState<'active' | 'pending' | 'spectating'>('active');
+  const [openMemberRequests, setOpenMemberRequests] = useState(openRequests === '1');
 
   // ── Derived data (PRESERVED) ──────────────────────────────────────────────
   const filteredTasks = useMemo(() => {
@@ -737,14 +739,15 @@ const RoomDetailScreen: React.FC = () => {
       />
 
       <MemberHUDModal
-        visible={showMemberHUD}
-        onClose={() => setShowMemberHUD(false)}
+        visible={showMemberHUD || openMemberRequests}
+        onClose={() => { setShowMemberHUD(false); setOpenMemberRequests(false); }}
         members={members}
         tasks={tasks}
         isOwner={isOwner}
         ownerId={room?.ownerId}
         roomId={roomId}
         currentUserId={user?.id}
+        initialTab={openMemberRequests ? 'requests' : 'members'}
         onKickMember={handleKickMember}
         onPromoteMember={handlePromoteMember}
       />

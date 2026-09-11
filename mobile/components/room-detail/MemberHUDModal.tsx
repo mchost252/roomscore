@@ -32,6 +32,7 @@ interface MemberHUDModalProps {
   ownerId?: string;
   roomId?: string;
   currentUserId?: string;
+  initialTab?: 'members' | 'requests';
   onKickMember: (id: string) => void | Promise<void>;
   onPromoteMember: (id: string, role: 'admin' | 'member') => void | Promise<void>;
 }
@@ -52,6 +53,7 @@ export default function MemberHUDModal({
   ownerId,
   roomId,
   currentUserId,
+  initialTab = 'members',
   onKickMember,
   onPromoteMember,
 }: MemberHUDModalProps) {
@@ -122,13 +124,14 @@ export default function MemberHUDModal({
   // Fetch pending members when modal opens (owner only)
   useEffect(() => {
     if (visible && isOwner && roomId) {
+      setActiveTab(initialTab);
       fetchPending();
     }
     if (!visible) {
       setActiveTab('members');
       closeActionSheet();
     }
-  }, [visible, isOwner, roomId]);
+  }, [visible, isOwner, roomId, initialTab]);
 
   const fetchPending = useCallback(async () => {
     if (!roomId) return;

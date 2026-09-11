@@ -47,7 +47,7 @@ export function useRoomsManager() {
       setError(null);
 
       const response = await api.post('/rooms/join', {
-        joinCode: joinCode.trim().toUpperCase(),
+        joinCode: joinCode.replace(/[\s-]/g, '').toUpperCase(),
       });
 
       setJoinCode('');
