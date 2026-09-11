@@ -200,6 +200,7 @@ export default function RoomsScreen() {
     if (!longPressRoom) return;
     try {
       await api.post(`/rooms/${longPressRoom.id}/leave`);
+      manager.markRoomLeft(longPressRoom);
       manager.setSuccess('Left room successfully');
       manager.refresh();
     } catch (err: any) { manager.setError(err.response?.data?.message || 'Failed to leave room'); } 

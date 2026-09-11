@@ -17,6 +17,7 @@ export function useRoomsManager() {
     error: hookError,
     refresh: hookRefresh,
     markRoomJoined,
+    markRoomLeft,
   } = useRoomsInstant();
 
   const [activeTab, setActiveTab] = useState<TabType>('my-rooms');
@@ -165,5 +166,6 @@ export function useRoomsManager() {
     // Actions
     handleJoinRoom,
     handleJoinPublicRoom,
+    markRoomLeft,
   };
 }
