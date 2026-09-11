@@ -217,7 +217,10 @@ class NotificationService {
         data: { type: 'morning-digest' },
         badge: ongoingCount,
       },
-      trigger: { date: trigger } as any,
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: trigger,
+      },
       identifier: 'morning-digest',
     });
   }
@@ -254,7 +257,10 @@ class NotificationService {
         body: `You have ${upcomingCount} task${upcomingCount > 1 ? 's' : ''} scheduled for tomorrow`,
         data: { type: 'evening-preview' },
       },
-      trigger: { date: trigger } as any,
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: trigger,
+      },
       identifier: 'evening-preview',
     });
   }
@@ -296,9 +302,10 @@ class NotificationService {
           data: { type: 'due-reminder', taskId: task.id },
         },
         trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
           seconds: this.preferences.dueReminderInterval * 60,
           repeats: true,
-        } as any,
+        },
         identifier: `due-reminder-${task.id}`,
       });
     }
