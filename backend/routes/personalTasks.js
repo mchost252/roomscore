@@ -37,7 +37,7 @@ router.get('/', protect, async (req, res, next) => {
 // @access  Private
 router.post('/', protect, async (req, res, next) => {
   try {
-    const { title, description, taskType, dueDate } = req.body;
+    const { title, description, taskType, daysOfWeek, allDay, dueDate } = req.body;
 
     if (!title || title.trim().length === 0) {
       return res.status(400).json({ success: false, message: 'Title is required' });
@@ -49,6 +49,8 @@ router.post('/', protect, async (req, res, next) => {
         title: title.trim(),
         description: description?.trim(),
         taskType: taskType || 'daily',
+        daysOfWeek: Array.isArray(daysOfWeek) ? daysOfWeek.join(',') : null,
+        allDay: allDay === true,
         dueDate: dueDate ? new Date(dueDate) : null
       }
     });
@@ -79,7 +81,7 @@ router.put('/:taskId', protect, async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
-    const { title, description, taskType, dueDate } = req.body;
+    const { title, description, taskType, daysOfWeek, allDay, dueDate } = req.body;
 
     const updatedTask = await prisma.personalTask.update({
       where: { id: req.params.taskId },
@@ -87,6 +89,8 @@ router.put('/:taskId', protect, async (req, res, next) => {
         ...(title !== undefined && { title: title.trim() }),
         ...(description !== undefined && { description: description.trim() }),
         ...(taskType !== undefined && { taskType }),
+        ...(daysOfWeek !== undefined && { daysOfWeek: Array.isArray(daysOfWeek) ? daysOfWeek.join(',') : null }),
+        ...(allDay !== undefined && { allDay: allDay === true }),
         ...(dueDate !== undefined && { dueDate: dueDate ? new Date(dueDate) : null })
       }
     });

@@ -288,7 +288,7 @@ class NotificationService {
     for (const id of dueReminderIds) {
       try {
         await Notifications.cancelScheduledNotificationAsync(id);
-      } catch (e) {
+      } catch {
         console.warn('Failed to cancel notification:', id);
       }
 
@@ -312,8 +312,8 @@ class NotificationService {
     }
   }
 
-  async scheduleTaskAlarm(task: Pick<PersonalTask, 'id' | 'title' | 'dueDate' | 'taskType'>) {
-    if (Platform.OS === 'web' || !this.preferences.enabled || !task.dueDate) return;
+  async scheduleTaskAlarm(task: Pick<PersonalTask, 'id' | 'title' | 'dueDate' | 'taskType' | 'daysOfWeek' | 'allDay'>) {
+    if (Platform.OS === 'web' || !this.preferences.enabled || !task.dueDate || task.allDay) return;
 
     const dueDate = new Date(task.dueDate);
     if (Number.isNaN(dueDate.getTime())) return;
@@ -322,12 +322,18 @@ class NotificationService {
     if (!permission) return;
 
     const isDaily = task.taskType === 'daily';
+    const isCustom = task.taskType === 'custom' && task.daysOfWeek?.length;
     if (!isDaily && dueDate.getTime() <= Date.now()) return;
 
-    await Notifications.cancelScheduledNotificationAsync(`task-alarm-${task.id}`).catch(() => {});
-    await Notifications.scheduleNotificationAsync({
+    const scheduledIds = [
+      `task-alarm-${task.id}`,
+      ...(isCustom ? task.daysOfWeek!.map(day => `task-alarm-${task.id}-${day}`) : []),
+    ];
+    await Promise.all(scheduledIds.map(id => Notifications.cancelScheduledNotificationAsync(id).catch(() => {})));
+    const days = isCustom ? task.daysOfWeek! : [undefined];
+    await Promise.all(days.map((day, index) => Notifications.scheduleNotificationAsync({
       content: {
-        title: isDaily ? 'Daily task reminder' : 'Task reminder',
+        title: isDaily ? 'Daily task reminder' : isCustom ? 'Scheduled task reminder' : 'Task reminder',
         body: task.title,
         data: { type: 'task-reminder', taskId: task.id },
         sound: 'default',
@@ -338,12 +344,19 @@ class NotificationService {
             hour: dueDate.getHours(),
             minute: dueDate.getMinutes(),
           }
-        : {
-            type: Notifications.SchedulableTriggerInputTypes.DATE,
-            date: dueDate,
-          },
-      identifier: `task-alarm-${task.id}`,
-    });
+        : isCustom
+          ? {
+              type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+              weekday: day! + 1,
+              hour: dueDate.getHours(),
+              minute: dueDate.getMinutes(),
+            }
+          : {
+              type: Notifications.SchedulableTriggerInputTypes.DATE,
+              date: dueDate,
+            },
+      identifier: isCustom ? `task-alarm-${task.id}-${day}` : `task-alarm-${task.id}`,
+    })));
   }
 
   /**

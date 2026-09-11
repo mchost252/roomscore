@@ -14,6 +14,8 @@ export type PersonalTask = Task & {
   priority?: 'low' | 'medium' | 'high' | 'urgent';
   bucket?: string;
   isCompleted?: boolean;
+  daysOfWeek?: number[];
+  allDay?: boolean;
 };
 
 function mapTask(raw: any): Task {
@@ -137,6 +139,8 @@ class TaskService {
       bucket: row.bucket || undefined,
       priority: (row.priority as PersonalTask['priority']) || 'medium',
       dueDate: row.due_date || undefined,
+      daysOfWeek: row.days_of_week ? row.days_of_week.split(',').map(Number) : undefined,
+      allDay: row.all_day === 1,
     };
   }
 
@@ -155,6 +159,12 @@ class TaskService {
       bucket: raw.bucket || undefined,
       priority: (raw.priority as PersonalTask['priority']) || 'medium',
       dueDate: raw.dueDate || undefined,
+      daysOfWeek: Array.isArray(raw.daysOfWeek)
+        ? raw.daysOfWeek
+        : typeof raw.daysOfWeek === 'string'
+          ? raw.daysOfWeek.split(',').filter(Boolean).map(Number)
+          : undefined,
+      allDay: raw.allDay === true,
     };
   }
 
@@ -179,6 +189,8 @@ class TaskService {
       isActive: task.isActive,
       isCompleted: task.isCompleted,
       dueDate: typeof task.dueDate === 'string' ? task.dueDate : undefined,
+      daysOfWeek: task.daysOfWeek,
+      allDay: task.allDay,
       priority: task.priority,
       bucket: task.bucket,
       createdAt: task.createdAt,
@@ -198,6 +210,8 @@ class TaskService {
     priority?: string;
     dueDate?: string;
     taskType?: string;
+    daysOfWeek?: number[];
+    allDay?: boolean;
   }): Promise<PersonalTask> {
     const task: PersonalTask = {
       id: `p_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
@@ -212,6 +226,8 @@ class TaskService {
       bucket: data.bucket,
       priority: (data.priority as PersonalTask['priority']) || 'medium',
       dueDate: data.dueDate,
+      daysOfWeek: data.daysOfWeek,
+      allDay: data.allDay,
     };
     
     // Update memory + cache IMMEDIATELY (0ms)
@@ -233,6 +249,8 @@ class TaskService {
       priority: task.priority,
       bucket: task.bucket,
       createdAt: task.createdAt,
+      daysOfWeek: task.daysOfWeek,
+      allDay: task.allDay,
     });
     
     return task;

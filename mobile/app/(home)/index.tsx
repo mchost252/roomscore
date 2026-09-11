@@ -139,6 +139,9 @@ export default function HomeScreen() {
       return tasks.filter(t => !t.isCompleted && getTaskStatus(t.dueDate ? new Date(t.dueDate) : null) === statusFilter);
     }
     return tasks.filter(t => {
+      if (t.taskType === 'custom' && t.daysOfWeek?.length) {
+        return t.daysOfWeek.includes(selectedDate.getDay());
+      }
       if (!t.dueDate) return isSameDay(new Date(t.createdAt), selectedDate);
       return isSameDay(new Date(t.dueDate), selectedDate);
     });
@@ -223,7 +226,10 @@ export default function HomeScreen() {
   const [newTaskTitle, setNewTaskTitle]     = useState('');
   const [newTaskBucket, setNewTaskBucket]   = useState<'today'|'week'|'someday'|'inbox'>('today');
   const [newTaskPriority, setNewTaskPriority] = useState<'urgent'|'low'|'medium'|'high'>('medium');
-  const [newTaskType, setNewTaskType]     = useState<'one-time'|'daily'>('one-time');
+  const [newTaskType, setNewTaskType]     = useState<'one-time'|'daily'|'custom'>('one-time');
+  const [newTaskDays, setNewTaskDays]     = useState<number[]>([new Date().getDay()]);
+  const [newTaskAllDay, setNewTaskAllDay] = useState(false);
+  const [statsExpanded, setStatsExpanded] = useState(false);
   const [newTaskDue, setNewTaskDue]         = useState<Date>(today);
   const [newTaskTime, setNewTaskTime]       = useState<string>('09:00');
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -264,9 +270,13 @@ export default function HomeScreen() {
 
   const handleCreateTask = useCallback(async()=>{
     if (!newTaskTitle.trim()) return;
+    if (newTaskType === 'custom' && newTaskDays.length === 0) {
+      showToast('Choose at least one day');
+      return;
+    }
     const due = new Date(newTaskDue);
     const [h,m] = newTaskTime.split(':').map(Number);
-    due.setHours(h, m, 0, 0);
+    due.setHours(newTaskAllDay ? 0 : h, newTaskAllDay ? 0 : m, 0, 0);
 
     // Save task immediately (offline-first)
     const task = await taskService.createPersonalTask({
@@ -274,6 +284,8 @@ export default function HomeScreen() {
       bucket: newTaskBucket,
       priority: newTaskPriority,
       taskType: newTaskType,
+      daysOfWeek: newTaskType === 'custom' ? newTaskDays : undefined,
+      allDay: newTaskAllDay,
       dueDate: due.toISOString(),
     });
     setTasks(prev=>[task,...prev]);
@@ -313,7 +325,7 @@ export default function HomeScreen() {
       // If vagueness check fails, just navigate normally
       navigateToThread(task);
     }
-  },[newTaskTitle,newTaskBucket,newTaskPriority,newTaskType,newTaskDue,newTaskTime,closeAddTask,showToast,navigateToThread]);
+  },[newTaskTitle,newTaskBucket,newTaskPriority,newTaskType,newTaskDays,newTaskAllDay,newTaskDue,newTaskTime,closeAddTask,showToast,navigateToThread]);
 
   const handleClarificationSubmit = useCallback((answers: Record<string,string>) => {
     setShowClarification(false);
@@ -633,7 +645,16 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={{flexDirection:'row',gap:10,marginBottom:14}}>
+        <TouchableOpacity onPress={()=>setStatsExpanded(value=>!value)} style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:8,paddingHorizontal:4}}>
+          <Text style={{fontSize:12,fontWeight:'800',letterSpacing:0.6,color:t.textSub}}>TODAY AT A GLANCE</Text>
+          <Ionicons name={statsExpanded?'chevron-up':'chevron-down'} size={17} color={t.textHint}/>
+        </TouchableOpacity>
+        {!statsExpanded&&<View style={{flexDirection:'row',justifyContent:'space-between',paddingHorizontal:8,marginBottom:16}}>
+          <Text style={{fontSize:12,color:t.textSub}}>🔥 {user?.streak ?? 0} day streak</Text>
+          <Text style={{fontSize:12,color:t.textSub}}>✓ {todayCompleted} done</Text>
+          <Text style={{fontSize:12,color:t.textSub}}>✦ {user?.weekly_points ?? 0} XP this week</Text>
+        </View>}
+        {statsExpanded&&<View style={{flexDirection:'row',gap:10,marginBottom:14}}>
           <View style={{flex:1,padding:14,borderRadius:18,backgroundColor:`rgba(${t.surfRgb},0.72)`,borderWidth:1,borderColor:t.border}}>
             <Text style={{fontSize:11,fontWeight:'700',letterSpacing:0.5,color:t.textSub}}>TODAY'S PLAN</Text>
             <Text style={{fontSize:22,fontWeight:'800',color:t.text,marginTop:5}}>{tasksForDate.length}</Text>
@@ -649,7 +670,7 @@ export default function HomeScreen() {
             <Text style={{fontSize:13,fontWeight:'800',color:t.text,marginTop:7}}>Rooms</Text>
             <Text style={{fontSize:11,color:t.textHint,marginTop:2}}>Open hub</Text>
           </TouchableOpacity>
-        </View>
+        </View>}
 
         {/* ── ALWAYS-VISIBLE WEEK STRIP + TASK BADGES with 3D depth ── */}
         <Skia3DCard width={W-40} height={calView==='month'?320:148} borderRadius={22} elevation="none" style={{marginHorizontal:0}}>
@@ -1088,6 +1109,7 @@ export default function HomeScreen() {
                   {([
                     { value: 'one-time' as const, label: 'Once', icon: 'calendar-outline' as const },
                     { value: 'daily' as const, label: 'Every day', icon: 'repeat-outline' as const },
+                    { value: 'custom' as const, label: 'Custom days', icon: 'calendar-number-outline' as const },
                   ]).map(option => (
                     <TouchableOpacity
                       key={option.value}
@@ -1102,7 +1124,7 @@ export default function HomeScreen() {
                   ))}
                 </View>
                 <Text style={[s.addTaskLabel,{color:t.textSub}]}>WHEN</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8}}>
+                {newTaskType !== 'daily' && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8}}>
                   {getWeekDays(today).map((d,i)=>{
                     const isSel=isSameDay(d,newTaskDue);
                     const isTod=isSameDay(d,today);
@@ -1114,16 +1136,36 @@ export default function HomeScreen() {
                       </TouchableOpacity>
                     );
                   })}
-                </ScrollView>
-                <Text style={[s.addTaskLabel,{color:t.textSub}]}>DATE & TIME</Text>
+                </ScrollView>}
+                {newTaskType === 'custom' && <View style={{gap:8}}>
+                  <Text style={{fontSize:12,color:t.textSub}}>Repeat on</Text>
+                  <View style={s.chipRow}>
+                    {DAY_NAMES.map((day,index) => {
+                      const selected = newTaskDays.includes(index);
+                      return <TouchableOpacity key={day} onPress={()=>setNewTaskDays(days => selected ? days.filter(value=>value!==index) : [...days,index])} style={[s.chip,{paddingHorizontal:10,borderColor:selected?t.primary:t.border,backgroundColor:selected?t.accentLight:'transparent'}]}>
+                        <Text style={[s.chipText,{color:selected?t.primary:t.textSub}]}>{day.slice(0,3)}</Text>
+                      </TouchableOpacity>;
+                    })}
+                  </View>
+                </View>}
+                {newTaskType !== 'daily' && <Text style={[s.addTaskLabel,{color:t.textSub}]}>DATE & TIME</Text>}
                 <TouchableOpacity
                   onPress={()=>setShowDatePicker(true)}
                   style={[s.chip,{borderColor:t.primary,backgroundColor:`rgba(99,102,241,0.12)`,paddingHorizontal:14,paddingVertical:8,flexDirection:'row',alignItems:'center',gap:6}]}>
-                  <Ionicons name="calendar-outline" size={16} color={t.primary}/>
+                  <Ionicons name={newTaskType === 'daily' ? 'alarm-outline' : 'calendar-outline'} size={16} color={t.primary}/>
                   <Text style={{color:t.primary,fontSize:13,fontWeight:'600'}}>
-                    {newTaskDue.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})} · {newTaskTime}
+                    {newTaskType === 'daily' ? `Every day · ${newTaskTime}` : `${newTaskDue.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})} · ${newTaskAllDay ? 'All day' : newTaskTime}`}
                   </Text>
                 </TouchableOpacity>
+                {newTaskType !== 'daily' && <TouchableOpacity onPress={()=>setNewTaskAllDay(value=>!value)} style={{flexDirection:'row',alignItems:'center',gap:10}}>
+                  <View style={{width:22,height:22,borderRadius:7,borderWidth:1.5,borderColor:newTaskAllDay?t.primary:t.border,backgroundColor:newTaskAllDay?t.primary:'transparent',alignItems:'center',justifyContent:'center'}}>
+                    {newTaskAllDay&&<Ionicons name="checkmark" size={15} color="#fff"/>}
+                  </View>
+                  <View>
+                    <Text style={{fontSize:14,fontWeight:'700',color:t.text}}>All day</Text>
+                    <Text style={{fontSize:11,color:t.textHint}}>No notification time</Text>
+                  </View>
+                </TouchableOpacity>}
                 <Text style={[s.addTaskLabel,{color:t.textSub}]}>PRIORITY</Text>
                 <View style={s.chipRow}>
                   {(['low','medium','high','urgent'] as const).map(p=>(

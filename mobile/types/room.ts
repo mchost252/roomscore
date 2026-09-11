@@ -62,7 +62,8 @@ export interface RoomTask {
   title: string;
   description?: string;
   taskType: 'daily' | 'custom' | 'one-time' | string;
-  daysOfWeek?: string;
+  daysOfWeek?: string | number[];
+  allDay?: boolean;
   points: number;
   isActive: boolean;
   hasThread?: boolean;         // Owner opt-in: social thread enabled

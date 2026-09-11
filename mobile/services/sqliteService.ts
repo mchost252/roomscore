@@ -132,6 +132,8 @@ class SQLiteService {
         is_active INTEGER DEFAULT 1,
         is_completed INTEGER DEFAULT 0,
         due_date TEXT,
+        days_of_week TEXT,
+        all_day INTEGER DEFAULT 0,
         priority TEXT DEFAULT 'medium',
         bucket TEXT,
         created_at TEXT NOT NULL
@@ -140,6 +142,12 @@ class SQLiteService {
       CREATE INDEX IF NOT EXISTS idx_tasks_is_completed ON tasks(is_completed);
       CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
     `);
+    for (const statement of [
+      `ALTER TABLE tasks ADD COLUMN days_of_week TEXT`,
+      `ALTER TABLE tasks ADD COLUMN all_day INTEGER DEFAULT 0`,
+    ]) {
+      try { await this.db.execAsync(statement); } catch { /* Existing installs already have the column. */ }
+    }
 
     await this.db.execAsync(`
       CREATE TABLE IF NOT EXISTS sync_queue (
@@ -698,6 +706,8 @@ class SQLiteService {
     isActive?: boolean;
     isCompleted?: boolean;
     dueDate?: string;
+    daysOfWeek?: number[];
+    allDay?: boolean;
     priority?: string;
     bucket?: string;
     createdAt: string;
@@ -705,8 +715,8 @@ class SQLiteService {
     if (!this.db) return;
     await this.db.runAsync(
       `INSERT OR REPLACE INTO tasks
-       (id, title, description, task_type, room_id, points, is_active, is_completed, due_date, priority, bucket, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, title, description, task_type, room_id, points, is_active, is_completed, due_date, days_of_week, all_day, priority, bucket, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         task.id,
         task.title,
@@ -717,6 +727,8 @@ class SQLiteService {
         task.isActive !== false ? 1 : 0,
         task.isCompleted ? 1 : 0,
         task.dueDate || null,
+        task.daysOfWeek?.join(',') || null,
+        task.allDay ? 1 : 0,
         task.priority || 'medium',
         task.bucket || null,
         task.createdAt,
@@ -742,6 +754,8 @@ class SQLiteService {
       isActive: 'is_active',
       isCompleted: 'is_completed',
       dueDate: 'due_date',
+      daysOfWeek: 'days_of_week',
+      allDay: 'all_day',
       priority: 'priority',
       bucket: 'bucket',
     };

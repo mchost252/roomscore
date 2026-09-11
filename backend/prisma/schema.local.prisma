@@ -386,6 +386,8 @@ model PersonalTask {
   title       String
   description String?
   taskType    String    @default("daily") // daily, weekly, one-time
+  daysOfWeek  String?   // comma-separated weekday indexes for custom schedules
+  allDay      Boolean   @default(false)
   priority    String    @default("medium") // low, medium, high
   bucket      String?   // optional grouping label
   isCompleted Boolean   @default(false)
