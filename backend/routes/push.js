@@ -28,7 +28,29 @@ router.post('/subscribe', protect, async (req, res, next) => {
       });
     }
 
-    // Store subscription as JSON
+    const isSQLite = process.env.DATABASE_URL?.includes('sqlite') || process.env.DATABASE_URL?.includes('.db');
+    const subscriptionValue = isSQLite ? JSON.stringify(subscription) : subscription;
+
+    await prisma.pushDevice.upsert({
+      where: { token: subscription.endpoint },
+      create: {
+        userId: req.user.id,
+        platform: 'web',
+        token: subscription.endpoint,
+        subscription: isSQLite ? subscriptionValue : subscription,
+        appVersion: req.headers['user-agent'] || null,
+        enabled: true,
+      },
+      update: {
+        userId: req.user.id,
+        subscription: subscriptionValue,
+        appVersion: req.headers['user-agent'] || null,
+        enabled: true,
+        lastSeenAt: new Date(),
+      },
+    });
+
+    // Keep the legacy field until all clients migrate to PushDevice.
     await prisma.user.update({
       where: { id: req.user.id },
       data: {
@@ -53,11 +75,61 @@ router.post('/subscribe', protect, async (req, res, next) => {
   }
 });
 
+// @route   POST /api/push/device
+// @desc    Register a native Expo push token
+// @access  Private
+router.post('/device', protect, async (req, res, next) => {
+  try {
+    const { token, platform, appVersion } = req.body || {};
+    if (!token || !['ios', 'android'].includes(platform)) {
+      return res.status(400).json({ success: false, message: 'A valid native push token and platform are required' });
+    }
+    await prisma.pushDevice.upsert({
+      where: { token },
+      create: { userId: req.user.id, platform, token, appVersion: appVersion || null, enabled: true },
+      update: { userId: req.user.id, platform, appVersion: appVersion || null, enabled: true, lastSeenAt: new Date() },
+    });
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   DELETE /api/push/device
+// @desc    Unregister a native Expo push token
+// @access  Private
+router.delete('/device', protect, async (req, res, next) => {
+  try {
+    const { token } = req.body || {};
+    if (token) {
+      await prisma.pushDevice.updateMany({
+        where: { userId: req.user.id, token },
+        data: { enabled: false, lastSeenAt: new Date() },
+      });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // @route   POST /api/push/unsubscribe
 // @desc    Unsubscribe from push notifications
 // @access  Private
 router.post('/unsubscribe', protect, async (req, res, next) => {
   try {
+    const { endpoint } = req.body || {};
+    if (endpoint) {
+      await prisma.pushDevice.updateMany({
+        where: { userId: req.user.id, token: endpoint },
+        data: { enabled: false, lastSeenAt: new Date() },
+      });
+    } else {
+      await prisma.pushDevice.updateMany({
+        where: { userId: req.user.id },
+        data: { enabled: false, lastSeenAt: new Date() },
+      });
+    }
     await prisma.user.update({
       where: { id: req.user.id },
       data: { pushSubscription: null }
@@ -80,15 +152,18 @@ router.post('/unsubscribe', protect, async (req, res, next) => {
 // @access  Private
 router.get('/status', protect, async (req, res, next) => {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      select: { pushSubscription: true }
-    });
+    const [user, devices] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { pushSubscription: true }
+      }),
+      prisma.pushDevice.count({ where: { userId: req.user.id, enabled: true } }),
+    ]);
 
     res.json({
       success: true,
-      pushEnabled: !!user.pushSubscription,
-      subscriptionCount: user.pushSubscription ? 1 : 0
+      pushEnabled: devices > 0 || !!user.pushSubscription,
+      subscriptionCount: devices + (devices === 0 && user.pushSubscription ? 1 : 0)
     });
   } catch (error) {
     next(error);

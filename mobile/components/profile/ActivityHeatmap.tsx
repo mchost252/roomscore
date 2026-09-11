@@ -4,9 +4,14 @@ import { View, Text, StyleSheet } from 'react-native';
 interface ActivityHeatmapProps {
   data?: number[];
   isDark?: boolean;
+  /** 'large' renders roomier cells for the full Activity screen */
+  size?: 'compact' | 'large';
+  /** When provided, the pill shows "<activeDays> active days" instead of "<n> days" */
+  activeDays?: number;
 }
 
-export function ActivityHeatmap({ data = [], isDark = true }: ActivityHeatmapProps) {
+export function ActivityHeatmap({ data = [], isDark = true, size = 'compact', activeDays }: ActivityHeatmapProps) {
+  const isLarge = size === 'large';
   const calendar = useMemo(() => {
     const now = new Date();
     const year = now.getFullYear();
@@ -58,11 +63,13 @@ export function ActivityHeatmap({ data = [], isDark = true }: ActivityHeatmapPro
     <View style={[styles.container, { backgroundColor: containerBg, borderColor: containerBorder }]}>
       <View style={styles.headerRow}>
         <View>
-          <Text style={[styles.title, { color: textColor }]}>Activity</Text>
-          <Text style={[styles.subtitle, { color: secColor }]}>{calendar.monthLabel}</Text>
+          <Text style={[styles.title, isLarge && styles.titleLarge, { color: textColor }]}>Activity</Text>
+          <Text style={[styles.subtitle, isLarge && styles.subtitleLarge, { color: secColor }]}>{calendar.monthLabel}</Text>
         </View>
         <View style={[styles.daysPill, { backgroundColor: isDark ? 'rgba(99,102,241,0.14)' : 'rgba(99,102,241,0.10)' }]}>
-          <Text style={[styles.daysPillText, { color: textColor }]}>{calendar.daysInMonth} days</Text>
+          <Text style={[styles.daysPillText, { color: textColor }]}>
+            {activeDays !== undefined ? `${activeDays} active days` : `${calendar.daysInMonth} days`}
+          </Text>
         </View>
       </View>
 
@@ -80,13 +87,14 @@ export function ActivityHeatmap({ data = [], isDark = true }: ActivityHeatmapPro
                 <View
                   style={[
                     styles.dayCell,
+                    isLarge && styles.dayCellLarge,
                     cell
                       ? { backgroundColor: getColor(cell.value), borderColor: cell.isToday ? '#6366f1' : 'transparent' }
                       : styles.blankCell,
                   ]}
                 >
                   {cell && (
-                    <Text style={[styles.dayText, { color: cell.value > 2 || cell.isToday ? '#fff' : mutedText }]}>
+                    <Text style={[styles.dayText, isLarge && styles.dayTextLarge, { color: cell.value > 2 || cell.isToday ? '#fff' : mutedText }]}>
                       {cell.day}
                     </Text>
                   )}
@@ -173,6 +181,21 @@ const styles = StyleSheet.create({
   dayText: {
     fontSize: 8,
     fontWeight: '800',
+  },
+  titleLarge: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  subtitleLarge: {
+    fontSize: 12,
+  },
+  dayCellLarge: {
+    height: 34,
+    width: '88%',
+    borderRadius: 9,
+  },
+  dayTextLarge: {
+    fontSize: 11,
   },
   legend: {
     flexDirection: 'row',

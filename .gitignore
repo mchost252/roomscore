@@ -4,6 +4,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Local development database
+backend/prisma/dev.db
+
 # Environment variables
 .env
 .env.local

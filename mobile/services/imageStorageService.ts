@@ -9,6 +9,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { extractPublicIdFromUrl, deleteImage, isCloudinaryUrl } from './cloudinaryService';
 
 const AVATAR_STORAGE_KEY = 'user_avatar_';
 const BANNER_STORAGE_KEY = 'user_banner_';
@@ -28,18 +29,18 @@ class ImageStorageService {
    */
   async saveAvatar(userId: string, imageUri: string): Promise<string> {
     try {
+      if (!isCloudinaryUrl(imageUri)) {
+        throw new Error('Only Cloudinary URLs can be stored as profile images');
+      }
       const key = AVATAR_STORAGE_KEY + userId;
       
       // First, delete any existing avatar for this user
       await this.deleteAvatar(userId);
       
-      // Store the new avatar URI
-      // For local files, we keep the path
-      // For server URLs, we cache the reference
       const avatarInfo: AvatarInfo = {
         userId,
-        localUri: imageUri,
-        serverUrl: imageUri.startsWith('http') ? imageUri : null,
+        localUri: null,
+        serverUrl: imageUri,
         updatedAt: Date.now(),
       };
       
@@ -60,25 +61,27 @@ class ImageStorageService {
   async deleteAvatar(userId: string): Promise<void> {
     try {
       const key = AVATAR_STORAGE_KEY + userId;
-      
-      // Get existing avatar info
+
       const existing = await AsyncStorage.getItem(key);
       if (existing) {
         const avatarInfo: AvatarInfo = JSON.parse(existing);
-        
-        // Clear expo-image cache for this avatar
+
         if (avatarInfo.serverUrl) {
-          await this.clearImageCache(avatarInfo.serverUrl);
+          const publicId = extractPublicIdFromUrl(avatarInfo.serverUrl);
+          if (publicId) {
+            deleteImage(publicId).catch((err) =>
+              console.warn('[ImageStorage] Cloudinary delete failed:', err)
+            );
+          }
+          this.clearImageCache(avatarInfo.serverUrl);
         }
-        
+
         console.log('[ImageStorage] Deleted old avatar for user:', userId);
       }
-      
-      // Remove the storage key entirely
+
       await AsyncStorage.removeItem(key);
     } catch (error) {
       console.error('[ImageStorage] Error deleting avatar:', error);
-      // Don't throw - deletion should be best effort
     }
   }
 
@@ -96,8 +99,9 @@ class ImageStorageService {
       
       const avatarInfo: AvatarInfo = JSON.parse(data);
       
-      // Return local URI if available, otherwise server URL
-      return avatarInfo.localUri || avatarInfo.serverUrl;
+      if (isCloudinaryUrl(avatarInfo.serverUrl)) return avatarInfo.serverUrl;
+      await AsyncStorage.removeItem(key);
+      return null;
     } catch (error) {
       console.error('[ImageStorage] Error getting avatar:', error);
       return null;
@@ -109,15 +113,31 @@ class ImageStorageService {
    */
   async saveBanner(userId: string, imageUri: string): Promise<string> {
     try {
+      if (!isCloudinaryUrl(imageUri)) {
+        throw new Error('Only Cloudinary URLs can be stored as profile images');
+      }
       const key = BANNER_STORAGE_KEY + userId;
-      
+
+      const existing = await AsyncStorage.getItem(key);
+      if (existing) {
+        const bannerInfo: AvatarInfo = JSON.parse(existing);
+        if (bannerInfo.serverUrl) {
+          const publicId = extractPublicIdFromUrl(bannerInfo.serverUrl);
+          if (publicId) {
+            deleteImage(publicId).catch((err) =>
+              console.warn('[ImageStorage] Cloudinary banner delete failed:', err)
+            );
+          }
+        }
+      }
+
       const bannerInfo: AvatarInfo = {
         userId,
-        localUri: imageUri,
-        serverUrl: imageUri.startsWith('http') ? imageUri : null,
+        localUri: null,
+        serverUrl: imageUri,
         updatedAt: Date.now(),
       };
-      
+
       await AsyncStorage.setItem(key, JSON.stringify(bannerInfo));
       console.log('[ImageStorage] Saved banner for user:', userId);
       return imageUri;
@@ -140,7 +160,9 @@ class ImageStorageService {
       }
       
       const bannerInfo: AvatarInfo = JSON.parse(data);
-      return bannerInfo.localUri || bannerInfo.serverUrl;
+      if (isCloudinaryUrl(bannerInfo.serverUrl)) return bannerInfo.serverUrl;
+      await AsyncStorage.removeItem(key);
+      return null;
     } catch (error) {
       console.error('[ImageStorage] Error getting banner:', error);
       return null;
@@ -206,20 +228,20 @@ class ImageStorageService {
    */
   async syncAvatar(userId: string, serverUrl: string): Promise<string | null> {
     try {
+      if (!isCloudinaryUrl(serverUrl)) {
+        throw new Error('Only Cloudinary URLs can be synced as profile images');
+      }
       const key = AVATAR_STORAGE_KEY + userId;
       const existing = await AsyncStorage.getItem(key);
       
       if (existing) {
         const avatarInfo: AvatarInfo = JSON.parse(existing);
         
-        // Only update if local is older or doesn't exist
-        if (!avatarInfo.localUri || avatarInfo.updatedAt < Date.now() - 1000) {
-          avatarInfo.serverUrl = serverUrl;
-          avatarInfo.updatedAt = Date.now();
-          await AsyncStorage.setItem(key, JSON.stringify(avatarInfo));
-        }
-        
-        return avatarInfo.localUri || avatarInfo.serverUrl;
+        avatarInfo.localUri = null;
+        avatarInfo.serverUrl = serverUrl;
+        avatarInfo.updatedAt = Date.now();
+        await AsyncStorage.setItem(key, JSON.stringify(avatarInfo));
+        return serverUrl;
       }
       
       // No existing avatar - store server URL

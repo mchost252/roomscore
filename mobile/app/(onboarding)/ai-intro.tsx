@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  StyleSheet, 
-  Animated, 
+import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
   ScrollView,
   Image,
   Dimensions,
@@ -13,9 +12,21 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import theme from '../../src/constants/theme';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withSpring,
+  withDelay,
+  withRepeat,
+  withSequence,
+  FadeInDown,
+  Easing,
+  type SharedValue,
+} from 'react-native-reanimated';
+import { colors } from '../../src/constants/theme';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
 interface Message {
   id: number;
@@ -24,75 +35,181 @@ interface Message {
 }
 
 const MESSAGES: Message[] = [
-  { id: 1, text: "Hey there! I'm Krios 🌟", delay: 500 },
-  { id: 2, text: "Think of me as your personal habit companion — here to help you build consistency and crush your goals.", delay: 1800 },
-  { id: 3, text: "Rooms are your accountability circles. You and friends join together to track habits and motivate each other.", delay: 3800 },
-  { id: 4, text: "Complete tasks daily, keep your streaks alive, and celebrate wins together! 🔥", delay: 6000 },
-  { id: 5, text: "Ready to start your journey?", delay: 8500 },
+  { id: 1, text: "Hey there! I'm Krios", delay: 500 },
+  {
+    id: 2,
+    text: 'Think of me as your personal habit companion — here to help you build consistency and crush your goals.',
+    delay: 1800,
+  },
+  {
+    id: 3,
+    text: 'Rooms are your accountability circles. You and friends join together to track habits and motivate each other.',
+    delay: 3800,
+  },
+  {
+    id: 4,
+    text: 'Complete tasks daily, keep your streaks alive, and celebrate wins together!',
+    delay: 6000,
+  },
+  { id: 5, text: 'Ready to start your journey?', delay: 8500 },
 ];
 
-export default function AIIntroScreen() {
-  const [visibleMessages, setVisibleMessages] = useState<number[]>([]);
-  const [showButtons, setShowButtons] = useState(false);
-  const [userName, setUserName] = useState('');
-  const router = useRouter();
-  
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scrollViewRef = useRef<ScrollView>(null);
-  const buttonScale = useRef(new Animated.Value(0)).current;
+// ─── Animated Typing Dots (matches TypingIndicator.tsx pattern) ──
+const TypingDots = memo(() => {
+  const dot1 = useSharedValue(0);
+  const dot2 = useSharedValue(0);
+  const dot3 = useSharedValue(0);
 
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 600,
-      useNativeDriver: true,
-    }).start();
+    const pulse = (delay: number) =>
+      withDelay(
+        delay,
+        withRepeat(
+          withSequence(
+            withTiming(1, {
+              duration: 400,
+              easing: Easing.inOut(Easing.ease),
+            }),
+            withTiming(0, {
+              duration: 400,
+              easing: Easing.inOut(Easing.ease),
+            }),
+          ),
+          -1,
+          false,
+        ),
+      );
 
-    AsyncStorage.getItem('userName').then(name => {
-      setUserName(name || 'there');
-    });
+    dot1.value = pulse(0);
+    dot2.value = pulse(150);
+    dot3.value = pulse(300);
+  }, []);
+
+  const useDotStyle = (sv: SharedValue<number>) =>
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    useAnimatedStyle(() => ({
+      opacity: 0.4 + sv.value * 0.6,
+      transform: [{ translateY: -sv.value * 4 }, { scale: 1 + sv.value * 0.15 }],
+    }));
+
+  const d1 = useDotStyle(dot1);
+  const d2 = useDotStyle(dot2);
+  const d3 = useDotStyle(dot3);
+
+  return (
+    <View style={styles.typingIndicator}>
+      <Animated.View style={[styles.typingDot, d1]} />
+      <Animated.View style={[styles.typingDot, d2]} />
+      <Animated.View style={[styles.typingDot, d3]} />
+    </View>
+  );
+});
+
+// ─── Message Bubble ──────────────────────────────────────────
+interface BubbleProps {
+  msg: Message;
+  index: number;
+}
+
+const MessageBubble = memo(({ msg, index }: BubbleProps) => (
+  <Animated.View
+    entering={FadeInDown.duration(400).delay(50).springify().damping(14)}
+    style={styles.messageRow}
+  >
+    {/* Avatar */}
+    <View style={styles.avatarContainer}>
+      <LinearGradient
+        colors={[colors.primary, colors.secondary]}
+        style={styles.avatar}
+      >
+        <Ionicons name="planet" size={16} color="#fff" />
+      </LinearGradient>
+    </View>
+
+    {/* Bubble */}
+    <View style={styles.messageBubble}>
+      <View style={styles.messageHeader}>
+        <Text style={styles.senderName}>Krios</Text>
+        <View style={styles.aiBadge}>
+          <Text style={styles.aiBadgeText}>AI</Text>
+        </View>
+      </View>
+      <Text style={styles.messageText}>{msg.text}</Text>
+    </View>
+  </Animated.View>
+));
+
+// ─── Main Screen ─────────────────────────────────────────────
+export default function AIIntroScreen() {
+  const [visibleMessages, setVisibleMessages] = useState<number[]>([]);
+  const [showButton, setShowButton] = useState(false);
+  const router = useRouter();
+  const scrollViewRef = useRef<ScrollView>(null);
+
+  // Entrance
+  const screenOpacity = useSharedValue(0);
+  const buttonScale = useSharedValue(0);
+  const buttonOpacity = useSharedValue(0);
+
+  useEffect(() => {
+    screenOpacity.value = withTiming(1, { duration: 600 });
 
     // Sequential message reveal
+    const timeouts: ReturnType<typeof setTimeout>[] = [];
+
     MESSAGES.forEach((msg, index) => {
-      setTimeout(() => {
-        setVisibleMessages(prev => [...prev, msg.id]);
+      const t = setTimeout(() => {
+        setVisibleMessages((prev) => [...prev, msg.id]);
+        // Auto-scroll after short layout delay
         setTimeout(() => {
           scrollViewRef.current?.scrollToEnd({ animated: true });
         }, 100);
+
+        // Show button after last message
         if (index === MESSAGES.length - 1) {
-          setTimeout(() => {
-            setShowButtons(true);
-            Animated.spring(buttonScale, {
-              toValue: 1,
-              tension: 50,
-              friction: 7,
-              useNativeDriver: true,
-            }).start();
+          const btn = setTimeout(() => {
+            setShowButton(true);
+            buttonScale.value = withSpring(1, { damping: 10, stiffness: 100 });
+            buttonOpacity.value = withTiming(1, { duration: 300 });
           }, 800);
+          timeouts.push(btn);
         }
       }, msg.delay);
+      timeouts.push(t);
     });
+
+    return () => timeouts.forEach(clearTimeout);
   }, []);
 
-  const handleContinue = async () => {
+  const handleContinue = useCallback(async () => {
     await AsyncStorage.setItem('hasCompletedOnboarding', 'true');
     router.replace('/(onboarding)/auth-choice');
-  };
+  }, [router]);
+
+  // Animated styles
+  const screenStyle = useAnimatedStyle(() => ({
+    opacity: screenOpacity.value,
+  }));
+
+  const btnStyle = useAnimatedStyle(() => ({
+    opacity: buttonOpacity.value,
+    transform: [{ scale: buttonScale.value }],
+  }));
 
   return (
     <View style={styles.container}>
       {/* Background */}
       <LinearGradient
-        colors={['#0a0a0f', '#12121a', '#0a0a0f']}
+        colors={[colors.background, colors.backgroundSecondary, colors.background]}
         style={StyleSheet.absoluteFill}
       />
-      
-      {/* Subtle glow */}
+
+      {/* Ambient glow */}
       <View style={styles.glowContainer}>
         <View style={styles.glow} />
       </View>
 
-      <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
+      <Animated.View style={[styles.content, screenStyle]}>
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.logoContainer}>
@@ -112,80 +229,53 @@ export default function AIIntroScreen() {
         </View>
 
         {/* Messages */}
-        <ScrollView 
+        <ScrollView
           ref={scrollViewRef}
           style={styles.messageScroll}
           contentContainerStyle={styles.messageContent}
           showsVerticalScrollIndicator={false}
         >
-          {MESSAGES.map((msg, index) => (
-            visibleMessages.includes(msg.id) && (
-              <View key={msg.id} style={styles.messageRow}>
-                {/* Avatar */}
-                <View style={styles.avatarContainer}>
-                  <LinearGradient
-                    colors={['#6366f1', '#8b5cf6']}
-                    style={styles.avatar}
-                  >
-                    <Ionicons name="planet" size={16} color="#fff" />
-                  </LinearGradient>
-                </View>
-                
-                {/* Message bubble */}
-                <View style={styles.messageBubble}>
-                  <View style={styles.messageHeader}>
-                    <Text style={styles.senderName}>Krios</Text>
-                    <View style={styles.aiBadge}>
-                      <Text style={styles.aiBadgeText}>AI</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.messageText}>{msg.text.replace('{name}', userName)}</Text>
-                </View>
-              </View>
-            )
-          ))}
+          {MESSAGES.map(
+            (msg, index) =>
+              visibleMessages.includes(msg.id) && (
+                <MessageBubble key={msg.id} msg={msg} index={index} />
+              ),
+          )}
 
-          {/* Typing indicator */}
+          {/* Typing indicator — visible while there are remaining messages */}
           {visibleMessages.length < MESSAGES.length && (
             <View style={styles.messageRow}>
               <View style={styles.avatarContainer}>
-                <LinearGradient colors={['#6366f1', '#8b5cf6']} style={styles.avatar}>
+                <LinearGradient
+                  colors={[colors.primary, colors.secondary]}
+                  style={styles.avatar}
+                >
                   <Ionicons name="planet" size={16} color="#fff" />
                 </LinearGradient>
               </View>
               <View style={[styles.messageBubble, styles.typingBubble]}>
-                <View style={styles.typingIndicator}>
-                  <View style={styles.typingDot} />
-                  <View style={styles.typingDot} />
-                  <View style={styles.typingDot} />
-                </View>
+                <TypingDots />
               </View>
             </View>
           )}
         </ScrollView>
 
-        {/* Action Button */}
-        {showButtons && (
-          <Animated.View 
-            style={[
-              styles.buttonContainer,
-              {
-                transform: [{ scale: buttonScale }]
-              }
-            ]}
-          >
-            <TouchableOpacity 
-              onPress={handleContinue} 
+        {/* CTA */}
+        {showButton && (
+          <Animated.View style={[styles.buttonContainer, btnStyle]}>
+            <TouchableOpacity
+              onPress={handleContinue}
               activeOpacity={0.8}
               style={styles.button}
             >
               <LinearGradient
-                colors={['#10b981', '#059669']}
+                colors={[colors.success, '#059669']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.buttonGradient}
               >
-                <Text style={styles.buttonText}>Let's Go! 🚀</Text>
+                <Text style={styles.buttonText}>Let's Go</Text>
+                <Ionicons name="arrow-forward" size={18} color="#fff" />
               </LinearGradient>
             </TouchableOpacity>
           </Animated.View>
@@ -195,10 +285,11 @@ export default function AIIntroScreen() {
   );
 }
 
+// ─── Styles ──────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0a0a0f',
+    backgroundColor: colors.background,
   },
   glowContainer: {
     ...StyleSheet.absoluteFillObject,
@@ -233,7 +324,7 @@ const styles = StyleSheet.create({
   headerDivider: {
     flex: 1,
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: colors.border,
     marginLeft: 16,
   },
   titleSection: {
@@ -244,11 +335,11 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#ffffff',
+    color: colors.textPrimary,
   },
   subtitle: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.4)',
+    color: colors.textMuted,
     marginTop: 4,
   },
   messageScroll: {
@@ -275,11 +366,11 @@ const styles = StyleSheet.create({
   },
   messageBubble: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: colors.surface,
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: colors.borderLight,
   },
   typingBubble: {
     paddingVertical: 16,
@@ -293,7 +384,7 @@ const styles = StyleSheet.create({
   senderName: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#6366f1',
+    color: colors.primary,
   },
   aiBadge: {
     backgroundColor: 'rgba(139, 92, 246, 0.2)',
@@ -304,7 +395,7 @@ const styles = StyleSheet.create({
   aiBadgeText: {
     fontSize: 9,
     fontWeight: '700',
-    color: '#8b5cf6',
+    color: colors.secondary,
   },
   messageText: {
     fontSize: 15,
@@ -313,13 +404,14 @@ const styles = StyleSheet.create({
   },
   typingIndicator: {
     flexDirection: 'row',
-    gap: 4,
+    gap: 5,
+    alignItems: 'center',
   },
   typingDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#8b5cf6',
+    backgroundColor: colors.secondary,
   },
   buttonContainer: {
     paddingHorizontal: 24,
@@ -328,20 +420,22 @@ const styles = StyleSheet.create({
   button: {
     borderRadius: 16,
     overflow: 'hidden',
-    shadowColor: '#10b981',
+    shadowColor: colors.success,
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.3,
     shadowRadius: 20,
     elevation: 10,
   },
   buttonGradient: {
+    flexDirection: 'row',
     paddingVertical: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 10,
   },
   buttonText: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#ffffff',
+    color: colors.textPrimary,
   },
 });

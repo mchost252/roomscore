@@ -9,6 +9,7 @@
  * Replaces useRoomsDashboard with true 0ms-first-paint.
  */
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { InteractionManager } from 'react-native';
 import { RoomDetail } from '../../types/room';
 import { roomStorage, getRoomDb } from '../../db/roomDb';
 import api from '../../services/api';
@@ -19,6 +20,9 @@ import realtimeEvents from '../../services/realtimeEvents';
 // ─── MMKV keys ───────────────────────────────────────────────────────────────
 const ROOMS_LIST_KEY = 'rooms_list_cache';
 const ROOMS_LIST_TS_KEY = 'rooms_list_ts';
+const ROOMS_LIST_TTL = 60_000; // skip re-fetch within this window
+
+let lastFetchedAt = 0;
 
 // ─── Sync MMKV helpers (0ms) ─────────────────────────────────────────────────
 function getCachedRoomsList(): RoomDetail[] {
@@ -65,9 +69,12 @@ function mapApiRoom(raw: any): RoomDetail {
     ownerId,
     isActive: raw.isActive !== false,
     requireApproval: raw.requireApproval,
+    showJoinCode: raw.showJoinCode ?? false,
     createdAt: raw.createdAt || new Date().toISOString(),
     updatedAt: raw.updatedAt || new Date().toISOString(),
     endDate: raw.endDate,
+    coverImage: raw.coverImage || null,
+    roomDp: raw.roomDp || raw.room_image || raw.dp || null,
     doomClockExpiry: raw.doomClockExpiry,
     userRole: raw.userRole,
     groupAura: raw.groupAura,
@@ -93,8 +100,13 @@ export function useRoomsInstant() {
 
   // Step 2: Background API fetch
   const fetchFromAPI = useCallback(async (silent = false) => {
+    if (Date.now() - lastFetchedAt < ROOMS_LIST_TTL) {
+      setLoading(false);
+      return;
+    }
     if (!silent) setLoading(true);
     setError(null);
+    lastFetchedAt = Date.now();
 
     try {
       const results = await Promise.allSettled([
@@ -115,8 +127,8 @@ export function useRoomsInstant() {
         // Also persist to SQLite for cross-hook consistency
         try {
           const db = await getRoomDb();
-          for (const room of mapped) {
-            await db.runAsync(
+          const insert = (room: RoomDetail) =>
+            db.runAsync(
               `INSERT OR REPLACE INTO rooms (id, name, description, joinCode, isPrivate, maxMembers, chatRetentionDays, isPremium, streak, ownerId, isActive, createdAt, updatedAt)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
@@ -126,6 +138,12 @@ export function useRoomsInstant() {
                 room.isActive ? 1 : 0, room.createdAt, room.updatedAt,
               ]
             );
+          if (typeof db.withTransactionAsync === 'function') {
+            await db.withTransactionAsync(async () => {
+              await Promise.all(mapped.map(insert));
+            });
+          } else {
+            await Promise.all(mapped.map(insert));
           }
         } catch {} // SQLite write is best-effort
       } else if (!silent) {
@@ -148,9 +166,13 @@ export function useRoomsInstant() {
     }
   }, []);
 
-  // Initial fetch — silent if we have cached data (user sees cached list immediately)
+  // Initial fetch — deferred out of the mount/tab-transition frame. The TTL guard
+  // inside fetchFromAPI skips redundant fetches when a fresh cache already exists.
   useEffect(() => {
-    fetchFromAPI(myRooms.length > 0);
+    const handle = InteractionManager.runAfterInteractions(() => {
+      fetchFromAPI(myRooms.length > 0);
+    });
+    return () => handle.cancel();
   }, [fetchFromAPI]);
 
   useEffect(() => {

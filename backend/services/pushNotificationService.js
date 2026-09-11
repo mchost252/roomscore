@@ -1,6 +1,7 @@
 const webpush = require('web-push');
 const { prisma } = require('../config/database');
 const logger = require('../utils/logger');
+const NotificationService = require('./notificationService');
 
 // Configure web-push with VAPID keys (only if they exist)
 const vapidPublicKey = process.env.VAPID_PUBLIC_KEY;
@@ -19,6 +20,19 @@ if (pushNotificationsEnabled) {
 }
 
 class PushNotificationService {
+  static getNotificationType(payload) {
+    const type = payload?.data?.notificationType || payload?.data?.type;
+    return {
+      new_task: 'room_task_created',
+      task_completed: 'task_completed',
+      new_message: 'direct_message',
+      friend_request: 'friend_request',
+      friend_accepted: 'friend_request_accepted',
+      nudge: 'nudge_received',
+      task_reminder: 'task_reminder',
+    }[type] || type;
+  }
+
   // Send push notification to a user
   static async sendToUser(userId, payload) {
     // Skip if push notifications not configured
@@ -27,26 +41,63 @@ class PushNotificationService {
     }
 
     try {
-      const user = await prisma.user.findUnique({
+      const notificationType = this.getNotificationType(payload);
+      if (notificationType && !(await NotificationService.shouldDeliver(userId, notificationType, 'push'))) {
+        return { success: false, reason: 'Blocked by notification preferences' };
+      }
+      const [user, devices] = await Promise.all([
+        prisma.user.findUnique({
         where: { id: userId },
         select: { pushSubscription: true }
-      });
+        }),
+        prisma.pushDevice.findMany({
+          where: { userId, enabled: true },
+        }),
+      ]);
 
-      if (!user?.pushSubscription?.endpoint || !user.pushSubscription?.keys) {
+      const legacy = user?.pushSubscription;
+      const legacySubscription = typeof legacy === 'string' ? JSON.parse(legacy) : legacy;
+      const subscriptions = devices.map(device => {
+        const value = typeof device.subscription === 'string'
+          ? JSON.parse(device.subscription)
+          : device.subscription;
+        return { id: device.id, value };
+      }).filter(device => device.value?.endpoint && device.value?.keys);
+      if (legacySubscription?.endpoint && legacySubscription?.keys &&
+          !subscriptions.some(device => device.value.endpoint === legacySubscription.endpoint)) {
+        subscriptions.push({ id: null, value: legacySubscription });
+      }
+      if (subscriptions.length === 0) {
         return { success: false, reason: 'No active subscription' };
       }
 
-      const pushSubscription = {
-        endpoint: user.pushSubscription.endpoint,
-        keys: {
-          p256dh: user.pushSubscription.keys.p256dh,
-          auth: user.pushSubscription.keys.auth
+      const results = await Promise.all(subscriptions.map(async ({ id, value }) => {
+        try {
+          if (value.endpoint?.startsWith('ExponentPushToken[') || value.endpoint?.startsWith('ExpoPushToken[')) {
+            const expoResponse = await fetch('https://exp.host/--/api/v2/push/send', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ to: value.endpoint, ...payload }),
+            });
+            if (!expoResponse.ok) throw new Error(`Expo push returned ${expoResponse.status}`);
+            return true;
+          }
+          await webpush.sendNotification({
+            endpoint: value.endpoint,
+            keys: { p256dh: value.keys.p256dh, auth: value.keys.auth },
+          }, JSON.stringify(payload));
+          return true;
+        } catch (error) {
+          if (error.statusCode === 404 || error.statusCode === 410) {
+            if (id) await prisma.pushDevice.delete({ where: { id } }).catch(() => {});
+          }
+          logger.warn(`Push delivery failed for user ${userId}:`, error.message);
+          return false;
         }
-      };
-
-      await webpush.sendNotification(pushSubscription, JSON.stringify(payload));
-      logger.info(`Push notification sent to user ${userId}`);
-      return { success: true };
+      }));
+      const delivered = results.filter(Boolean).length;
+      logger.info(`Push notification delivered to ${userId} on ${delivered}/${results.length} devices`);
+      return delivered > 0 ? { success: true } : { success: false, reason: 'Delivery failed' };
     } catch (error) {
       // If subscription is invalid, clear it
       if (error.statusCode === 410) {
@@ -80,7 +131,7 @@ class PushNotificationService {
       badge: '/badge-72x72.png',
       tag: 'new-task',
       data: {
-        type: 'new_task',
+        type: 'room_task_created',
         roomId: task.roomId,
         taskId: task._id,
         url: `/rooms/${task.roomId}`
@@ -119,7 +170,7 @@ class PushNotificationService {
       tag: `chat-${roomId}`,
       renotify: true,
       data: {
-        type: 'new_chat',
+        type: 'room_updated',
         roomId: roomId,
         url: `/rooms/${roomId}`
       }
@@ -137,7 +188,7 @@ class PushNotificationService {
       badge: '/badge-72x72.png',
       tag: 'member-joined',
       data: {
-        type: 'member_joined',
+        type: 'room_joined',
         roomId: roomId,
         url: `/rooms/${roomId}`
       }
@@ -155,7 +206,7 @@ class PushNotificationService {
       badge: '/badge-72x72.png',
       tag: 'member-left',
       data: {
-        type: 'member_left',
+        type: 'room_left',
         roomId: roomId,
         url: `/rooms/${roomId}`
       }
@@ -226,7 +277,7 @@ class PushNotificationService {
       badge: '/badge-72x72.png',
       tag: 'friend-accepted',
       data: {
-        type: 'friend_accepted',
+        type: 'friend_request_accepted',
         url: '/friends'
       }
     };
@@ -261,7 +312,7 @@ class PushNotificationService {
       badge: '/badge-72x72.png',
       tag: `nudge-${roomId}`,
       data: {
-        type: 'nudge',
+        type: 'nudge_received',
         roomId: roomId,
         url: `/rooms/${roomId}`
       }

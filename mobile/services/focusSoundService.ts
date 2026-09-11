@@ -1,18 +1,17 @@
 /**
  * Focus Sound Service — Audio playback for focus sessions
- * 
- * Manages ambient sound loops using expo-av.
- * Supports bundled sounds + user-uploaded custom audio.
+ *
+ * Modern engine: expo-audio (AudioPlayer) with download-first remote tracks,
+ * so each preset is saved to device on first play and replays offline.
  */
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Lazy-load expo-av to avoid crashes on web
-let Audio: any = null;
+// Lazy-load so a missing native module can never crash startup.
+let AudioModule: any = null;
 try {
-  if (Platform.OS !== 'web') {
-    Audio = require('expo-av').Audio;
-  }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  AudioModule = require('expo-audio');
 } catch {}
 
 export interface SoundOption {
@@ -20,39 +19,63 @@ export interface SoundOption {
   name: string;
   description: string;
   icon: string;
-  source: any;         // require() for bundled, { uri } for custom
+  source: any;         // { uri } for remote/local files
   isCustom?: boolean;
 }
 
-// Bundled sounds — these will be silent placeholders until real .mp3 files are added
-// The app won't crash if files are missing; it just won't play audio
+export interface SoundStatus {
+  loading: boolean;
+  playing: boolean;
+  soundId: string | null;
+  error: string | null;
+}
+
+// Bundled presets — Mixkit direct links (verified live, royalty-free).
+// Each file is downloaded to the device on first play, then replays offline.
 const BUNDLED_SOUNDS: SoundOption[] = [
   { id: 'silence', name: 'Silence', description: 'No sound', icon: '🔇', source: null },
-  { id: 'forest', name: 'Forest', description: 'Calm', icon: '🌿', source: { uri: 'https://cdn.pixabay.com/download/audio/2022/10/25/audio_5145b23d57.mp3' } },
-  { id: 'rain', name: 'Rain', description: 'Soothing', icon: '🌧️', source: { uri: 'https://cdn.pixabay.com/download/audio/2021/08/09/audio_9eb45d9fa8.mp3' } },
-  { id: 'lofi', name: 'Lo-fi', description: 'Chill', icon: '🎵', source: { uri: 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf589.mp3' } },
-  { id: 'whitenoise', name: 'Cosmic', description: 'Deep Focus', icon: '🌌', source: { uri: 'https://cdn.pixabay.com/download/audio/2022/02/10/audio_fc87b80829.mp3' } },
+  { id: 'forest', name: 'Forest', description: 'European forest ambience', icon: '🌿', source: { uri: 'https://assets.mixkit.co/active_storage/sfx/1213/1213-preview.mp3' } },
+  { id: 'rain', name: 'Rain', description: 'Long rain ambience', icon: '🌧️', source: { uri: 'https://assets.mixkit.co/active_storage/sfx/1247/1247-preview.mp3' } },
+  { id: 'lofi', name: 'Lo-fi', description: 'Sleepy Cat chill', icon: '🎵', source: { uri: 'https://assets.mixkit.co/music/135/135.mp3' } },
+  { id: 'whitenoise', name: 'Cosmic', description: 'Deep Focus drone', icon: '🌌', source: { uri: 'https://assets.mixkit.co/active_storage/sfx/2744/2744-preview.mp3' } },
 ];
 
 const PREFS_KEY = '@krios:focusSound';
 const CUSTOM_SOUNDS_KEY = '@krios:customSounds';
 
 class FocusSoundService {
-  private sound: any = null;
+  private player: any = null;
+  private statusSub: any = null;
+  private webEl: any = null;
   private currentId: string = 'silence';
   private volume: number = 0.6;
   private customSounds: SoundOption[] = [];
+  private status: SoundStatus = { loading: false, playing: false, soundId: null, error: null };
+  private listeners = new Set<(s: SoundStatus) => void>();
+
+  /** Subscribe to playback status (loading / playing / error). No immediate emit. */
+  onStatus(cb: (s: SoundStatus) => void): () => void {
+    this.listeners.add(cb);
+    return () => { this.listeners.delete(cb); };
+  }
+
+  private setStatus(patch: Partial<SoundStatus>): void {
+    this.status = { ...this.status, ...patch };
+    this.listeners.forEach((cb) => {
+      try { cb(this.status); } catch {}
+    });
+  }
 
   async initialize(): Promise<void> {
-    if (!Audio) return;
-    try {
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: true,
-        shouldDuckAndroid: true,
-      });
-    } catch {}
+    if (AudioModule?.setAudioModeAsync) {
+      try {
+        await AudioModule.setAudioModeAsync({
+          playsInSilentMode: true,
+          shouldPlayInBackground: true,
+          interruptionMode: 'duckOthers',
+        });
+      } catch {}
+    }
 
     // Load preferences
     try {
@@ -85,16 +108,76 @@ class FocusSoundService {
 
   async setVolume(vol: number): Promise<void> {
     this.volume = Math.max(0, Math.min(1, vol));
-    if (this.sound) {
-      try { await this.sound.setVolumeAsync(this.volume); } catch {}
+    if (this.player) {
+      try { this.player.volume = this.volume; } catch {}
+    }
+    if (this.webEl) {
+      try { this.webEl.volume = this.volume; } catch {}
     }
     await this.savePrefs();
   }
 
-  async play(soundId: string): Promise<void> {
-    if (!Audio || soundId === 'silence') {
-      await this.stop();
+  private disposePlayer(): void {
+    try { this.statusSub?.remove?.(); } catch {}
+    this.statusSub = null;
+    try { this.player?.remove?.(); } catch {}
+    this.player = null;
+    try { this.webEl?.pause?.(); } catch {}
+    try {
+      if (this.webEl) {
+        this.webEl.src = '';
+        this.webEl.load?.();
+      }
+    } catch {}
+    this.webEl = null;
+  }
+
+  // Web backend: expo-audio's web player emits no error events and swallows
+  // autoplay rejections, so silence was untraceable. Raw HTMLAudio gives us
+  // real events (playing / waiting / error) on every browser.
+  private async playWeb(source: any, soundId: string): Promise<void> {
+    this.disposePlayer();
+    this.setStatus({ loading: true, playing: false, soundId, error: null });
+    try {
+      const url = typeof source === 'string' ? source : source?.uri;
+      if (!url) throw new Error('No audio source');
+      const Ctor = (globalThis as any).Audio;
+      const el = new Ctor(url);
+      el.loop = true;
+      el.volume = this.volume;
+      el.preload = 'auto';
+      el.onplaying = () => this.setStatus({ loading: false, playing: true, error: null });
+      el.onwaiting = () => this.setStatus({ loading: true });
+      el.onpause = () => {
+        if (this.webEl === el) this.setStatus({ playing: false });
+      };
+      el.onerror = () => {
+        if (this.webEl === el) this.setStatus({ loading: false, playing: false, error: 'Could not load sound' });
+      };
+      this.webEl = el;
       this.currentId = soundId;
+      await el.play();
+      await this.savePrefs();
+    } catch (err: any) {
+      const blocked = err?.name === 'NotAllowedError';
+      this.setStatus({
+        loading: false,
+        playing: false,
+        error: blocked ? 'Tap play again to start audio' : (err?.message || 'Could not load sound'),
+      });
+    }
+  }
+
+  private sourceNeedsDownload(source: any): boolean {
+    const uri = typeof source === 'string' ? source : source?.uri;
+    return !!uri && uri.startsWith('http');
+  }
+
+  async play(soundId: string): Promise<void> {
+    if (!AudioModule?.createAudioPlayer || soundId === 'silence') {
+      this.disposePlayer();
+      this.currentId = soundId;
+      this.setStatus({ loading: false, playing: false, soundId, error: null });
       await this.savePrefs();
       return;
     }
@@ -102,57 +185,109 @@ class FocusSoundService {
     const allSounds = this.getAllSounds();
     const option = allSounds.find(s => s.id === soundId);
     if (!option || !option.source) {
+      this.disposePlayer();
       this.currentId = soundId;
+      this.setStatus({ loading: false, playing: false, soundId, error: null });
       await this.savePrefs();
       return;
     }
 
-    await this.stop();
+    // Web goes through the raw-audio backend (see playWeb).
+    if (Platform.OS === 'web') {
+      await this.playWeb(option.source, soundId);
+      return;
+    }
+
+    this.disposePlayer();
+    this.setStatus({ loading: true, playing: false, soundId, error: null });
 
     try {
-      const { sound } = await Audio.Sound.createAsync(
-        option.source,
-        { isLooping: true, volume: this.volume, shouldPlay: true }
-      );
-      this.sound = sound;
+      // downloadFirst saves remote tracks to device storage on first play —
+      // replays are instant and fully offline. Local files play directly.
+      const player = AudioModule.createAudioPlayer(option.source, {
+        downloadFirst: this.sourceNeedsDownload(option.source),
+      });
+      player.loop = true;
+      player.volume = this.volume;
+      this.statusSub = player.addListener?.('playbackStatusUpdate', (st: any) => {
+        if (!st) return;
+        if (st.isLoaded) {
+          this.setStatus({ loading: !!st.isBuffering, playing: !!st.playing, error: null });
+        } else if (st.error) {
+          this.setStatus({ loading: false, playing: false, error: String(st.error) });
+        }
+      });
+      this.player = player;
       this.currentId = soundId;
+      player.play();
       await this.savePrefs();
-    } catch (err) {
+    } catch (err: any) {
       console.warn('[FocusSound] Playback failed:', err);
+      this.setStatus({ loading: false, playing: false, error: err?.message || 'Could not load sound' });
     }
+  }
+
+  private setTargetVolume(v: number): void {
+    if (this.player) {
+      try { this.player.volume = v; } catch {}
+    }
+    if (this.webEl) {
+      try { this.webEl.volume = v; } catch {}
+    }
+  }
+
+  private hasTarget(): boolean {
+    return !!this.player || !!this.webEl;
   }
 
   async stop(): Promise<void> {
-    if (this.sound) {
-      try {
-        await this.sound.stopAsync();
-        await this.sound.unloadAsync();
-      } catch {}
-      this.sound = null;
+    if (this.player) {
+      try { this.player.pause(); } catch {}
+      try { await this.player.seekTo?.(0); } catch {}
     }
+    if (this.webEl) {
+      try { this.webEl.pause(); } catch {}
+      try { this.webEl.currentTime = 0; } catch {}
+    }
+    this.setStatus({ loading: false, playing: false, soundId: null, error: null });
   }
 
   async pause(): Promise<void> {
-    if (this.sound) {
-      try { await this.sound.pauseAsync(); } catch {}
+    if (this.hasTarget()) {
+      if (this.player) {
+        try { this.player.pause(); } catch {}
+      }
+      if (this.webEl) {
+        try { this.webEl.pause(); } catch {}
+      }
+      this.setStatus({ playing: false });
     }
   }
 
   async resume(): Promise<void> {
-    if (this.sound) {
-      try { await this.sound.playAsync(); } catch {}
+    if (this.player) {
+      try { this.player.play(); } catch {}
+      this.setStatus({ playing: true });
+    } else if (this.webEl) {
+      try {
+        await this.webEl.play();
+        this.setStatus({ playing: true });
+      } catch (err: any) {
+        this.setStatus({ playing: false, error: err?.name === 'NotAllowedError' ? 'Tap play again to start audio' : (err?.message || 'Could not play sound') });
+      }
     }
   }
 
   async fadeOut(durationMs: number = 2000): Promise<void> {
-    if (!this.sound) return;
+    if (!this.hasTarget()) return;
     const steps = 20;
     const stepMs = durationMs / steps;
     const stepVol = this.volume / steps;
     for (let i = steps; i >= 0; i--) {
-      try { await this.sound.setVolumeAsync(stepVol * i); } catch {}
+      this.setTargetVolume(Math.max(0, stepVol * i));
       await new Promise(r => setTimeout(r, stepMs));
     }
+    this.setTargetVolume(this.volume);
     await this.stop();
   }
 
@@ -176,7 +311,8 @@ class FocusSoundService {
     await AsyncStorage.setItem(CUSTOM_SOUNDS_KEY, JSON.stringify(this.customSounds));
     if (this.currentId === id) {
       this.currentId = 'silence';
-      await this.stop();
+      this.disposePlayer();
+      this.setStatus({ loading: false, playing: false, soundId: null, error: null });
       await this.savePrefs();
     }
   }

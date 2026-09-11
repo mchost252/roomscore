@@ -1,6 +1,19 @@
 const jwt = require('jsonwebtoken');
 const { prisma } = require('../config/database');
 const logger = require('../utils/logger');
+const NotificationService = require('../services/notificationService');
+const isSQLite = process.env.DATABASE_URL?.includes('sqlite') || process.env.DATABASE_URL?.includes('.db');
+
+function parseReactions(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 // Track online users: Map<userId, Set<socketId>>
 const onlineUsers = new Map();
@@ -230,8 +243,42 @@ module.exports = (io) => {
       });
     });
 
+    // Room-chat reactions are transient UI events. Broadcast them to every
+    // member currently in the room; clients keep the reaction state for the
+    // open conversation and can reconcile it with the message history later.
+    socket.on('chat:reaction', ({ roomId, messageId, emoji, action }) => {
+      if (!roomId || !messageId || !emoji || !socket.rooms.has(roomId)) return;
+      (async () => {
+        const message = await prisma.chatMessage.findFirst({ where: { id: messageId, roomId }, select: { reactions: true, userId: true } });
+        if (!message) return;
+        const reactions = parseReactions(message.reactions);
+        const next = action === 'remove'
+          ? reactions.filter((item) => !(item.userId === socket.userId && item.emoji === emoji))
+          : reactions.some((item) => item.userId === socket.userId && item.emoji === emoji)
+            ? reactions
+            : [...reactions, { userId: socket.userId, emoji }];
+        await prisma.chatMessage.update({
+          where: { id: messageId },
+          data: { reactions: isSQLite ? JSON.stringify(next) : next },
+        });
+        if (action !== 'remove' && message.userId !== socket.userId) {
+          await NotificationService.createNotification({
+            recipientId: message.userId,
+            type: 'reaction_received',
+            title: 'New reaction',
+            message: `Someone reacted ${emoji} to your room message`,
+            roomId,
+            entityId: messageId,
+            data: { roomId, messageId, emoji, reactorId: socket.userId },
+          });
+        }
+        socket.to(roomId).emit('chat:reaction', { roomId, messageId, emoji, action: action === 'remove' ? 'remove' : 'add', userId: socket.userId });
+      })().catch((error) => logger.error('[chat:reaction] persistence failed:', error.message));
+    });
+
     // Direct message typing indicator
-    socket.on('dm:typing', ({ recipientId, isTyping }) => {
+    socket.on('dm:typing', async ({ recipientId, isTyping }) => {
+      if (await prisma.userBlock.findFirst({ where: { OR: [{ blockerId: socket.userId, blockedId: recipientId }, { blockerId: recipientId, blockedId: socket.userId }] }, select: { id: true } })) return;
       socket.to(`user:${recipientId}`).emit('dm:typing', {
         userId: socket.userId,
         username: socket.username,
@@ -239,8 +286,54 @@ module.exports = (io) => {
       });
     });
 
+    socket.on('dm:reaction', async ({ recipientId, messageId, emoji, action }) => {
+      if (!recipientId || !messageId || !emoji) return;
+      if (await prisma.userBlock.findFirst({
+        where: {
+          OR: [
+            { blockerId: socket.userId, blockedId: recipientId },
+            { blockerId: recipientId, blockedId: socket.userId },
+          ],
+        },
+        select: { id: true },
+      })) return;
+
+      const message = await prisma.directMessage.findFirst({
+        where: { id: messageId, OR: [{ fromUserId: socket.userId, toUserId: recipientId }, { fromUserId: recipientId, toUserId: socket.userId }] },
+        select: { reactions: true, fromUserId: true },
+      });
+      if (!message) return;
+      const reactions = parseReactions(message.reactions);
+      const next = action === 'remove'
+        ? reactions.filter((item) => !(item.userId === socket.userId && item.emoji === emoji))
+        : reactions.some((item) => item.userId === socket.userId && item.emoji === emoji)
+          ? reactions
+          : [...reactions, { userId: socket.userId, emoji }];
+      await prisma.directMessage.update({
+        where: { id: messageId },
+        data: { reactions: isSQLite ? JSON.stringify(next) : next },
+      });
+      if (action !== 'remove' && message.fromUserId !== socket.userId) {
+        await NotificationService.createNotification({
+          recipientId: message.fromUserId,
+          type: 'reaction_received',
+          title: 'New reaction',
+          message: `Someone reacted ${emoji} to your message`,
+          entityId: messageId,
+          data: { messageId, emoji, reactorId: socket.userId },
+        });
+      }
+      socket.to(`user:${recipientId}`).emit('dm:reaction', {
+        messageId,
+        emoji,
+        action: action === 'remove' ? 'remove' : 'add',
+        userId: socket.userId,
+      });
+    });
+
     // Mark messages as read - persist to DB + notify sender
     socket.on('dm:read', async ({ senderId, messageIds }) => {
+      if (await prisma.userBlock.findFirst({ where: { OR: [{ blockerId: socket.userId, blockedId: senderId }, { blockerId: senderId, blockedId: socket.userId }] }, select: { id: true } })) return;
       const readAt = new Date().toISOString();
       
       // Persist read status to database (idempotent)
@@ -266,9 +359,12 @@ module.exports = (io) => {
 
     // Confirm message delivery when recipient is online
     socket.on('dm:confirm_delivery', ({ senderId, messageIds }) => {
+      prisma.userBlock.findFirst({ where: { OR: [{ blockerId: socket.userId, blockedId: senderId }, { blockerId: senderId, blockedId: socket.userId }] }, select: { id: true } }).then(block => {
+        if (block) return;
       socket.to(`user:${senderId}`).emit('dm:delivered', {
         messageIds,
         deliveredAt: new Date().toISOString()
+      });
       });
     });
 

@@ -67,6 +67,6 @@ export async function unsubscribeFromPush() {
     await sub.unsubscribe();
   }
 
-  await api.post('/push/unsubscribe');
+  await api.post('/push/unsubscribe', { endpoint: sub?.endpoint });
   return { success: true };
 }

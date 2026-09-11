@@ -24,6 +24,9 @@ class RoomTaskNodeService {
       }
 
       const db = await getRoomDb();
+      if (!db || typeof db.getAllAsync !== 'function') {
+        throw new Error('Room database handle is unavailable');
+      }
       let query = 'SELECT * FROM room_task_nodes WHERE taskId = ?';
       const params: any[] = [taskId];
 
@@ -62,6 +65,9 @@ class RoomTaskNodeService {
   async addNode(taskId: string, node: RoomTaskNode): Promise<RoomTaskNode> {
     try {
       const db = await getRoomDb();
+      if (!db || typeof db.runAsync !== 'function') {
+        throw new Error('Room database handle is unavailable');
+      }
       
       const userJson = node.user ? JSON.stringify(node.user) : null;
       const nodeId = node.id || node._id || `local_${Date.now()}`;
@@ -74,16 +80,17 @@ class RoomTaskNodeService {
       };
 
       const params = [
-        nodeId, node.roomId, taskId, node.userId || node.user?.id, 
+        nodeId, node.roomId, taskId, node.userId || node.user?.id,
         node.type, node.content, node.caption, node.status, node.vouchCount || 0, node.isPinned ? 1 : 0,
         node.mediaUrl, node.blurHash, node.heatLevel || 0,
+        node.replyToId, node.replyToText, node.replyToUsername,
         node.createdAt, node.updatedAt, userJson, node.clientReferenceId
       ].map(sanitize);
 
       await db.runAsync(
-        `INSERT OR REPLACE INTO room_task_nodes 
-        (id, roomId, taskId, userId, type, content, caption, status, vouchCount, isPinned, mediaUrl, blurHash, heatLevel, createdAt, updatedAt, userJson, clientReferenceId)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR REPLACE INTO room_task_nodes
+        (id, roomId, taskId, userId, type, content, caption, status, vouchCount, isPinned, mediaUrl, blurHash, heatLevel, replyToId, replyToText, replyToUsername, createdAt, updatedAt, userJson, clientReferenceId)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         params
       );
 
@@ -100,6 +107,9 @@ class RoomTaskNodeService {
   async updateNode(taskId: string, nodeId: string, patch: Partial<RoomTaskNode>): Promise<void> {
     try {
       const db = await getRoomDb();
+      if (!db || typeof db.runAsync !== 'function') {
+        throw new Error('Room database handle is unavailable');
+      }
       
       // Construct dynamic update query
       const keys = Object.keys(patch).filter(k => k !== 'user' && k !== 'id' && k !== '_id');
@@ -131,6 +141,9 @@ class RoomTaskNodeService {
   async purgeOldNodes(taskId: string, retentionDays: number = 5): Promise<void> {
     try {
       const db = await getRoomDb();
+      if (!db || typeof db.runAsync !== 'function') {
+        throw new Error('Room database handle is unavailable');
+      }
       const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
       
       const result = await db.runAsync(

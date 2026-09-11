@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -7,12 +7,20 @@ import { usePathname, useRouter } from 'expo-router';
 import { useTheme } from '../context/ThemeContext';
 import messageService from '../services/messageService';
 import realtimeEvents from '../services/realtimeEvents';
+import { getHomeTabIndex, MORE_TAB_INDEX, MORE_ROUTE } from '../constants/homeTabs';
+import notificationService, { NotificationCounts } from '../services/notificationService';
+import syncEngine from '../services/syncEngine';
 
 /**
  * The app's real Bottom Tab Bar (the one used on Home screen).
  * Extracted so it can be reused on Messages and other screens.
+ *
+ * Wrapped in React.memo at the bottom of this file: HomeLayout re-renders on
+ * every tab change (optimistic index + animation direction), and re-rendering
+ * this whole bar synchronously in that same frame delayed the screen transition
+ * on low-end devices.
  */
-export default function BottomTabBar({
+function BottomTabBar({
   activeTabIndex,
   onAddTask,
   onNavigate,
@@ -33,25 +41,21 @@ export default function BottomTabBar({
   const [unreadCount, setUnreadCount] = useState(0);
   const [hasHomeActivity, setHasHomeActivity] = useState(false);
   const [hasRoomActivity, setHasRoomActivity] = useState(false);
+  const [notificationCounts, setNotificationCounts] = useState<NotificationCounts>(notificationService.getUnreadCounts());
 
-  const pathTabIndex = pathname.includes('/rooms')
-    ? 1
-    : pathname.includes('/messages') || pathname.includes('/chat')
-      ? 2
-      : pathname.includes('/profile') || pathname.includes('/settings')
-        ? 3
-        : 0;
+  // Derived from the shared registry so the tab bar, the sidebar and the layout
+  // can never disagree about which tab a route belongs to.
+  const pathTabIndex = getHomeTabIndex(pathname);
   const displayTabIndex = activeTabIndex ?? pathTabIndex;
 
   const isHomeActive = displayTabIndex === 0;
   const isRoomsActive = displayTabIndex === 1;
   const isMessagesActive = displayTabIndex === 2;
-  const isProfileActive = displayTabIndex === 3;
+  const isMoreActive = displayTabIndex === MORE_TAB_INDEX;
 
   const isHomeRoute = pathname === '/' || pathname === '/(home)' || pathname === '/(home)/index';
   const isRoomsRoute = pathname === '/rooms' || pathname === '/(home)/rooms';
   const isMessagesRoute = pathname === '/messages' || pathname === '/(home)/messages';
-  const isProfileRoute = pathname === '/profile' || pathname === '/(home)/profile';
 
   const refreshUnread = useCallback(async () => {
     try {
@@ -61,9 +65,16 @@ export default function BottomTabBar({
   }, []);
 
   useEffect(() => {
+    notificationService.syncUnreadBadge().then((counts) => {
+      if (counts) setNotificationCounts(counts);
+    });
+    const unsubscribeCounts = syncEngine.on('notification:counts', (counts) => {
+      setNotificationCounts(counts as NotificationCounts);
+    });
     refreshUnread();
     const unsub = (messageService as any).on?.('conversation:list', refreshUnread);
     return () => {
+      unsubscribeCounts();
       (messageService as any).off?.('conversation:list', refreshUnread);
       if (typeof unsub === 'function') unsub();
     };
@@ -77,17 +88,26 @@ export default function BottomTabBar({
     clearActive();
   }, [isHomeActive, isRoomsActive]);
 
+  // Mirror active-tab flags into refs so the realtime subscriptions below can
+  // read the current value without listing them as deps. Previously these
+  // effects re-ran on every tab change, tearing down and rebuilding both
+  // realtimeEvents listeners in the middle of the screen transition.
+  const isHomeActiveRef = useRef(isHomeActive);
+  const isRoomsActiveRef = useRef(isRoomsActive);
+  isHomeActiveRef.current = isHomeActive;
+  isRoomsActiveRef.current = isRoomsActive;
+
   useEffect(() => {
     const unsubs = [
       realtimeEvents.on('tasks:changed', () => {
-        if (!isHomeActive) setHasHomeActivity(true);
+        if (!isHomeActiveRef.current) setHasHomeActivity(true);
       }),
       realtimeEvents.on('rooms:changed', () => {
-        if (!isRoomsActive) setHasRoomActivity(true);
+        if (!isRoomsActiveRef.current) setHasRoomActivity(true);
       }),
     ];
     return () => unsubs.forEach(unsub => unsub());
-  }, [isHomeActive, isRoomsActive]);
+  }, []);
 
   const handleNavigation = useCallback((route: string, isActive: boolean) => {
     if (!isActive) {
@@ -102,6 +122,7 @@ export default function BottomTabBar({
       style={{
         position: 'absolute',
         bottom: 0, left: 0, right: 0,
+        zIndex: 500,
         backgroundColor: isDark ? '#16162a' : '#ffffff',
         borderTopLeftRadius: 28,
         borderTopRightRadius: 28,
@@ -122,7 +143,7 @@ export default function BottomTabBar({
           {isHomeActive && (
             <View style={[s.tabActiveDot, { backgroundColor: primary }]} />
           )}
-          {!isHomeActive && hasHomeActivity && (
+          {!isHomeActive && (hasHomeActivity || notificationCounts.notifications > 0) && (
             <View style={[s.notifyDot, { backgroundColor: primary }]} />
           )}
         </TouchableOpacity>
@@ -138,7 +159,7 @@ export default function BottomTabBar({
           {isRoomsActive && (
             <View style={[s.tabActiveDot, { backgroundColor: primary }]} />
           )}
-          {!isRoomsActive && hasRoomActivity && (
+          {!isRoomsActive && (hasRoomActivity || notificationCounts.rooms > 0) && (
             <View style={[s.notifyDot, { backgroundColor: primary }]} />
           )}
         </TouchableOpacity>
@@ -174,23 +195,30 @@ export default function BottomTabBar({
             {isMessagesActive && (
               <View style={[s.tabActiveDot, { backgroundColor: primary, alignSelf: 'center' }]} />
             )}
-            {unreadCount > 0 && (
+            {Math.max(unreadCount, notificationCounts.messages) > 0 && (
               <View style={s.unreadBadge}>
-                <Text style={s.unreadText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+                <Text style={s.unreadText}>{Math.max(unreadCount, notificationCounts.messages) > 99 ? '99+' : Math.max(unreadCount, notificationCounts.messages)}</Text>
               </View>
             )}
           </View>
         </TouchableOpacity>
 
-        {/* Profile */}
-        <TouchableOpacity style={s.tabItem} onPress={() => handleNavigation('/(home)/profile', isProfileRoute)}>
-          <Ionicons 
-            name={isProfileActive ? 'person' : 'person-outline'} 
-            size={22} 
-            color={isProfileActive ? primary : textHint} 
+        {/* More — replaces the old Profile tab. Always pushed, never routed
+            through onNavigate: navigateHomeTab uses router.replace for tab
+            switches, which would destroy the back stack a modal depends on. */}
+        <TouchableOpacity style={s.tabItem} onPress={() => router.push(MORE_ROUTE as any)}>
+          <Ionicons
+            name={isMoreActive ? 'ellipsis-horizontal-circle' : 'ellipsis-horizontal'}
+            size={22}
+            color={isMoreActive ? primary : textHint}
           />
-          <Text style={[s.tabLabel, { color: isProfileActive ? primary : textHint }]}>Profile</Text>
-          {isProfileActive && (
+          <Text style={[s.tabLabel, { color: isMoreActive ? primary : textHint }]}>More</Text>
+          {notificationCounts.friendRequests > 0 && (
+            <View style={s.unreadBadge}>
+              <Text style={s.unreadText}>{notificationCounts.friendRequests > 99 ? '99+' : notificationCounts.friendRequests}</Text>
+            </View>
+          )}
+          {isMoreActive && (
             <View style={[s.tabActiveDot, { backgroundColor: primary }]} />
           )}
         </TouchableOpacity>
@@ -245,3 +273,5 @@ const s = StyleSheet.create({
     borderRadius: 3.5,
   },
 });
+
+export default React.memo(BottomTabBar);

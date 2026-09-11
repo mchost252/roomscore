@@ -3,6 +3,7 @@ const router = express.Router();
 const { prisma } = require('../config/database');
 const { protect } = require('../middleware/auth');
 const logger = require('../utils/logger');
+const NotificationService = require('../services/notificationService');
 
 // @route   GET /api/notifications/unread-count
 // @desc    Get unread notifications count
@@ -13,6 +14,43 @@ router.get('/unread-count', protect, async (req, res, next) => {
       where: { userId: req.user.id, read: false }
     });
     res.json({ success: true, unreadCount });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   GET /api/notifications/unread-summary
+// @desc    Get authoritative counts for navigation and OS badges
+// @access  Private
+router.get('/unread-summary', protect, async (req, res, next) => {
+  try {
+    const counts = await NotificationService.getUnreadSummary(req.user.id);
+    res.json({ success: true, counts });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/preferences', protect, async (req, res, next) => {
+  try {
+    const preferences = await NotificationService.getPreferences(req.user.id);
+    res.json({ success: true, preferences });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put('/preferences', protect, async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const preferences = await NotificationService.updatePreferences(req.user.id, {
+      enabled: body.enabled,
+      categories: body.categories,
+      sound: body.sound,
+      vibration: body.vibration,
+      quietHours: body.quietHours,
+    });
+    res.json({ success: true, preferences });
   } catch (error) {
     next(error);
   }
@@ -88,7 +126,7 @@ router.put('/:id/read', protect, async (req, res, next) => {
 
     const updated = await prisma.notification.update({
       where: { id: req.params.id },
-      data: { read: true }
+      data: { read: true, readAt: new Date() }
     });
 
     // Emit socket events
@@ -98,6 +136,10 @@ router.put('/:id/read', protect, async (req, res, next) => {
     });
     io.to(`user:${req.user.id}`).emit('notification:read', { id: notification.id });
     io.to(`user:${req.user.id}`).emit('notification:unreadCount', { unreadCount });
+    io.to(`user:${req.user.id}`).emit(
+      'notification:counts',
+      await NotificationService.getUnreadSummary(req.user.id),
+    );
 
     res.json({
       success: true,
@@ -116,12 +158,16 @@ router.put('/read-all', protect, async (req, res, next) => {
   try {
     await prisma.notification.updateMany({
       where: { userId: req.user.id, read: false },
-      data: { read: true }
+      data: { read: true, readAt: new Date() }
     });
 
     const io = req.app.get('io');
     io.to(`user:${req.user.id}`).emit('notification:readAll');
     io.to(`user:${req.user.id}`).emit('notification:unreadCount', { unreadCount: 0 });
+    io.to(`user:${req.user.id}`).emit(
+      'notification:counts',
+      await NotificationService.getUnreadSummary(req.user.id),
+    );
 
     res.json({
       success: true,

@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Task } from '../../types/room';
 
 interface TaskOptionsSheetProps {
@@ -55,6 +56,7 @@ const TaskOptionsSheet: React.FC<TaskOptionsSheetProps> = ({
   onJoin,
 }) => {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
 
   if (!task) return null;
 
@@ -118,8 +120,8 @@ const TaskOptionsSheet: React.FC<TaskOptionsSheetProps> = ({
         activeOpacity={1}
         onPress={onClose}
       />
-      <View style={styles.sheetContainer}>
-        <View style={[styles.sheet, { backgroundColor: sheetBg }]}>
+        <View style={styles.sheetContainer}>
+          <View style={[styles.sheet, { backgroundColor: sheetBg, paddingBottom: insets.bottom + 16 }]}>
           {/* Handle bar */}
           <View style={[styles.handleBar, { backgroundColor: handleBarColor }]} />
 
@@ -191,7 +193,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingTop: 12,
-    paddingBottom: 34,
     paddingHorizontal: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },

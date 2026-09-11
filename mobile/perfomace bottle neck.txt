@@ -1,0 +1,170 @@
+Looking at the findings, the ones that directly block or slow the transition animation itself are different from general runtime inefficiency. Let me be precise.
+
+What Actually Kills Transition Speed
+When you navigate to a screen, React Native runs the enter animation (slide) on the JS thread while simultaneously mounting the new screen. Anything that runs synchronously or near-synchronously on mount competes with that animation for JS thread time — causing jank, dropped frames, or a visible stutter before the screen settles.
+
+The fixes that will move the needle on transition feel, ranked:
+
+1. getFriendProfile on Chat mount — defer it (High impact)
+
+Every time you tap a conversation, Chat mounts and immediately fires getFriendProfile — a full API call — during the slide-in animation. The profile is only ever shown if the user taps the header avatar. This should be fetched lazily on first open of the profile sheet, not on mount.
+
+// Before — fires during slide-in animation
+const profile = await messageService.getFriendProfile(friendId);
+
+// After — fetch only when profile sheet opens
+const handleProfileOpen = useCallback(async () => {
+  setProfileOpen(true);
+  if (!friendProfile) {
+    const profile = await messageService.getFriendProfile(friendId);
+    if (profile) setFriendProfile(profile);
+  }
+}, [friendProfile, friendId]);
+2. scheduleSmartNotifications on every task mutation — move to InteractionManager (High impact)
+
+This runs on the JS thread every time tasks changes — including right after navigating to Home. It should run once after interactions settle, not inline with state updates.
+
+// Before
+useEffect(() => {
+  const initNotifications = async () => {
+    await notificationService.initialize();
+    if (tasks.length > 0) {
+      await notificationService.scheduleSmartNotifications(tasks);
+    }
+  };
+  initNotifications();
+}, [tasks]); // fires on every task mutation
+
+// After — run once on mount, deferred past the animation
+useEffect(() => {
+  const handle = InteractionManager.runAfterInteractions(async () => {
+    await notificationService.initialize();
+    if (tasks.length > 0) {
+      await notificationService.scheduleSmartNotifications(tasks);
+    }
+  });
+  return () => handle.cancel();
+}, []); // empty deps — only on mount
+3. aiBehaviorEngine.load() + getProfileSummary() on Home mount — defer it (High impact)
+
+This runs during the Home slide-in animation. It's an async disk/network call with no result caching. Wrap it in InteractionManager and add a simple in-memory cache so repeat mounts don't re-run it.
+
+// Add above the component
+let aiToastShown = false; // module-level flag — survives tab switches
+
+// Before
+useEffect(() => {
+  let mounted = true;
+  const scheduleAiToast = async () => {
+    await aiBehaviorEngine.load();
+    const summary = await aiBehaviorEngine.getProfileSummary();
+    // ...
+  };
+  scheduleAiToast();
+}, [user?.id, showAiToastFn]);
+
+// After
+useEffect(() => {
+  if (aiToastShown || !user?.id) return;
+  const handle = InteractionManager.runAfterInteractions(async () => {
+    try {
+      await aiBehaviorEngine.load();
+      const summary = await aiBehaviorEngine.getProfileSummary();
+      // ... same logic
+      aiToastShown = true; // don't show again this session
+    } catch {}
+  });
+  return () => handle.cancel();
+}, [user?.id]); // remove showAiToastFn dep — it's stable
+4. Memoize the 8 inline tasks.filter() calls on Home — reduce render cost (Medium impact)
+
+Every re-render of Home (triggered by toast, calendar tap, focus timer tick, etc.) re-runs all 8 filter operations. During a transition, the first few renders of Home are the most expensive.
+
+// Before — 8 separate inline filters, recomputed on every render
+const pendingCount = tasks.filter(t => !t.isCompleted).length;
+const ongoingCount = tasks.filter(t => !t.isCompleted && getTaskStatus(...) === 'ongoing').length;
+// ... etc
+
+// After — one useMemo, one pass
+const taskStats = useMemo(() => {
+  let pending = 0, ongoing = 0, upcoming = 0, due = 0;
+  const done: PersonalTask[] = [];
+  for (const t of tasks) {
+    if (t.isCompleted) { done.push(t); continue; }
+    pending++;
+    const status = getTaskStatus(t.dueDate ? new Date(t.dueDate) : null);
+    if (status === 'ongoing') ongoing++;
+    else if (status === 'upcoming') upcoming++;
+    else if (status === 'due') due++;
+  }
+  return { pendingCount: pending, ongoingCount: ongoing, upcomingCount: upcoming, dueCount: due, done };
+}, [tasks]);
+
+const tasksForDate = useMemo(() => {
+  if (searchQuery.trim())
+    return tasks.filter(t => t.title.toLowerCase().includes(searchQuery.toLowerCase().trim()));
+  if (statusFilter)
+    return tasks.filter(t => !t.isCompleted && getTaskStatus(t.dueDate ? new Date(t.dueDate) : null) === statusFilter);
+  return tasks.filter(t => {
+    if (!t.dueDate) return isSameDay(new Date(t.createdAt), selectedDate);
+    return isSameDay(new Date(t.dueDate), selectedDate);
+  });
+}, [tasks, searchQuery, statusFilter, selectedDate]);
+5. loadData fires twice per incoming message on Messages — deduplicate (Medium impact)
+
+When a message arrives, conversation:list and message:new both fire, both calling loadData(true). The second call starts before the first finishes, causing two SQLite reads and two setConversations calls back-to-back. This makes the Messages screen feel sluggish when active.
+
+// Add a debounce ref
+const loadDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+const debouncedLoad = useCallback(() => {
+  if (loadDebounceRef.current) clearTimeout(loadDebounceRef.current);
+  loadDebounceRef.current = setTimeout(() => loadData(true), 80);
+}, [loadData]);
+
+// Then use debouncedLoad for both event subscriptions
+unsubs.push(messageService.on('conversation:list', debouncedLoad));
+unsubs.push(messageService.on('message:new', debouncedLoad));
+6. Replace setInterval AsyncStorage polling with MMKV event in _layout.tsx — eliminates constant background work (Medium impact)
+
+The 5-second polling loop runs forever in the background. Since MMKV is already in the project, nav style changes should write to MMKV and the layout should read from it synchronously — no async, no polling, no lag.
+
+// In Settings — write to MMKV instead of AsyncStorage
+import { storage } from '../../services/storage';
+storage.set('krios_nav_style', newStyle); // synchronous
+
+// In _layout.tsx — read once synchronously, no interval needed
+const [navStyle, setNavStyle] = useState<'bottom' | 'sidebar'>(() => {
+  const stored = storage.getString('krios_nav_style');
+  return (stored === 'sidebar' ? 'sidebar' : 'bottom');
+});
+// Remove the setInterval entirely
+7. checkFriendship(forceRefresh=true) on every Chat mount — use cache first (Medium impact)
+
+forceRefresh=true bypasses the in-memory cache and hits the server on every chat open. The cache is there for exactly this reason. Only force-refresh if the cached status is stale or ambiguous.
+
+// Before
+messageService.checkFriendship(friendId, true) // always hits server
+
+// After — use cache, only force-refresh if status is unknown
+const cachedStatus = requestStatusRef.current;
+const needsRefresh = !cachedStatus || cachedStatus === 'none';
+messageService.checkFriendship(friendId, needsRefresh)
+8. getConversations().find() in Chat init — use getConversationByFriendId (Low-Medium impact)
+
+Already fixed in messageService but the Chat screen still does the full fetch directly.
+
+// Before
+const convs = await messageService.getConversations();
+const conv = convs.find(c => c.friend_id === friendId);
+
+// After — O(1) primary key lookup
+const conv = await sqliteService.getConversationByFriendId(friendId);
+Which 3 to do first for maximum transition feel improvement
+Fix #1 (defer getFriendProfile) — Chat slide-in goes from competing with an API call to being clean.
+
+Fix #2 (defer scheduleSmartNotifications with InteractionManager) — Home slide-in stops competing with OS notification scheduling.
+
+Fix #6 (replace setInterval with MMKV) — eliminates constant background noise that competes with JS thread during every transition.
+
+Want me to apply these?

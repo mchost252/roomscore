@@ -56,15 +56,15 @@ function TypingIndicator({ isDark, visible, username }: TypingIndicatorProps) {
     transform: [{ scale: containerOpacity.value }],
   }));
 
-  const makeDotStyle = (sv: SharedValue<number>) =>
+  const useDotStyle = (sv: SharedValue<number>) =>
     useAnimatedStyle(() => ({
       opacity: 0.4 + sv.value * 0.6,
       transform: [{ translateY: -sv.value * 3 }, { scale: 1 + sv.value * 0.15 }],
     }));
 
-  const d1Style = makeDotStyle(dot1);
-  const d2Style = makeDotStyle(dot2);
-  const d3Style = makeDotStyle(dot3);
+  const d1Style = useDotStyle(dot1);
+  const d2Style = useDotStyle(dot2);
+  const d3Style = useDotStyle(dot3);
 
   if (!shouldRender) return null;
 

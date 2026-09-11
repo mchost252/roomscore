@@ -1,10 +1,11 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import Animated, { 
-  useSharedValue, 
-  useAnimatedStyle, 
-  withTiming, 
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
   withSpring,
+  runOnJS,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -27,7 +28,8 @@ export default function AIBlobToast({
   onClose 
 }: AIBlobToastProps) {
   const { colors, isDark } = useTheme();
-  const Surface: any = Platform.OS === 'android' ? View : BlurView;
+  const Surface: any = Platform.OS === 'android' ? View : BlurView
+  const [shouldRender, setShouldRender] = useState(visible)
   
   const opacity = useSharedValue(0);
   const translateY = useSharedValue(18);
@@ -35,11 +37,14 @@ export default function AIBlobToast({
 
   useEffect(() => {
     if (visible) {
+      setShouldRender(true);
       opacity.value = withTiming(1, { duration: 220 });
       translateY.value = withSpring(0, { damping: 18, stiffness: 220 });
       scale.value = withSpring(1, { damping: 18, stiffness: 240 });
     } else {
-      opacity.value = withTiming(0, { duration: 180 });
+      opacity.value = withTiming(0, { duration: 180 }, (finished) => {
+        if (finished) runOnJS(setShouldRender)(false);
+      });
       translateY.value = withTiming(18, { duration: 180 });
       scale.value = withTiming(0.96, { duration: 180 });
     }
@@ -55,7 +60,7 @@ export default function AIBlobToast({
     };
   });
 
-  if (!visible && opacity.value === 0) return null;
+  if (!shouldRender) return null;
 
   return (
     <Animated.View style={[styles.container, animatedStyle]}>
@@ -122,29 +127,29 @@ export default function AIBlobToast({
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: 113,
-    left: 18,
-    right: 18,
+    bottom: 100,
+    left: 16,
+    right: 16,
     zIndex: 1000,
     alignItems: 'center',
   },
   blur: {
     width: '100%',
-    maxWidth: 420,
-    borderRadius: 18,
+    maxWidth: 380,
+    borderRadius: 16,
     borderWidth: 1,
     overflow: 'hidden',
     shadowColor: '#6366f1',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.20,
-    shadowRadius: 18,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 8,
   },
   edgeGlow: {
     position: 'absolute',
     left: 0,
-    top: 12,
-    bottom: 12,
+    top: 10,
+    bottom: 10,
     width: 3,
     borderTopRightRadius: 3,
     borderBottomRightRadius: 3,
@@ -153,23 +158,23 @@ const styles = StyleSheet.create({
   content: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 64,
-    paddingLeft: 12,
+    minHeight: 52,
+    paddingLeft: 10,
     paddingRight: 8,
-    paddingVertical: 10,
+    paddingVertical: 8,
   },
   mark: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
+    marginRight: 8,
   },
   markGradient: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -181,43 +186,47 @@ const styles = StyleSheet.create({
   eyebrowRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 2,
+    gap: 5,
+    marginBottom: 1,
   },
   eyebrow: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '800',
-    letterSpacing: 0.8,
+    letterSpacing: 0.7,
     textTransform: 'uppercase',
   },
   liveDot: {
-    width: 4,
-    height: 4,
+    width: 3,
+    height: 3,
     borderRadius: 2,
   },
   message: {
-    fontSize: 12.5,
+    fontSize: 11.5,
     fontWeight: '600',
-    lineHeight: 17,
+    lineHeight: 15,
   },
   actionBtn: {
-    maxWidth: 104,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    maxWidth: 88,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
-    marginLeft: 10,
+    marginLeft: 8,
   },
   actionText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
   },
   closeBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 4,
+    marginLeft: 3,
   },
 });
+
+
+
+

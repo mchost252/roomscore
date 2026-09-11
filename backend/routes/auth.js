@@ -7,6 +7,7 @@ const { protect } = require('../middleware/auth');
 const { validate, registerSchema, loginSchema, updateProfileSchema } = require('../middleware/validation');
 const { sendTokenResponse, verifyRefreshToken, generateToken } = require('../utils/jwt');
 const logger = require('../utils/logger');
+const cloudinaryService = require('../services/cloudinaryService');
 
 // Helper to convert user to public profile
 const toPublicProfile = (user) => ({
@@ -14,6 +15,7 @@ const toPublicProfile = (user) => ({
   email: user.email,
   username: user.username,
   avatar: user.avatar,
+  coverImage: user.coverImage || null,
   bio: user.bio,
   timezone: user.timezone,
   onboardingCompleted: user.onboardingCompleted,
@@ -200,24 +202,42 @@ router.get('/profile', protect, async (req, res, next) => {
 // @access  Private
 router.put('/profile', protect, validate(updateProfileSchema), async (req, res, next) => {
   try {
-    const { username, avatar, bio, timezone, onboardingCompleted } = req.body;
+    const { username, avatar, bio, timezone, onboardingCompleted, coverImage } = req.body;
 
     const updateData = {};
     if (username) updateData.username = username;
-    if (avatar !== undefined) updateData.avatar = avatar;
     if (bio !== undefined) updateData.bio = bio;
     if (timezone !== undefined) updateData.timezone = timezone;
     if (onboardingCompleted !== undefined) updateData.onboardingCompleted = onboardingCompleted;
+    if (coverImage !== undefined) updateData.coverImage = coverImage;
 
-    const user = await prisma.user.update({
+    if (avatar !== undefined && avatar !== null) {
+      const existingUser = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { avatar: true },
+      });
+
+      if (existingUser?.avatar && existingUser.avatar.startsWith('https://res.cloudinary.com')) {
+        const publicId = cloudinaryService.extractPublicId(existingUser.avatar);
+        if (publicId) {
+          cloudinaryService.deleteImage(publicId).catch((err) =>
+            logger.warn(`Failed to delete old avatar from Cloudinary: ${err.message}`)
+          );
+        }
+      }
+
+      updateData.avatar = avatar;
+    }
+
+    const updatedUser = await prisma.user.update({
       where: { id: req.user.id },
-      data: updateData
+      data: updateData,
     });
 
-    logger.info(`User profile updated: ${user.email}`);
+    logger.info(`User profile updated: ${updatedUser.email}`);
     res.json({
       success: true,
-      user: toPublicProfile(user)
+      user: toPublicProfile(updatedUser),
     });
   } catch (error) {
     next(error);

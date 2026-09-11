@@ -53,7 +53,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
     });
     opacity.value = withTiming(0, { duration: 300 });
-  }, [translateY, opacity]);
+  }, [translateY, opacity, setActiveNotif]);
 
   const showNotification = useCallback((config: Omit<NotificationConfig, 'id'>) => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);

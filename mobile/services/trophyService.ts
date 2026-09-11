@@ -62,7 +62,7 @@ export interface CategoryMeta {
   parentIcon: string;
 }
 
-interface TrophyResponse {
+export interface TrophyResponse {
   categories: Record<TrophyCategory, CategoryMeta>;
   rarity: Record<TrophyRarity, RarityMeta>;
   grouped: Array<CategoryMeta & { trophies: Trophy[] }>;

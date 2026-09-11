@@ -40,13 +40,7 @@ const ICON_FOR_CATEGORY: Record<string, string> = {
 const ICON_FOR_TROPHY: Record<string, string> = {
   'first-step': 'footsteps-outline',
   'first-win': 'star-outline',
-  'first-session': 'timer-outline',
   'first-rhythm': 'musical-notes-outline',
-  'getting-started': 'play-outline',
-  'finding-your-way': 'compass-outline',
-  'on-your-way': 'walk-outline',
-  'krios-initiate': 'sparkles-outline',
-  'showing-up': 'sunny-outline',
   steady: 'sunny-outline',
   'in-rhythm': 'musical-notes-outline',
   consistent: 'infinite-outline',
@@ -60,7 +54,6 @@ const ICON_FOR_TROPHY: Record<string, string> = {
   'unstoppable-streak': 'flame',
   'iron-rhythm': 'shield',
   'legendary-streak': 'bonfire-outline',
-  'task-starter': 'checkmark-outline',
   'task-runner': 'checkmark-outline',
   'task-handler': 'checkmark-done-outline',
   'task-master': 'checkmark-done-circle',
@@ -82,19 +75,13 @@ const ICON_FOR_TROPHY: Record<string, string> = {
   'first-connection': 'paper-plane-outline',
   'open-channel': 'chatbox-outline',
   'good-communicator': 'chatbubbles',
-  'in-sync': 'sync-outline',
   'clear-signal': 'radio-outline',
   'always-in-sync': 'sync',
   connected: 'git-network-outline',
   'krios-connector': 'git-merge-outline',
   'rising-star': 'star',
   'multi-talented': 'star',
-  'krios-elite': 'star',
-  'krios-master': 'star',
   'complete-journey': 'flag-outline',
-  'peak-performance': 'speedometer-outline',
-  'unstoppable-legend': 'flame',
-  'krios-legend': 'trophy',
 };
 
 const RARITY_FALLBACK: RarityMeta = {
@@ -179,6 +166,7 @@ export default function TrophiesScreen() {
   // Only the first category is expanded by default. Seed once when the
   // grouped data first arrives; never re-seed (which would re-open the
   // first category the moment the user collapses it).
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const seededRef = useRef(false);
   useEffect(() => {
     if (!seededRef.current && grouped.length > 0) {

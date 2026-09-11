@@ -130,7 +130,7 @@ router.post('/:roomId', protect, isRoomMember, async (req, res) => {
     try {
       await NotificationService.createNotification({
         recipientId: toUserId,
-        type: 'appreciation',
+        type: 'appreciation_received',
         title: '✨ New appreciation',
         message: `${req.user.username} sent you ${type === 'star' ? 'a ⭐ star' : type === 'fire' ? 'a 🔥 fire' : 'a 🛡️ shield'} in the room.`,
         roomId,

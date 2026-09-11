@@ -9,6 +9,17 @@ const { validate, createRoomSchema, updateRoomSchema, updateRoomDpSchema, update
 const logger = require('../utils/logger');
 const { evaluateAndUnlock } = require('../services/trophyService');
 
+function parseReactions(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function fireTrophyCheck(userId) {
   if (!userId) return;
   evaluateAndUnlock(userId).catch((err) =>
@@ -37,6 +48,18 @@ const activeRoomWhere = () => ({
     { endDate: { gt: new Date() } }
   ]
 });
+const normalizeRoomTaskType = (type) => type === 'weekly' ? 'daily' : (type || 'daily');
+const roomTaskAppearsToday = (task) => {
+  const today = new Date();
+  const dateStr = today.toISOString().split('T')[0];
+  if (normalizeRoomTaskType(task.taskType) === 'one-time') {
+    return !!task.dueDate && new Date(task.dueDate).toISOString().split('T')[0] === dateStr;
+  }
+  if (normalizeRoomTaskType(task.taskType) === 'custom') {
+    return (task.daysOfWeek || '').split(',').map(Number).includes(today.getDay());
+  }
+  return true;
+};
 
 // Helper to format room response
 const formatRoomResponse = (room) => ({
@@ -55,7 +78,7 @@ const formatRoomResponse = (room) => ({
     _id: m.id,
     userId: m.user ? { ...m.user, _id: m.user.id } : { _id: m.userId }
   })) || [],
-  tasks: room.tasks?.map(t => ({ ...t, _id: t.id })) || []
+  tasks: room.tasks?.filter(roomTaskAppearsToday).map(t => ({ ...t, taskType: normalizeRoomTaskType(t.taskType), _id: t.id })) || []
 });
 
 // @route   GET /api/rooms
@@ -192,6 +215,7 @@ router.get('/', protect, async (req, res, next) => {
             description: true,
             taskType: true,
             daysOfWeek: true,
+            dueDate: true,
             points: true,
             isActive: true,
             createdAt: true
@@ -279,7 +303,10 @@ router.post('/', protect, validate(createRoomSchema), async (req, res, next) => 
         },
         tasks: tasks && tasks.length > 0 ? {
           create: tasks.map(task => {
-            const taskType = task.taskType || task.frequency || 'daily';
+            const taskType = normalizeRoomTaskType(task.taskType || task.frequency);
+            if (taskType === 'one-time' && !task.dueDate) {
+              throw new Error('One-time tasks require a date');
+            }
             let daysOfWeek = '';
             if (taskType === 'custom' && Array.isArray(task.daysOfWeek)) {
               const validDays = task.daysOfWeek.filter(d => d >= 0 && d <= 6);
@@ -288,8 +315,9 @@ router.post('/', protect, validate(createRoomSchema), async (req, res, next) => 
             return {
               title: task.title,
               description: task.description || null,
-              taskType: taskType,
+              taskType: normalizeRoomTaskType(taskType),
               daysOfWeek: daysOfWeek || null,
+               dueDate: normalizeRoomTaskType(taskType) === 'one-time' && task.dueDate ? new Date(task.dueDate) : null,
               points: Math.min(10, Math.max(1, task.points || 5)), // Clamp points to 1-10
               hasThread: task.hasThread === true
             };
@@ -346,8 +374,8 @@ router.get('/:id', protect, isRoomMember, async (req, res, next) => {
 
 // @route   PUT /api/rooms/:id
 // @desc    Update room
-// @access  Private (owner only)
-router.put('/:id', protect, isRoomOwner, validate(updateRoomSchema), async (req, res, next) => {
+// @access  Private (owner or room admin)
+router.put('/:id', protect, isRoomAdmin, validate(updateRoomSchema), async (req, res, next) => {
   try {
     const { name, description, isPublic, maxMembers, coverImage, roomDp } = req.body;
 
@@ -375,7 +403,8 @@ router.put('/:id', protect, isRoomOwner, validate(updateRoomSchema), async (req,
 
     // Emit socket event
     const io = req.app.get('io');
-    io.to(room.id).emit('room:updated', { room: formatRoomResponse(room) });
+    const roomEvent = { roomId: room.id, room: formatRoomResponse(room) };
+    io.to(room.id).emit('room:updated', roomEvent);
 
     logger.info(`Room updated: ${room.name}`);
     res.json({
@@ -387,7 +416,7 @@ router.put('/:id', protect, isRoomOwner, validate(updateRoomSchema), async (req,
   }
 });
 
-router.put('/:id/dp', protect, isRoomOwner, validate(updateRoomDpSchema), async (req, res, next) => {
+router.put('/:id/dp', protect, isRoomAdmin, validate(updateRoomDpSchema), async (req, res, next) => {
   try {
     const { roomDp } = req.body;
 
@@ -406,7 +435,8 @@ router.put('/:id/dp', protect, isRoomOwner, validate(updateRoomDpSchema), async 
     });
 
     const io = req.app.get('io');
-    io.to(room.id).emit('room:updated', { room: formatRoomResponse(room) });
+    const roomEvent = { roomId: room.id, room: formatRoomResponse(room) };
+    io.to(room.id).emit('room:updated', roomEvent);
 
     res.json({ success: true, room: formatRoomResponse(room) });
   } catch (error) {
@@ -530,7 +560,7 @@ router.post('/join', protect, validate(joinRoomSchema), async (req, res, next) =
       // Notify room owner
       await NotificationService.createNotification({
         recipientId: room.ownerId,
-        type: 'join_request',
+        type: 'room_invite',
         title: `Join Request for ${room.name}`,
         message: `${req.user.username} wants to join your room`,
         roomId: room.id,
@@ -582,7 +612,7 @@ router.post('/join', protect, validate(joinRoomSchema), async (req, res, next) =
       try {
         await NotificationService.createNotification({
           recipientId: memberId,
-          type: 'member_joined',
+          type: 'room_joined',
           title: `New Member in ${room.name}`,
           message: `${req.user.username} joined the room`,
           roomId: room.id
@@ -676,7 +706,7 @@ router.delete('/:id/leave', protect, isRoomMember, async (req, res, next) => {
       try {
         await NotificationService.createNotification({
           recipientId: memberId,
-          type: 'member_left',
+          type: 'room_left',
           title: `Member Left ${req.room.name}`,
           message: `${req.user.username} left the room`,
           roomId: req.room.id
@@ -701,6 +731,7 @@ router.delete('/:id/leave', protect, isRoomMember, async (req, res, next) => {
       // IMPORTANT: Also emit to the user's personal channel
       // because they've already left the room channel
       io.to(`user:${req.user.id}`).emit('member:left', eventData);
+      io.to(req.room.id).emit('room:membersUpdated', { roomId: req.room.id });
     }
 
     logger.info(`User ${req.user.email} left room: ${req.room.name}`);
@@ -793,6 +824,13 @@ router.delete('/:id/members/:userId', protect, isRoomAdmin, async (req, res, nex
       oderId: userId, // legacy key — older clients still read this
       username: removedUser?.username || 'User'
     });
+    io.to(req.room.id).emit('room:membersUpdated', { roomId: req.room.id });
+    // The removed user is no longer in the room socket channel.
+    io.to(`user:${userId}`).emit('member:kicked', {
+      roomId: req.room.id,
+      userId,
+      username: removedUser?.username || 'User'
+    });
 
     logger.info(`User ${userId} removed from room: ${req.room.name}`);
     res.json({
@@ -806,7 +844,7 @@ router.delete('/:id/members/:userId', protect, isRoomAdmin, async (req, res, nex
 
 // @route   PUT /api/rooms/:id/members/:userId/role
 // @desc    Promote a member to admin, or demote an admin back to member
-// @access  Private (owner only)
+// @access  Private (owner only; admins cannot override member roles)
 router.put('/:id/members/:userId/role', protect, isRoomOwner, validate(updateMemberRoleSchema), async (req, res, next) => {
   try {
     const { userId } = req.params;
@@ -890,6 +928,7 @@ router.put('/:id/members/:userId/role', protect, isRoomOwner, validate(updateMem
       roomName: req.room.name,
       role
     });
+    io.to(req.room.id).emit('room:membersUpdated', { roomId: req.room.id });
 
     logger.info(`User ${userId} role set to ${role} in room: ${req.room.name}`);
     res.json({
@@ -1002,7 +1041,7 @@ router.post('/:id/chat', protect, isRoomMember, validate(sendMessageSchema), asy
       roomMembers.map(memberId =>
         NotificationService.createNotification({
           recipientId: memberId,
-          type: 'new_chat',
+          type: 'room_updated',
           title: `${req.user.username} in ${req.room.name}`,
           message: messagePreview,
           roomId: req.params.id
@@ -1077,7 +1116,8 @@ router.get('/:id/chat', protect, isRoomMember, async (req, res, next) => {
       messageType: m.type,
       status: m.status || 'sent', // sent, delivered, read
       userId: m.user ? { ...m.user, _id: m.user.id } : null,
-      replyTo: m.replyToText ? { _id: m.replyToId, message: m.replyToText } : null
+      replyTo: m.replyToText ? { _id: m.replyToId, message: m.replyToText } : null,
+      reactions: parseReactions(m.reactions)
     }));
 
     res.json({
@@ -1095,8 +1135,8 @@ router.get('/:id/chat', protect, isRoomMember, async (req, res, next) => {
 
 // @route   PUT /api/rooms/:id/members/:userId/approve
 // @desc    Approve a pending member
-// @access  Private (owner only)
-router.put('/:id/members/:userId/approve', protect, isRoomOwner, async (req, res, next) => {
+// @access  Private (owner or room admin)
+router.put('/:id/members/:userId/approve', protect, isRoomAdmin, async (req, res, next) => {
   try {
     const { userId } = req.params;
     
@@ -1140,7 +1180,7 @@ router.put('/:id/members/:userId/approve', protect, isRoomOwner, async (req, res
     // Notify the approved user
     await NotificationService.createNotification({
       recipientId: userId,
-      type: 'join_approved',
+      type: 'room_joined',
       title: `Welcome to ${req.room.name}!`,
       message: 'Your join request has been approved',
       roomId: req.room.id
@@ -1156,6 +1196,7 @@ router.put('/:id/members/:userId/approve', protect, isRoomOwner, async (req, res
       roomId: req.room.id,
       user: { id: userId, _id: userId, username: approvedUser?.username, avatar: approvedUser?.avatar }
     });
+    io.to(req.room.id).emit('room:membersUpdated', { roomId: req.room.id });
 
     logger.info(`User ${userId} approved to join room: ${req.room.name}`);
     res.json({
@@ -1169,8 +1210,8 @@ router.put('/:id/members/:userId/approve', protect, isRoomOwner, async (req, res
 
 // @route   DELETE /api/rooms/:id/members/:userId/reject
 // @desc    Reject a pending member
-// @access  Private (owner only)
-router.delete('/:id/members/:userId/reject', protect, isRoomOwner, async (req, res, next) => {
+// @access  Private (owner or room admin)
+router.delete('/:id/members/:userId/reject', protect, isRoomAdmin, async (req, res, next) => {
   try {
     const { userId } = req.params;
     
@@ -1209,6 +1250,7 @@ router.delete('/:id/members/:userId/reject', protect, isRoomOwner, async (req, r
       roomId: req.room.id,
       roomName: req.room.name
     });
+    io.to(req.room.id).emit('room:membersUpdated', { roomId: req.room.id });
 
     logger.info(`User ${userId} rejected from room: ${req.room.name}`);
     res.json({
@@ -1222,8 +1264,8 @@ router.delete('/:id/members/:userId/reject', protect, isRoomOwner, async (req, r
 
 // @route   GET /api/rooms/:id/pending
 // @desc    Get pending member requests
-// @access  Private (owner only)
-router.get('/:id/pending', protect, isRoomOwner, async (req, res, next) => {
+// @access  Private (owner or room admin)
+router.get('/:id/pending', protect, isRoomAdmin, async (req, res, next) => {
   try {
     const pendingMembers = await prisma.roomMember.findMany({
       where: {
@@ -1342,8 +1384,8 @@ router.put('/:id/premium', protect, isRoomOwner, async (req, res, next) => {
 
 // @route   PUT /api/rooms/:id/settings
 // @desc    Update room settings
-// @access  Private (owner only)
-router.put('/:id/settings', protect, isRoomOwner, async (req, res, next) => {
+// @access  Private (owner or room admin)
+router.put('/:id/settings', protect, isRoomAdmin, async (req, res, next) => {
   try {
     const { isPublic, chatRetentionDays, requireApproval, showJoinCode } = req.body;
 
@@ -1385,7 +1427,9 @@ router.put('/:id/settings', protect, isRoomOwner, async (req, res, next) => {
 
     // Emit socket event
     const io = req.app.get('io');
-    io.to(room.id).emit('room:updated', { room: formatRoomResponse(room) });
+    const roomEvent = { roomId: room.id, room: formatRoomResponse(room) };
+    io.to(room.id).emit('room:updated', roomEvent);
+    io.to(room.id).emit('room:settingsUpdated', roomEvent);
 
     logger.info(`Room settings updated: ${room.name}`);
     res.json({

@@ -15,7 +15,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.krios.app"
+      "bundleIdentifier": "com.krios.app",
+      "infoPlist": {
+        "UIBackgroundModes": ["audio"]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -42,7 +45,8 @@
           "icon": "./assets/icon.png",
           "color": "#6366f1"
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "extra": {
       "router": {},

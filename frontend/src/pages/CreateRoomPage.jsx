@@ -61,7 +61,8 @@ const CreateRoomPage = () => {
     description: '',
     points: 5, // Default 5 points
     frequency: 'daily',
-    daysOfWeek: [] // For custom frequency: 0=Sun, 1=Mon, ..., 6=Sat
+    daysOfWeek: [],
+    dueDate: ''
   });
 
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -89,6 +90,10 @@ const CreateRoomPage = () => {
       setError({ isTimeout: false, text: '📅 Please select at least one day for custom frequency' });
       return;
     }
+    if (newTask.frequency === 'one-time' && !newTask.dueDate) {
+      setError({ isTimeout: false, text: '📅 Please select a date for this one-time task' });
+      return;
+    }
 
     setTasks(prev => [...prev, { ...newTask, id: Date.now() }]);
     setNewTask({
@@ -96,7 +101,8 @@ const CreateRoomPage = () => {
       description: '',
       points: 5,
       frequency: 'daily',
-      daysOfWeek: []
+      daysOfWeek: [],
+      dueDate: ''
     });
     setError(null);
   };
@@ -166,7 +172,10 @@ const CreateRoomPage = () => {
             description: task.description || '',
             points: task.points,
             frequency: task.frequency,
+            taskType: task.frequency,
             category: 'other'
+            ,daysOfWeek: task.daysOfWeek,
+            dueDate: task.dueDate || undefined
           };
           
           try {
@@ -423,6 +432,7 @@ const CreateRoomPage = () => {
                 >
                 <option value="daily">Daily</option>
                 <option value="custom">Custom Days</option>
+                <option value="one-time">One-time</option>
                 </TextField>
               </Box>
 
@@ -461,6 +471,11 @@ const CreateRoomPage = () => {
                     <Typography variant="caption" color="primary" sx={{ mt: 1, display: 'block' }}>
                       Selected: {newTask.daysOfWeek.sort((a,b) => a-b).map(d => dayNames[d]).join(', ')}
                     </Typography>
+                  )}
+                  {newTask.frequency === 'one-time' && (
+                    <TextField type="date" label="Date" value={newTask.dueDate}
+                      onChange={(e) => setNewTask(prev => ({ ...prev, dueDate: e.target.value }))}
+                      InputLabelProps={{ shrink: true }} fullWidth sx={{ mb: 2 }} />
                   )}
                 </Box>
               )}

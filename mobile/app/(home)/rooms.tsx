@@ -2,8 +2,9 @@ import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, Image, ScrollView,
   StyleSheet, RefreshControl, Dimensions, Platform, StatusBar,
-  Animated as RNAnimated, Modal
+  Animated as RNAnimated, Modal, InteractionManager
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import Animated, {
   useSharedValue, useAnimatedStyle, useAnimatedScrollHandler,
   interpolate, Extrapolation, FadeInDown
@@ -37,6 +38,8 @@ const TAB_CONFIG: { key: TabType; label: string; icon: keyof typeof Ionicons.gly
 ];
 
 type FilterKey = 'all' | 'active' | 'public' | 'friends' | 'full';
+
+const AnimatedFlashList = Animated.createAnimatedComponent(FlashList) as any;
 
 export default function RoomsScreen() {
   const { isDark } = useTheme();
@@ -78,8 +81,11 @@ export default function RoomsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      setOpenAIChat(() => router.push('/(home)/ai-chat'));
-      setOpenAddTask(() => toggleQuickMenu());
+      const handle = InteractionManager.runAfterInteractions(() => {
+        setOpenAIChat(() => router.push('/(home)/ai-chat'));
+        setOpenAddTask(() => toggleQuickMenu());
+      });
+      return () => handle.cancel();
     }, [router, setOpenAIChat, setOpenAddTask, toggleQuickMenu])
   );
 
@@ -226,7 +232,7 @@ export default function RoomsScreen() {
           </View>
           <Text style={[s.emptyTitle, { color: text }]}>{type === 'my' ? "No rooms yet" : "No public rooms"}</Text>
           <Text style={[s.emptySubtitle, { color: textSub }]}>
-            {type === 'my' ? "Deploy your first mission to begin." : "Be the first to create a public room."}
+            {type === 'my' ? "Add your first task to begin." : "Be the first to create a public room."}
           </Text>
           {type === 'my' && (
             <TouchableOpacity onPress={openCreateRoom} style={s.emptyButton}>
@@ -303,10 +309,10 @@ export default function RoomsScreen() {
            style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 350 }} 
            resizeMode="cover"
          />
-         <LinearGradient 
-           colors={isDark ? ['rgba(8,8,16,0.1)', 'rgba(8,8,16,0.7)'] : ['rgba(248,249,255,0.1)', 'rgba(248,249,255,0.6)']} 
-           style={StyleSheet.absoluteFillObject} 
-         />
+          <LinearGradient 
+            colors={['rgba(8,8,16,0.1)', 'rgba(8,8,16,0.7)']} 
+            style={StyleSheet.absoluteFillObject} 
+          />
 
          {/* Content inside Header */}
          <View style={[s.headerContent, { paddingTop: insets.top }]}>
@@ -337,26 +343,61 @@ export default function RoomsScreen() {
       </Animated.View>
 
       {/* ── 2. The Main Scrollable Content ── */}
-      <Animated.ScrollView
+      <AnimatedFlashList
+        data={manager.activeTab === 'join-code' ? [] : filteredData}
+        estimatedItemSize={120}
         onScroll={onScroll}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
-          // Start padding exactly below the sticky section
-          paddingTop: MAX_HEADER_HEIGHT + STICKY_SECTION_HEIGHT,
+          paddingTop: MAX_HEADER_HEIGHT + STICKY_SECTION_HEIGHT + 10,
           paddingBottom: insets.bottom + 120,
           minHeight: H + 200,
         }}
         refreshControl={<RefreshControl refreshing={manager.refreshing} onRefresh={manager.refresh} tintColor={primary} />}
-      >
-        <View style={s.contentArea}>
-          {manager.activeTab === 'my-rooms' && renderRoomList(filteredData, 'my')}
-          {manager.activeTab === 'discover' && renderRoomList(filteredData, 'public')}
-          {manager.activeTab === 'join-code' && renderJoinCode()}
-        </View>
-      </Animated.ScrollView>
+        renderItem={({ item, index }: { item: any, index: number }) => (
+          <RoomCard
+            room={item} isDark={isDark} user={user} 
+            isMember={manager.activeTab === 'my-rooms'}
+            index={index} 
+            onPress={(room) => handleRoomPress(room, manager.activeTab === 'my-rooms' ? 'my' : 'public')} 
+            onLongPress={handleRoomLongPress} 
+            onJoin={manager.handleJoinPublicRoom}
+          />
+        )}
+        ListEmptyComponent={
+          <View style={s.contentArea}>
+            {manager.activeTab === 'join-code' && renderJoinCode()}
+            {manager.activeTab !== 'join-code' && (
+              manager.loading && filteredData.length === 0 ? (
+                <View style={s.loadingContainer}>
+                  <RefreshControl refreshing={true} tintColor={primary} />
+                </View>
+              ) : (
+                <View style={s.emptyContainer}>
+                  <View style={[s.emptyIconCircle, { backgroundColor: isDark ? 'rgba(99,102,241,0.1)' : 'rgba(99,102,241,0.06)' }]}>
+                    <Ionicons name={manager.activeTab === 'my-rooms' ? "planet-outline" : "globe-outline"} size={40} color={primary} />
+                  </View>
+                  <Text style={[s.emptyTitle, { color: text }]}>{manager.activeTab === 'my-rooms' ? "No rooms yet" : "No public rooms"}</Text>
+                  <Text style={[s.emptySubtitle, { color: textSub }]}>
+                    {manager.activeTab === 'my-rooms' ? "Add your first task to begin." : "Be the first to create a public room."}
+                  </Text>
+                  {manager.activeTab === 'my-rooms' && (
+                    <TouchableOpacity onPress={openCreateRoom} style={s.emptyButton}>
+                      <LinearGradient colors={[primary, accent]} style={s.emptyButtonGradient}>
+                        <Ionicons name="add" size={20} color="#fff" />
+                        <Text style={s.emptyButtonText}>Create Room</Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )
+            )}
+          </View>
+        }
+      />
 
-      {/* ── 3. The Sticky Section (Tabs, Search, Filters) ── */}
+      {/* "?"? 3. The Sticky Section (Tabs, Search, Filters) "?"? */}
       <Animated.View style={[s.stickySection, { backgroundColor: bg }, stickyStyle]}>
         {/* Tabs */}
         <View style={[s.tabsContainer, { borderBottomColor: border }]}>
@@ -465,13 +506,14 @@ const s = StyleSheet.create({
   root: { flex: 1 },
 
   // ── Header (Animated) ──
-  header: {
+       header: {
     zIndex: 20,
     position: 'absolute',
     left: 0, right: 0, top: 0,
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
     overflow: 'hidden',
+    backgroundColor: '#0a0a14',
   },
   headerContent: {
     flex: 1,

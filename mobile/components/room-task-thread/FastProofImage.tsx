@@ -17,7 +17,19 @@ const { width, height } = Dimensions.get('window');
 
 const getFullImageUrl = (url?: string) => {
   if (!url || url === 'undefined' || url === 'null') return undefined;
-  if (url.startsWith('http') || url.startsWith('file://') || url.startsWith('data:') || url.startsWith('blob:')) return url;
+  // Accept valid image sources: HTTP(S) URLs (Cloudinary), local files, data URIs, blobs
+  if (
+    url.startsWith('http') ||
+    url.startsWith('file://') ||
+    url.startsWith('data:image/') ||
+    url.startsWith('blob:')
+  ) return url;
+  // Reject anything that looks like raw binary/base64 without a proper data URI prefix
+  if (url.startsWith('data:')) {
+    console.warn('[FastProofImage] Non-image data URI detected, skipping:', url.substring(0, 50));
+    return undefined;
+  }
+  // Treat as relative path on the backend
   if (url.startsWith('/')) return `${API_BASE_URL}${url}`;
   return `${API_BASE_URL}/${url}`;
 };
@@ -100,7 +112,7 @@ export default function FastProofImage({
             <Ionicons name="close" size={28} color="#fff" />
           </TouchableOpacity>
 
-          <Animated.View entering={ZoomIn.springify().damping(16)} exiting={ZoomOut.duration(200)}>
+          <Animated.View entering={ZoomIn.duration(250)} exiting={ZoomOut.duration(200)}>
             <Image
               source={{ uri: fullUrl }}
               placeholder={blurHash ? { blurhash: blurHash } : undefined}

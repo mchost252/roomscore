@@ -1,211 +1,303 @@
 /**
- * RoomHeader — Compact Deck-Swap Header (v5)
+ * RoomHeader — Static Identity Header (v7)
  *
- * Refined:
- *   1. "Deck Swap" Swipe — front card fades/scales down, back layer scales up
- *   2. Reduced height — significantly more compact
- *   3. Integrated Status Glows — via updated AvatarStack
- *   4. Scroll Reactivity — title fades out as user scrolls up
+ * Matches reference mockup exactly:
+ *   - Cover image backdrop filling the full-width header area
+ *   - Dark gradient overlay (darker towards bottom)
+ *   - Room avatar on the LEFT (rounded square, purple gradient, infinity icon)
+ *   - Room name to the RIGHT of avatar (large bold white)
+ *   - "Room • X members" subtitle below name
+ *   - Member row below subtitle (avatars + overflow pill)
+ *   - "Room settings" pill on the RIGHT of the member row
  */
-import React, { useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  interpolate,
-  Extrapolation,
-  runOnJS,
-  SharedValue,
-} from 'react-native-reanimated';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import * as Clipboard from 'expo-clipboard';
-import * as Haptics from 'expo-haptics';
 import { Image as ExpoImage } from 'expo-image';
-
+import * as Clipboard from 'expo-clipboard';
 import { useTheme } from '../../context/ThemeContext';
-import { RoomMember, Task } from '../../types/room';
+import { RoomMember } from '../../types/room';
 import AvatarStack from './AvatarStack';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const SLIDE_DISTANCE = SCREEN_WIDTH * 0.7;
-const SWIPE_THRESHOLD = 50;
 
-const SPRING_CONFIG = { damping: 20, stiffness: 150 };
+const BACKDROP_FALLBACK = require('../../assets/room_default_bg.jpg');
 
 interface RoomHeaderProps {
   roomName: string;
-  roomCode: string;
   members: RoomMember[];
-  tasks: Task[];
-  daysActive: number;
-  chatRetentionDays: number;
-  scrollOffset?: SharedValue<number>;
-  onMembersPress?: () => void;
+  coverImage?: string | null;
+  roomDp?: string | null;
+  topInset?: number;
+  onSettingsPress?: () => void;
+  joinCode?: string;
+  isOwner?: boolean;
+  showJoinCode?: boolean;
 }
 
 const RoomHeader: React.FC<RoomHeaderProps> = ({
   roomName,
-  roomCode,
   members,
-  tasks,
-  daysActive,
-  chatRetentionDays,
-  scrollOffset,
-  onMembersPress,
+  coverImage,
+  roomDp,
+  topInset = 0,
+  onSettingsPress,
+  joinCode,
+  isOwner,
+  showJoinCode,
 }) => {
-  const { colors, isDark } = useTheme();
-  const translateX = useSharedValue(0);
-  const isShowingBack = useSharedValue(false);
+  const { isDark } = useTheme();
+  const [backdropFailed, setBackdropFailed] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
 
-  // ── Stats ───────────────────────────────────────────────────────────────
-  const completedCount = useMemo(() => tasks.filter(t => t.isCompleted).length, [tasks]);
-  
-  // Map members to their task status for the Halo effect
-  const memberStatuses = useMemo(() => {
-    const map: Record<string, 'completed' | 'active' | 'spectating'> = {};
-    members.forEach(m => {
-      const userId = m.userId || m.id;
-      // Heuristic: find if this user completed any tasks today
-      const hasCompleted = tasks.some(t => t.completions?.some(c => c.userId === userId));
-      const hasJoined = tasks.some(t => t.participants?.some(p => p.userId === userId));
-      map[userId] = hasCompleted ? 'completed' : hasJoined ? 'active' : 'spectating';
-    });
-    return map;
-  }, [members, tasks]);
+  const hasBackdrop = !backdropFailed && coverImage && (
+    coverImage.startsWith('https://') || coverImage.startsWith('http://')
+  );
+  const hasRoomDp = !!roomDp && (roomDp.startsWith('https://') || roomDp.startsWith('http://'));
 
-  const handleCopyCode = useCallback(async () => {
+  const memberCount = members.length;
+
+  const handleCopyCode = async () => {
+    if (!joinCode) return;
     try {
-      await Clipboard.setStringAsync(roomCode);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {}
-  }, [roomCode]);
+      await Clipboard.setStringAsync(joinCode);
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy join code:', err);
+    }
+  };
 
-  // ── Swipe Gesture ────────────────────────────────────────────────────────
-  const panGesture = Gesture.Pan()
-    .activeOffsetX([-10, 10])
-    .onUpdate(e => {
-      const base = isShowingBack.value ? -SLIDE_DISTANCE : 0;
-      translateX.value = Math.max(-SLIDE_DISTANCE, Math.min(0, base + e.translationX));
-    })
-    .onEnd(e => {
-      const base = isShowingBack.value ? -SLIDE_DISTANCE : 0;
-      const finalPos = base + e.translationX;
-
-      if (!isShowingBack.value && finalPos < -SWIPE_THRESHOLD) {
-        translateX.value = withSpring(-SLIDE_DISTANCE, SPRING_CONFIG);
-        isShowingBack.value = true;
-        runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
-      } else if (isShowingBack.value && finalPos > -SLIDE_DISTANCE + SWIPE_THRESHOLD) {
-        translateX.value = withSpring(0, SPRING_CONFIG);
-        isShowingBack.value = false;
-        runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
-      } else {
-        translateX.value = withSpring(isShowingBack.value ? -SLIDE_DISTANCE : 0, SPRING_CONFIG);
-      }
-    });
-
-  // ── Animated Styles ──────────────────────────────────────────────────────
-  
-  const frontStyle = useAnimatedStyle(() => {
-    const scale = interpolate(translateX.value, [-SLIDE_DISTANCE, 0], [0.94, 1], Extrapolation.CLAMP);
-    const opacity = interpolate(translateX.value, [-SLIDE_DISTANCE, -SLIDE_DISTANCE * 0.4, 0], [0, 0.4, 1], Extrapolation.CLAMP);
-    const scrollAlpha = scrollOffset ? interpolate(scrollOffset.value, [0, 50], [1, 0], Extrapolation.CLAMP) : 1;
-
-    return {
-      transform: [{ translateX: translateX.value }, { scale }],
-      opacity: Math.min(opacity, scrollAlpha),
-    };
-  });
-
-  const backStyle = useAnimatedStyle(() => {
-    const scale = interpolate(translateX.value, [-SLIDE_DISTANCE, 0], [1, 0.9], Extrapolation.CLAMP);
-    const opacity = interpolate(translateX.value, [-SLIDE_DISTANCE, -SLIDE_DISTANCE * 0.6, 0], [1, 0, 0], Extrapolation.CLAMP);
-    return {
-      transform: [{ scale }],
-      opacity,
-    };
-  });
-
-  const glassBg = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.7)';
-  const glassBorder = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+  const shouldShowJoinCode = showJoinCode && !isOwner ? true : showJoinCode;
 
   return (
     <View style={styles.container}>
-      <GestureDetector gesture={panGesture}>
-        <View style={styles.swipeArea}>
-          
-          {/* Back layer (metadata) */}
-          <Animated.View style={[styles.backLayer, backStyle]}>
-            <Text style={[styles.metaHeading, { color: isDark ? '#fff' : '#000' }]}>MISSION INTEL</Text>
-            <View style={styles.metaPillGrid}>
-              <TouchableOpacity onPress={handleCopyCode} style={[styles.metaPill, { backgroundColor: isDark ? 'rgba(99,102,241,0.1)' : 'rgba(99,102,241,0.05)', borderColor: isDark ? 'rgba(99,102,241,0.2)' : 'rgba(99,102,241,0.1)' }]}>
-                <Ionicons name="key-outline" size={12} color={colors.primary} />
-                <Text style={[styles.metaPillText, { color: isDark ? '#fff' : '#000' }]}>{roomCode}</Text>
-              </TouchableOpacity>
-              <View style={[styles.metaPill, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', borderColor: glassBorder }]}>
-                <Ionicons name="flame-outline" size={12} color="#f59e0b" />
-                <Text style={[styles.metaPillText, { color: isDark ? '#fff' : '#000' }]}>{daysActive}d active</Text>
-              </View>
-              <View style={[styles.metaPill, { backgroundColor: isDark ? 'rgba(34,197,94,0.1)' : 'rgba(34,197,94,0.05)', borderColor: 'rgba(34,197,94,0.2)' }]}>
-                <Ionicons name="checkmark-circle-outline" size={12} color="#22c55e" />
-                <Text style={[styles.metaPillText, { color: isDark ? '#fff' : '#000' }]}>{completedCount}/{tasks.length} SECURED</Text>
-              </View>
-            </View>
-          </Animated.View>
+      {/* Cover Image Backdrop */}
+      <View style={styles.backdropWrap}>
+        {hasBackdrop ? (
+          <ExpoImage
+            source={{ uri: coverImage! }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            onError={() => setBackdropFailed(true)}
+            transition={300}
+          />
+        ) : (
+          <ExpoImage
+            source={BACKDROP_FALLBACK}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            transition={300}
+          />
+        )}
+        {/* Dark gradient overlay */}
+        <LinearGradient
+          colors={['rgba(0,0,0,0.15)', 'rgba(0,0,0,0.4)', 'rgba(8,8,16,0.95)']}
+          style={StyleSheet.absoluteFill}
+        />
+      </View>
 
-          {/* Front layer (identity) */}
-          <Animated.View style={[styles.frontLayer, frontStyle]}>
-            <View style={[styles.glassCard, { backgroundColor: glassBg, borderColor: glassBorder }]}>
-              <View style={styles.identityRow}>
-                <View style={styles.nameCol}>
-                  <Text style={[styles.roomName, { color: isDark ? '#fff' : '#000' }]} numberOfLines={1}>
-                    {roomName}
-                  </Text>
+      {/* Content — left-aligned layout */}
+      <View style={[styles.content, { paddingTop: topInset + 56 }]}>
+        <View style={styles.mainRow}>
+          {/* Room Avatar — left side */}
+          <View style={styles.avatarContainer}>
+            {hasRoomDp ? (
+              <ExpoImage
+                source={{ uri: roomDp! }}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+              />
+            ) : (
+              <LinearGradient
+                colors={['#6366f1', '#8b5cf6']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.avatarGradient}
+              >
+                <Ionicons name="infinite" size={36} color="#fff" />
+              </LinearGradient>
+            )}
+          </View>
+
+          {/* Info Column — right of avatar */}
+          <View style={styles.infoCol}>
+            <Text style={styles.roomName} numberOfLines={1}>
+              {roomName}
+            </Text>
+            <Text style={styles.subtitle}>
+              Room · {memberCount} member{memberCount !== 1 ? 's' : ''}
+            </Text>
+            
+            {/* Member avatars + Settings pill */}
+            <View style={styles.bottomRow}>
+              <View style={styles.memberRow}>
+                <AvatarStack members={members} size={24} />
+                {memberCount > 3 && (
+                  <View style={styles.overflowPill}>
+                    <Text style={styles.overflowText}>+{memberCount - 3}</Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.rightColumn}>
+                {/* Room Settings Pill — right side */}
+                <TouchableOpacity
+                  onPress={onSettingsPress}
+                  activeOpacity={0.7}
+                  style={styles.settingsPill}
+                >
+                  <Ionicons name="settings-outline" size={12} color="rgba(255,255,255,0.7)" />
+                  <Text style={styles.settingsText}>Room settings</Text>
+                </TouchableOpacity>
+
+                {/* Join Code Copy Chip — below settings pill, only if visible */}
+                {shouldShowJoinCode && joinCode && (
                   <TouchableOpacity
-                    style={styles.avatarRow}
-                    onPress={onMembersPress}
+                    onPress={handleCopyCode}
                     activeOpacity={0.7}
+                    style={[
+                      styles.joinCodeChip,
+                      codeCopied && styles.joinCodeChipCopied,
+                    ]}
                   >
-                    <AvatarStack members={members} size={28} memberStatuses={memberStatuses} />
-                    <Text style={[styles.memberCount, { color: colors.primary }]}>+{members.length} OPS</Text>
+                    <Ionicons
+                      name={codeCopied ? 'checkmark' : 'link'}
+                      size={12}
+                      color="rgba(255,255,255,0.7)"
+                    />
+                    <Text style={styles.joinCodeText}>
+                      {codeCopied ? 'Copied!' : joinCode}
+                    </Text>
                   </TouchableOpacity>
-                </View>
-                {/* Brand Logo Placeholder */}
-                <View style={styles.logoContainer}>
-                  <LinearGradient colors={['#6366f1', '#8b5cf6']} style={styles.logoCircle}>
-                    <Ionicons name="infinite" size={24} color="#fff" />
-                  </LinearGradient>
-                </View>
+                )}
               </View>
             </View>
-          </Animated.View>
-
+          </View>
         </View>
-      </GestureDetector>
+      </View>
     </View>
   );
 };
 
+const AVATAR_SIZE = 76;
+
 const styles = StyleSheet.create({
-  container: { marginTop: 4, marginBottom: 8 },
-  swipeArea: { position: 'relative', height: 90, justifyContent: 'center' },
-  backLayer: { ...StyleSheet.absoluteFillObject, paddingHorizontal: 24, justifyContent: 'center' },
-  metaHeading: { fontSize: 10, fontWeight: '900', letterSpacing: 1, marginBottom: 8, opacity: 0.5 },
-  metaPillGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  metaPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, borderWidth: 1 },
-  metaPillText: { fontSize: 11, fontWeight: '800' },
-  frontLayer: { paddingHorizontal: 16 },
-  glassCard: { borderRadius: 20, borderWidth: 1, padding: 16, overflow: 'hidden' },
-  identityRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  nameCol: { flex: 1, gap: 4 },
-  roomName: { fontSize: 24, fontWeight: '900', letterSpacing: -0.5 },
-  avatarRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  memberCount: { fontSize: 10, fontWeight: '900', letterSpacing: 0.5 },
-  logoContainer: { width: 44, height: 44, borderRadius: 22, overflow: 'hidden' },
-  logoCircle: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  container: {
+    width: SCREEN_WIDTH,
+    overflow: 'hidden',
+    minHeight: 220,
+  },
+  backdropWrap: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  content: {
+    paddingBottom: 32,
+    paddingHorizontal: 16,
+  },
+  mainRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 16,
+  },
+  avatarContainer: {
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    borderRadius: 20,
+    overflow: 'hidden',
+    alignSelf: 'flex-start',
+    marginTop: 2,
+    shadowColor: '#6366f1',
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  avatarGradient: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  infoCol: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: 4,
+  },
+  roomName: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#ffffff',
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.55)',
+    marginBottom: 4,
+  },
+  bottomRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  memberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  rightColumn: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  overflowPill: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  overflowText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.8)',
+  },
+  settingsPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  settingsText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.7)',
+  },
+  joinCodeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  joinCodeChipCopied: {
+    backgroundColor: 'rgba(34,197,94,0.15)',
+    borderColor: 'rgba(34,197,94,0.3)',
+  },
+  joinCodeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.7)',
+  },
 });
 
 export default React.memo(RoomHeader);

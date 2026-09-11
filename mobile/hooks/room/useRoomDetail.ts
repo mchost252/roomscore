@@ -92,7 +92,7 @@ async function syncToSQLite(roomId: string, room: Room, tasks: Task[], members: 
       }
     });
   } catch (e) {
-    console.error('[useRoomDetail] SQLite Sync Error handled gracefully:', e);
+    console.error('[useRoomDetail] SQLite sync unavailable or failed:', e);
   }
 }
 
@@ -176,7 +176,7 @@ export function useRoomDetail(roomId: string) {
       if (data.roomId !== roomId || !data.task) return;
       setTasks(prev => {
         if (prev.find(t => t.id === data.task.id)) return prev;
-        const formattedTask = { ...data.task, isJoined: false, status: 'spectator', completions: [], participants: [] };
+        const formattedTask = { ...data.task, isJoined: false, status: 'spectator', completions: [], participants: [], hasThread: data.task.hasThread ?? false };
         const next = [...prev, formattedTask];
         roomStorage.set(tasksKey(roomId), JSON.stringify(next));
         return next;

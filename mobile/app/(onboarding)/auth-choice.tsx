@@ -1,108 +1,102 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  StyleSheet, 
-  Animated, 
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
   Image,
-  Dimensions,
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import theme from '../../src/constants/theme';
-
-const { width } = Dimensions.get('window');
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withSpring,
+  withDelay,
+  Easing,
+} from 'react-native-reanimated';
+import { colors } from '../../src/constants/theme';
 
 export default function AuthChoiceScreen() {
   const [userName, setUserName] = useState('');
   const router = useRouter();
-  
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
-  const logoScale = useRef(new Animated.Value(0.8)).current;
-  const buttonStagger = useRef(new Animated.Value(0)).current;
+
+  // Entrance animations (UI thread)
+  const screenOpacity = useSharedValue(0);
+  const screenSlide = useSharedValue(30);
+  const logoScale = useSharedValue(0.8);
+  const pillsOpacity = useSharedValue(0);
+  const buttonsOpacity = useSharedValue(0);
+  const buttonsSlide = useSharedValue(20);
 
   useEffect(() => {
-    loadUserName();
-    
-    // Staggered entrance
-    Animated.sequence([
-      Animated.parallel([
-        Animated.spring(logoScale, {
-          toValue: 1,
-          tension: 45,
-          friction: 8,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 600,
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 500,
-          useNativeDriver: true,
-        }),
-      ]),
-      Animated.delay(200),
-      Animated.timing(buttonStagger, {
-        toValue: 1,
-        duration: 400,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    AsyncStorage.getItem('userName').then((n) => setUserName(n || 'there'));
+
+    // Staggered entrance: logo → content → pills → buttons
+    logoScale.value = withSpring(1, { damping: 12, stiffness: 90 });
+    screenOpacity.value = withTiming(1, { duration: 600 });
+    screenSlide.value = withTiming(0, {
+      duration: 500,
+      easing: Easing.out(Easing.cubic),
+    });
+    pillsOpacity.value = withDelay(350, withTiming(1, { duration: 400 }));
+    buttonsOpacity.value = withDelay(550, withTiming(1, { duration: 500 }));
+    buttonsSlide.value = withDelay(
+      550,
+      withSpring(0, { damping: 14, stiffness: 100 }),
+    );
   }, []);
 
-  const loadUserName = async () => {
-    const name = await AsyncStorage.getItem('userName');
-    setUserName(name || 'there');
-  };
-
-  const handleLogin = async () => {
+  const handleLogin = useCallback(async () => {
     await AsyncStorage.setItem('hasCompletedOnboarding', 'true');
     router.replace('/(auth)/login');
-  };
+  }, [router]);
 
-  const handleSignup = async () => {
+  const handleSignup = useCallback(async () => {
     await AsyncStorage.setItem('hasCompletedOnboarding', 'true');
     router.replace('/(auth)/signup');
-  };
+  }, [router]);
+
+  // --- Animated styles ---
+  const contentStyle = useAnimatedStyle(() => ({
+    opacity: screenOpacity.value,
+    transform: [{ translateY: screenSlide.value }],
+  }));
+
+  const logoStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: logoScale.value }],
+  }));
+
+  const pillsStyle = useAnimatedStyle(() => ({
+    opacity: pillsOpacity.value,
+  }));
+
+  const buttonsStyle = useAnimatedStyle(() => ({
+    opacity: buttonsOpacity.value,
+    transform: [{ translateY: buttonsSlide.value }],
+  }));
 
   return (
     <View style={styles.container}>
       {/* Background */}
       <LinearGradient
-        colors={['#0a0a0f', '#12121a', '#0a0a0f']}
+        colors={[colors.background, colors.backgroundSecondary, colors.background]}
         style={StyleSheet.absoluteFill}
       />
-      
-      {/* Glow effects */}
+
+      {/* Ambient glow */}
       <View style={styles.glowContainer}>
         <View style={[styles.glow, styles.glow1]} />
         <View style={[styles.glow, styles.glow2]} />
       </View>
 
-      <Animated.View 
-        style={[
-          styles.content, 
-          { 
-            opacity: fadeAnim, 
-            transform: [{ translateY: slideAnim }] 
-          }
-        ]}
-      >
-        {/* Logo Section */}
-        <Animated.View 
-          style={[
-            styles.logoSection,
-            { transform: [{ scale: logoScale }] }
-          ]}
-        >
+      <Animated.View style={[styles.content, contentStyle]}>
+        {/* Logo */}
+        <Animated.View style={[styles.logoSection, logoStyle]}>
           <View style={styles.logoWrapper}>
             <View style={styles.logoGlow} />
             <Image
@@ -113,36 +107,36 @@ export default function AuthChoiceScreen() {
           </View>
         </Animated.View>
 
-        {/* Welcome Text */}
-        <Animated.View style={styles.welcomeSection}>
+        {/* Welcome text */}
+        <View style={styles.welcomeSection}>
           <Text style={styles.greeting}>Welcome, {userName}</Text>
           <Text style={styles.subtext}>
             Ready to start building better habits?
           </Text>
-        </Animated.View>
+        </View>
 
-        {/* Feature Pills */}
-        <Animated.View style={styles.featurePills}>
+        {/* Feature pills */}
+        <Animated.View style={[styles.featurePills, pillsStyle]}>
           <View style={styles.pill}>
-            <Ionicons name="checkmark-circle" size={14} color="#10b981" />
+            <Ionicons name="checkmark-circle" size={14} color={colors.success} />
             <Text style={styles.pillText}>Free forever</Text>
           </View>
           <View style={styles.pill}>
-            <Ionicons name="checkmark-circle" size={14} color="#10b981" />
+            <Ionicons name="checkmark-circle" size={14} color={colors.success} />
             <Text style={styles.pillText}>No credit card</Text>
           </View>
         </Animated.View>
 
-        {/* Buttons */}
-        <Animated.View style={styles.buttonsContainer}>
-          {/* Sign Up - Primary */}
-          <TouchableOpacity 
-            onPress={handleSignup} 
+        {/* Auth buttons */}
+        <Animated.View style={[styles.buttonsContainer, buttonsStyle]}>
+          {/* Sign Up — Primary */}
+          <TouchableOpacity
+            onPress={handleSignup}
             activeOpacity={0.8}
             style={styles.signupButton}
           >
             <LinearGradient
-              colors={['#6366f1', '#8b5cf6']}
+              colors={[colors.primary, colors.secondary]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.signupGradient}
@@ -153,22 +147,28 @@ export default function AuthChoiceScreen() {
                 </View>
                 <View style={styles.buttonTextContainer}>
                   <Text style={styles.signupTitle}>Create Account</Text>
-                  <Text style={styles.signupSubtitle}>Start your orbit journey</Text>
+                  <Text style={styles.signupSubtitle}>
+                    Start your orbit journey
+                  </Text>
                 </View>
-                <Ionicons name="arrow-forward" size={18} color="rgba(255,255,255,0.5)" />
+                <Ionicons
+                  name="arrow-forward"
+                  size={18}
+                  color="rgba(255,255,255,0.5)"
+                />
               </View>
             </LinearGradient>
           </TouchableOpacity>
 
-          {/* Login - Secondary */}
-          <TouchableOpacity 
-            onPress={handleLogin} 
+          {/* Login — Secondary */}
+          <TouchableOpacity
+            onPress={handleLogin}
             activeOpacity={0.7}
             style={styles.loginButton}
           >
             <View style={styles.loginContent}>
               <View style={[styles.buttonIconBg, styles.loginIconBg]}>
-                <Ionicons name="log-in-outline" size={18} color="#6366f1" />
+                <Ionicons name="log-in-outline" size={18} color={colors.primary} />
               </View>
               <View style={styles.buttonTextContainer}>
                 <Text style={styles.loginTitle}>Sign In</Text>
@@ -192,7 +192,7 @@ export default function AuthChoiceScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0a0a0f',
+    backgroundColor: colors.background,
   },
   glowContainer: {
     ...StyleSheet.absoluteFillObject,
@@ -206,14 +206,14 @@ const styles = StyleSheet.create({
   glow1: {
     width: 400,
     height: 400,
-    backgroundColor: '#6366f1',
+    backgroundColor: colors.primary,
     top: -150,
     right: -100,
   },
   glow2: {
     width: 300,
     height: 300,
-    backgroundColor: '#8b5cf6',
+    backgroundColor: colors.secondary,
     bottom: -100,
     left: -50,
   },
@@ -237,8 +237,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(99, 102, 241, 0.2)',
     top: -20,
     left: -20,
-    right: -20,
-    bottom: -20,
   },
   logo: {
     width: 100,
@@ -251,12 +249,12 @@ const styles = StyleSheet.create({
   greeting: {
     fontSize: 30,
     fontWeight: '700',
-    color: '#ffffff',
+    color: colors.textPrimary,
     textAlign: 'center',
   },
   subtext: {
     fontSize: 15,
-    color: 'rgba(255,255,255,0.5)',
+    color: colors.textSecondary,
     textAlign: 'center',
     marginTop: 8,
   },
@@ -288,7 +286,7 @@ const styles = StyleSheet.create({
   signupButton: {
     borderRadius: 18,
     overflow: 'hidden',
-    shadowColor: '#6366f1',
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.3,
     shadowRadius: 20,
@@ -320,7 +318,7 @@ const styles = StyleSheet.create({
   signupTitle: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#ffffff',
+    color: colors.textPrimary,
   },
   signupSubtitle: {
     fontSize: 13,
@@ -328,10 +326,10 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   loginButton: {
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: colors.surface,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: colors.borderLight,
   },
   loginContent: {
     flexDirection: 'row',
@@ -346,22 +344,22 @@ const styles = StyleSheet.create({
   loginTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
+    color: colors.textPrimary,
   },
   loginSubtitle: {
     fontSize: 13,
-    color: 'rgba(255,255,255,0.4)',
+    color: colors.textMuted,
     marginTop: 2,
   },
   terms: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.3)',
+    color: colors.textHint,
     textAlign: 'center',
     marginTop: 'auto',
     paddingBottom: Platform.OS === 'ios' ? 30 : 20,
     lineHeight: 20,
   },
   link: {
-    color: '#6366f1',
+    color: colors.primary,
   },
 });

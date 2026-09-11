@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Animated 
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSettingsStore } from '../../src/store/useSettingsStore';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -34,10 +35,13 @@ export default function SettingsScreen() {
   };
   const insets = useSafeAreaInsets();
 
-  const [navStyle, setNavStyle] = useState<'bottom' | 'sidebar'>('bottom');
+  const navStyle = useSettingsStore((s) => s.navigationStyle);
+  const setNavStyle = useSettingsStore((s) => s.setNavigationStyle);
   const [notifications, setNotifications] = useState(true);
   const [soundEffects, setSoundEffects] = useState(true);
   const [hapticFeedback, setHapticFeedback] = useState(true);
+  const [notificationCategories, setNotificationCategories] = useState<Record<string, boolean>>({});
+  const [quietHoursEnabled, setQuietHoursEnabled] = useState(false);
   const [infoModal, setInfoModal] = useState<{ visible: boolean; title: string; message: string }>({
     visible: false,
     title: '',
@@ -51,14 +55,23 @@ export default function SettingsScreen() {
 
   const loadSettings = async () => {
     try {
-      const nav = await AsyncStorage.getItem('krios_nav_style');
-      const notif = await AsyncStorage.getItem('notifications');
-      const sound = await AsyncStorage.getItem('soundEffects');
-      const haptic = await AsyncStorage.getItem('hapticFeedback');
-      if (nav === 'bottom' || nav === 'sidebar') setNavStyle(nav);
+      // Nav style comes from useSettingsStore, which persists itself — nothing to load here.
+      // Remaining prefs are AsyncStorage — fetch in parallel
+      const [notif, sound, haptic, remotePreferences] = await Promise.all([
+        AsyncStorage.getItem('notifications'),
+        AsyncStorage.getItem('soundEffects'),
+        AsyncStorage.getItem('hapticFeedback'),
+        notificationService.getRemotePreferences().catch(() => null),
+      ]);
       if (notif !== null) setNotifications(notif === 'true');
       if (sound !== null) setSoundEffects(sound === 'true');
       if (haptic !== null) setHapticFeedback(haptic === 'true');
+      if (remotePreferences) {
+        setNotifications(remotePreferences.enabled !== false);
+        setNotificationCategories(remotePreferences.categories || {});
+        if (typeof remotePreferences.sound === 'boolean') setSoundEffects(remotePreferences.sound);
+        setQuietHoursEnabled(remotePreferences.quietHours?.enabled === true);
+      }
     } catch (e) {}
   };
 
@@ -66,9 +79,10 @@ export default function SettingsScreen() {
     setTheme(value ? 'dark' : 'light');
   };
 
-  const toggleNavStyle = async (style: 'bottom' | 'sidebar') => {
+  const toggleNavStyle = (style: 'bottom' | 'sidebar') => {
+    // Store write is synchronous and subscribed by (home)/_layout.tsx, so the
+    // nav switches over immediately — no reload, no polling.
     setNavStyle(style);
-    await AsyncStorage.setItem('krios_nav_style', style);
   };
 
   const toggleNotifications = async (value: boolean) => {
@@ -77,10 +91,11 @@ export default function SettingsScreen() {
     
     // Update notification service
     await notificationService.updatePreferences({ enabled: value });
+    await notificationService.updateRemotePreferences({ enabled: value });
     
     if (value) {
       // Re-enable: request permission and schedule
-      const granted = await notificationService.initialize();
+      const granted = await notificationService.registerNativeDevice();
       if (granted) {
         setInfoModal({
           visible: true,
@@ -108,6 +123,21 @@ export default function SettingsScreen() {
   const toggleSoundEffects = async (value: boolean) => {
     setSoundEffects(value);
     await AsyncStorage.setItem('soundEffects', value.toString());
+    await notificationService.updateRemotePreferences({ sound: value });
+  };
+
+  const toggleNotificationCategory = async (category: string, value: boolean) => {
+    setNotificationCategories((current) => ({ ...current, [category]: value }));
+    await notificationService.updateRemotePreferences({
+      categories: { [category]: value },
+    });
+  };
+
+  const toggleQuietHours = async (value: boolean) => {
+    setQuietHoursEnabled(value);
+    await notificationService.updateRemotePreferences({
+      quietHours: { enabled: value },
+    });
   };
 
   const toggleHapticFeedback = async (value: boolean) => {
@@ -141,22 +171,24 @@ export default function SettingsScreen() {
         { icon: 'notifications', label: 'Smart Reminders', desc: 'Morning digest (8am), evening preview (8pm), and due task alerts', type: 'switch', value: notifications, onToggle: toggleNotifications },
         { icon: 'volume-high', label: 'Sound Effects', desc: 'Play sounds for actions', type: 'switch', value: soundEffects, onToggle: toggleSoundEffects },
         { icon: 'phone-portrait', label: 'Haptic Feedback', desc: 'Vibration for interactions', type: 'switch', value: hapticFeedback, onToggle: toggleHapticFeedback },
+        { icon: 'moon-outline', label: 'Quiet Hours', desc: 'Pause push alerts from 10pm to 7am', type: 'switch', value: quietHoursEnabled, onToggle: toggleQuietHours },
+      ],
+    },
+    {
+      title: 'Notification Categories',
+      items: [
+        { icon: 'chatbubbles-outline', label: 'Messages', desc: 'Direct message alerts', type: 'switch', value: notificationCategories.messages !== false, onToggle: (value: boolean) => toggleNotificationCategory('messages', value) },
+        { icon: 'people-outline', label: 'Social', desc: 'Friend requests, reactions, and appreciations', type: 'switch', value: notificationCategories.social !== false, onToggle: (value: boolean) => toggleNotificationCategory('social', value) },
+        { icon: 'planet-outline', label: 'Rooms', desc: 'Room invitations and activity', type: 'switch', value: notificationCategories.rooms !== false, onToggle: (value: boolean) => toggleNotificationCategory('rooms', value) },
+        { icon: 'checkbox-outline', label: 'Tasks', desc: 'Task reminders and updates', type: 'switch', value: notificationCategories.tasks !== false, onToggle: (value: boolean) => toggleNotificationCategory('tasks', value) },
+        { icon: 'trophy-outline', label: 'Achievements', desc: 'Achievement and streak alerts', type: 'switch', value: notificationCategories.achievements !== false, onToggle: (value: boolean) => toggleNotificationCategory('achievements', value) },
       ],
     },
     {
       title: 'Account',
       items: [
         { icon: 'person', label: 'Edit Profile', desc: 'Change your name and avatar', type: 'navigate', onPress: () => router.push('/(home)/profile') },
-        { icon: 'lock-closed', label: 'Privacy', desc: 'Manage your privacy settings', type: 'navigate', onPress: () => setInfoModal({ visible: true, title: 'Privacy', message: 'Coming soon!' }) },
-        { icon: 'shield-checkmark', label: 'Security', desc: 'Password and authentication', type: 'navigate', onPress: () => setInfoModal({ visible: true, title: 'Security', message: 'Coming soon!' }) },
-      ],
-    },
-    {
-      title: 'Support',
-      items: [
-        { icon: 'help-circle', label: 'Help & FAQ', desc: 'Get help and find answers', type: 'navigate', onPress: () => setInfoModal({ visible: true, title: 'Help & FAQ', message: 'Coming soon!' }) },
-        { icon: 'chatbubble', label: 'Contact Support', desc: 'Reach out to our team', type: 'navigate', onPress: () => setInfoModal({ visible: true, title: 'Support', message: 'Coming soon!' }) },
-        { icon: 'document-text', label: 'Terms of Service', desc: 'Read our terms', type: 'navigate', onPress: () => setInfoModal({ visible: true, title: 'Terms of Service', message: 'Coming soon!' }) },
+        { icon: 'lock-closed', label: 'Privacy', desc: 'Manage your privacy settings', type: 'navigate', onPress: () => router.push('/(home)/blocked-users') },
       ],
     },
   ];

@@ -4,9 +4,9 @@
  * High-performance chronological Proof-of-Work thread.
  */
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { 
-  View, Text, StyleSheet, TouchableOpacity, StatusBar, 
-  TextInput, KeyboardAvoidingView, Platform,
+import {
+  View, Text, StyleSheet, TouchableOpacity, StatusBar,
+  KeyboardAvoidingView, Platform, Keyboard,
   RefreshControl
 } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
@@ -20,17 +20,19 @@ import * as Haptics from 'expo-haptics';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
-import { useWebSocket, webSocketManager } from '../../services/websocketService';
+import { webSocketManager } from '../../services/websocketService';
 import { RoomTaskNode, RoomMember, Task } from '../../types/room';
 import { taskService } from '../../services/taskService';
 import { RoomService } from '../../services/roomService';
 import { roomStorage } from '../../db/roomDb';
 import { roomTaskNodeService } from '../../services/roomTaskNodeService';
+import { uploadImage as uploadToCloudinary } from '../../services/cloudinaryService';
 
 import { 
   HeroBriefNode, PinWallNode, ProofNode, ChatNode, DateDividerNode, SystemAlertNode, checkIsAutoApproved
 } from '../../components/room-task-thread/SubwayNodes';
 import ProofUploadModal from '../../components/room-task-thread/ProofUploadModal';
+import MessageInput from '../../components/messaging/MessageInput';
 import Animated, { FadeIn, FadeOut, useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 
 type NodeType = 'date_divider' | 'proof_node' | 'chat_node' | 'system_alert_node';
@@ -107,6 +109,7 @@ export default function RoomTaskThread() {
 
   const [nodes, setNodes] = useState<RoomTaskNode[]>(() => roomTaskNodeService.getCachedNodes(taskId) || []);
   const [inputText, setInputText] = useState('');
+  const [replyTo, setReplyTo] = useState<{ id: string; text: string; username?: string } | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadMode, setUploadMode] = useState<'proof' | 'chat'>('proof');
   const [isTaskCompleted, setIsTaskCompleted] = useState(false);
@@ -118,6 +121,19 @@ export default function RoomTaskThread() {
   const isScrolling = useSharedValue(0);
 
   const listRef = useRef<FlashList<FlattenedNode>>(null);
+  const atEndRef = useRef(true);
+
+  // Keep pinned to the latest node when the keyboard opens mid-conversation.
+  useEffect(() => {
+    const sub = Keyboard.addListener('keyboardDidShow', () => {
+      if (atEndRef.current) {
+        requestAnimationFrame(() => {
+          try { listRef.current?.scrollToEnd({ animated: true }); } catch {}
+        });
+      }
+    });
+    return () => sub.remove();
+  }, []);
   const processedNodeIds = useRef<Set<string>>(new Set());
   const [hasScrolledInit, setHasScrolledInit] = useState(false);
 
@@ -134,6 +150,15 @@ export default function RoomTaskThread() {
       roomStorage.set(`tasks_${roomId}`, JSON.stringify(apiTasks));
       const t = apiTasks.find(x => x.id === taskId);
       if (t) {
+        // Defensive guard: thread disabled by owner — no reason to stay here
+        if (t.hasThread === false) {
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace({ pathname: '/(home)/room-detail', params: { roomId } });
+          }
+          return;
+        }
         setIsTaskCompleted(!!t.isCompleted);
         setCompletions(t.completions || []);
         setTaskParticipants(t.participants || []);
@@ -472,6 +497,15 @@ export default function RoomTaskThread() {
     showToast({ message: 'Proof Approved', type: 'success' });
   }, [taskId, roomId, showToast]);
 
+  const handleReply = useCallback((node: RoomTaskNode) => {
+    const isMine = node.userId === user?.id || node.user?.id === user?.id;
+    setReplyTo({
+      id: node.id,
+      text: node.caption || node.content || '',
+      username: isMine ? 'You' : (node.user?.username || 'User'),
+    });
+  }, [user]);
+
   const handleSendChat = async () => {
     if (!inputText.trim()) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -480,16 +514,20 @@ export default function RoomTaskThread() {
       id: `chat_${Date.now()}`, clientReferenceId: clientRefId, roomId, taskId, type: 'MESSAGE', status: 'PENDING',
       content: inputText.trim(), vouchCount: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       user: { id: user?.id || 'u1', username: user?.username || 'Me', avatar: user?.avatar }, heatLevel: 0,
+      replyToId: replyTo?.id || null,
+      replyToText: replyTo?.text || null,
+      replyToUsername: replyTo?.username || null,
     } as any;
-    
+
     processedNodeIds.current.add(clientRefId);
     setNodes(prev => [...prev, newChat]);
     setInputText('');
+    setReplyTo(null);
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 300);
     await roomTaskNodeService.addNode(taskId, newChat);
 
     try {
-      const serverNode = await taskService.addRoomTaskNode(roomId, taskId, { type: 'MESSAGE', status: 'PENDING', content: newChat.content, clientReferenceId: clientRefId });
+      const serverNode = await taskService.addRoomTaskNode(roomId, taskId, { type: 'MESSAGE', status: 'PENDING', content: newChat.content, clientReferenceId: clientRefId, replyToId: newChat.replyToId || null, replyToText: newChat.replyToText || null, replyToUsername: newChat.replyToUsername || null });
       if (serverNode) {
         const sid = serverNode._id || serverNode.id;
         setNodes(prev => prev.map(n => n.clientReferenceId === clientRefId ? { ...n, id: sid } : n));
@@ -505,11 +543,24 @@ export default function RoomTaskThread() {
     const isProof = uploadMode === 'proof';
     const type = isProof ? 'PROOF' : 'MESSAGE';
     
+    // Guard: never store non-URL data (binary strings, raw file paths) as mediaUrl
+    // All images must come from Cloudinary (HTTP/HTTPS URLs)
+    if (!uri || (uri.startsWith('http') && !uri.startsWith('https://res.cloudinary.com'))) {
+      // Not a Cloudinary URL — upload to Cloudinary first
+      try {
+        const cloudinaryUrl = await uploadToCloudinary(uri, `krios/proofs/${roomId}/${taskId}`);
+        uri = cloudinaryUrl;
+      } catch (uploadError: any) {
+        showToast({ message: 'Failed to upload image. Please try again.', type: 'error' });
+        return;
+      }
+    }
+    
     const newMediaNode: RoomTaskNode = {
       id: `media_${Date.now()}`, clientReferenceId: clientRefId, roomId, taskId, type, status: 'PENDING',
       mediaUrl: uri, vouchCount: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       user: { id: user?.id || 'u1', username: user?.username || 'Me', avatar: user?.avatar }, heatLevel: 0,
-      content: isProof ? (caption || 'Completed the mission.') : caption,
+      content: isProof ? (caption || 'Completed the task.') : caption,
       caption: caption || undefined,
     } as any;
     
@@ -523,11 +574,17 @@ export default function RoomTaskThread() {
       const serverNode = await taskService.uploadProofWithImage(roomId, taskId, uri, newMediaNode.content || '', clientRefId, type);
       if (serverNode) {
         const sid = serverNode._id || serverNode.id;
-        const sMedia = serverNode.mediaUrl || uri;
+        // Guard: only accept HTTP URLs from server, never raw file URIs or binary data
+        const sMedia = (serverNode.mediaUrl && serverNode.mediaUrl.startsWith('http'))
+          ? serverNode.mediaUrl
+          : uri;
         setNodes(prev => prev.map(n => n.clientReferenceId === clientRefId ? { ...n, id: sid, mediaUrl: sMedia } : n));
         roomTaskNodeService.updateNode(taskId, newMediaNode.id, { id: sid, mediaUrl: sMedia });
       }
-    } catch {}
+    } catch (err) {
+      // Upload to server failed but local node has valid Cloudinary URL — keep it local
+      console.warn('[handleUploadProof] Server sync failed, keeping local node:', err);
+    }
   };
 
   const renderAvatars = () => {
@@ -554,10 +611,10 @@ export default function RoomTaskThread() {
       case 'date_divider': return <DateDividerNode dateLabel={item.data} />;
       case 'proof_node': return <ProofNode node={item.data} currentUserId={user?.id || ''} isOwner={isRoomOwner} isLast={item.isLast} onVouch={handleVouch} onApprove={handleApprove} />;
       case 'system_alert_node': return <SystemAlertNode node={item.data} isLast={item.isLast} />;
-      case 'chat_node': return <ChatNode node={item.data} isLast={item.isLast} currentUserId={user?.id || ''} />;
+      case 'chat_node': return <ChatNode node={item.data} isLast={item.isLast} currentUserId={user?.id || ''} onReply={handleReply} />;
       default: return null;
     }
-  }, [user, isRoomOwner, handleVouch, handleApprove]);
+  }, [user, isRoomOwner, handleVouch, handleApprove, handleReply]);
 
   const floatingDateStyle = useAnimatedStyle(() => ({
     opacity: withTiming(isScrolling.value, { duration: 300 }),
@@ -600,7 +657,7 @@ export default function RoomTaskThread() {
               const alertRef = `sys_${Date.now()}`;
               const alertMsg: RoomTaskNode = {
                 id: `chat_${Date.now()}`, clientReferenceId: alertRef, roomId, taskId, type: 'SYSTEM_ALERT', status: 'PENDING',
-                content: `${user?.username || 'Someone'} completed the mission.`, vouchCount: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+                content: `${user?.username || 'Someone'} Completed the task.`, vouchCount: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
                 heatLevel: 0,
               } as any;
               setNodes(prev => [...prev, alertMsg]);
@@ -630,6 +687,11 @@ export default function RoomTaskThread() {
             ref={listRef} data={flattenedData} renderItem={renderItem} keyExtractor={i => i.id} getItemType={i => i.type} estimatedItemSize={120}
             contentContainerStyle={{ paddingBottom: 24, paddingHorizontal: 16 }} showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            scrollEventThrottle={16}
+            onScroll={(e) => {
+              const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+              atEndRef.current = contentSize.height - (contentOffset.y + layoutMeasurement.height) < 120;
+            }}
             onEndReached={handleLoadMore} onEndReachedThreshold={0.5}
             refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refreshAll} tintColor={isDark ? '#fff' : '#000'} />}
             onViewableItemsChanged={({ viewableItems }) => {
@@ -640,15 +702,15 @@ export default function RoomTaskThread() {
           />
         </View>
         <BlurView intensity={isDark ? 90 : 60} tint={isDark ? "dark" : "light"} style={[styles.inputBarBlur, { paddingBottom: insets.bottom || 16, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }]}>
-          <View style={styles.inputRow}>
-            <TouchableOpacity style={[styles.mediaBtn, { backgroundColor: isDark ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.1)' }]} onPress={() => { setUploadMode('chat'); setShowUploadModal(true); }}>
-              <Ionicons name="camera-outline" size={22} color={isDark ? "#a5b4fc" : "#6366f1"} />
-            </TouchableOpacity>
-            <View style={[styles.inputContainer, { backgroundColor: isDark ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.8)', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}>
-              <TextInput style={[styles.inputField, { color: isDark ? '#fff' : '#000' }]} placeholder="Log progress or chat..." placeholderTextColor={isDark ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.4)"} value={inputText} onChangeText={setInputText} multiline maxLength={500} />
-            </View>
-            <TouchableOpacity style={[styles.sendBtn, inputText.trim() ? styles.sendBtnActive : { opacity: 0.5 }]} onPress={handleSendChat} disabled={!inputText.trim()}><Ionicons name="send" size={15} color="#fff" /></TouchableOpacity>
-          </View>
+          <MessageInput
+            value={inputText}
+            onChangeText={setInputText}
+            onSend={handleSendChat}
+            onPlusPress={() => { setUploadMode('chat'); setShowUploadModal(true); }}
+            placeholder="Log progress or chat..."
+            replyTo={replyTo}
+            onCancelReply={() => setReplyTo(null)}
+          />
         </BlurView>
       </KeyboardAvoidingView>
 
@@ -678,10 +740,4 @@ const styles = StyleSheet.create({
   floatingDateBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, overflow: 'hidden' },
   floatingDateText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   inputBarBlur: { borderTopWidth: 1, paddingTop: 12, paddingHorizontal: 12 },
-  inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
-  mediaBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
-  inputContainer: { flex: 1, borderRadius: 20, borderWidth: 1, minHeight: 40, maxHeight: 120, justifyContent: 'center' },
-  inputField: { fontSize: 14, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10 },
-  sendBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
-  sendBtnActive: { backgroundColor: '#8b5cf6' },
 });

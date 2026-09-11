@@ -5,6 +5,34 @@ const { prisma } = require('../config/database');
 const NotificationService = require('../services/notificationService');
 const PushNotificationService = require('../services/pushNotificationService');
 const logger = require('../utils/logger');
+const { evaluateAndUnlock } = require('../services/trophyService');
+const { isBlocked, blockedResponse } = require('../utils/blocking');
+
+function parseReactions(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+router.use(protect, async (req, res, next) => {
+  const parts = req.path.split('/').filter(Boolean);
+  const friendId = parts[0] === 'read' ? parts[1] : (parts[0] === 'conversations' ? parts[1] : parts[0]);
+  if (!friendId || friendId === 'unread-count') return next();
+  if (friendId && await isBlocked(req.user.id, friendId)) return blockedResponse(res);
+  next();
+});
+
+function fireTrophyCheck(userId) {
+  if (!userId) return;
+  evaluateAndUnlock(userId).catch((err) =>
+    logger.error(`Trophy evaluation failed for ${userId}:`, err.message),
+  );
+}
 
 // @route   GET /api/direct-messages/conversations
 // @desc    Get user's conversations (list of friends with last message)
@@ -24,50 +52,88 @@ router.get('/conversations', protect, async (req, res, next) => {
         ]
       },
       include: {
-        fromUser: { select: { id: true, username: true, avatar: true } },
-        toUser: { select: { id: true, username: true, avatar: true } }
+        fromUser: { select: { id: true, username: true, avatar: true, coverImage: true } },
+        toUser: { select: { id: true, username: true, avatar: true, coverImage: true } }
       }
     });
+    const blocks = await prisma.userBlock.findMany({
+      where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
+      select: { blockerId: true, blockedId: true },
+    });
+    const blockedIds = new Set(blocks.map(b => b.blockerId === userId ? b.blockedId : b.blockerId));
+    const visibleFriendships = friendships.filter(f => !blockedIds.has(f.fromUserId === userId ? f.toUserId : f.fromUserId));
 
     // Separate friendships
-    const acceptedFriendships = friendships.filter(f => f.status === 'accepted' || f.status === 'removed');
-    const pendingRequests = friendships.filter(f => f.status === 'pending');
+    const acceptedFriendships = visibleFriendships.filter(f => f.status === 'accepted' || f.status === 'removed');
+    const pendingRequests = visibleFriendships.filter(f => f.status === 'pending');
 
     // Build list of all counterpart user ids (accepted+removed+pending) so we can compute last message/unread uniformly
     const acceptedIds = acceptedFriendships.map(f => (f.fromUserId === userId ? f.toUserId : f.fromUserId));
     const pendingIds = pendingRequests.map(f => (f.fromUserId === userId ? f.toUserId : f.fromUserId));
     const allCounterpartIds = Array.from(new Set([...acceptedIds, ...pendingIds]));
+    const preferences = allCounterpartIds.length > 0
+      ? await prisma.conversationPreference.findMany({
+          where: { userId, friendId: { in: allCounterpartIds } },
+        })
+      : [];
+    const preferenceByFriendId = new Map(preferences.map(preference => [preference.friendId, preference]));
 
-    // Fetch recent messages across all counterpart users (including pending), to compute last message + unread.
-    // Exclude messages soft-deleted by current user via deletedFor field.
-    const allMessages = allCounterpartIds.length === 0 ? [] : await prisma.directMessage.findMany({
-      where: {
-        AND: [
-          {
-            OR: [
-              { fromUserId: userId, toUserId: { in: allCounterpartIds } },
-              { toUserId: userId, fromUserId: { in: allCounterpartIds } }
-            ]
-          },
-          {
-            OR: [
-              { deletedFor: null },
-              { NOT: { deletedFor: { contains: userId } } }
-            ]
-          }
-        ]
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 200
-    });
-
+    // Fetch the latest message per counterpart and unread counts in two targeted queries,
+    // instead of pulling up to 200 messages and processing them in JS.
     const lastMessageMap = new Map();
     const unreadCountMap = new Map();
-    for (const msg of allMessages) {
-      const otherId = msg.fromUserId === userId ? msg.toUserId : msg.fromUserId;
-      if (!lastMessageMap.has(otherId)) lastMessageMap.set(otherId, msg);
-      if (msg.fromUserId === otherId && msg.toUserId === userId && !msg.read) {
-        unreadCountMap.set(otherId, (unreadCountMap.get(otherId) || 0) + 1);
+
+    if (allCounterpartIds.length > 0) {
+      // One query per counterpart for the latest message (parallelised).
+      // This is bounded by the number of friends (typically small) and each query
+      // uses the indexed (fromUserId, toUserId, createdAt) path — far cheaper than
+      // a single cross-user scan with take:200.
+      const [latestMessages, unreadGroups] = await Promise.all([
+        // Latest message per friend: fetch 1 row per counterpart in parallel
+        Promise.all(
+          allCounterpartIds.map(otherId =>
+            prisma.directMessage.findFirst({
+              where: {
+                AND: [
+                  {
+                    OR: [
+                      { fromUserId: userId, toUserId: otherId },
+                      { toUserId: userId, fromUserId: otherId },
+                    ],
+                  },
+                  {
+                    OR: [
+                      { deletedFor: null },
+                      { NOT: { deletedFor: { contains: userId } } },
+                    ],
+                  },
+                ],
+              },
+              orderBy: { createdAt: 'desc' },
+            }).then(msg => ({ otherId, msg }))
+          )
+        ),
+        // Unread count per friend: one aggregation query for all counterparts at once
+        prisma.directMessage.groupBy({
+          by: ['fromUserId'],
+          where: {
+            fromUserId: { in: allCounterpartIds },
+            toUserId: userId,
+            read: false,
+            OR: [
+              { deletedFor: null },
+              { NOT: { deletedFor: { contains: userId } } },
+            ],
+          },
+          _count: { id: true },
+        }),
+      ]);
+
+      for (const { otherId, msg } of latestMessages) {
+        if (msg) lastMessageMap.set(otherId, msg);
+      }
+      for (const group of unreadGroups) {
+        unreadCountMap.set(group.fromUserId, group._count.id);
       }
     }
 
@@ -78,13 +144,17 @@ router.get('/conversations', protect, async (req, res, next) => {
       const isSentByMe = req.fromUserId === userId;
       const lastMessage = lastMessageMap.get(otherUserId);
       const unreadCount = unreadCountMap.get(otherUserId) || (isSentByMe ? 0 : 1);
+      const preference = preferenceByFriendId.get(otherUserId);
 
       return {
         friend: { ...otherUser, _id: otherUser.id },
         lastMessage: lastMessage ? { ...lastMessage, _id: lastMessage.id, message: lastMessage.content } : null,
         unreadCount,
+        isPinned: preference?.pinned || false,
+        isMuted: preference?.muted || false,
         requestStatus: isSentByMe ? 'pending_sent' : 'pending_received',
-        requestId: req.id
+        requestId: req.id,
+        requestMessage: req.message || null
       };
     });
 
@@ -94,6 +164,7 @@ router.get('/conversations', protect, async (req, res, next) => {
       const friendData = friendship.fromUserId === userId ? friendship.toUser : friendship.fromUser;
       const lastMessage = lastMessageMap.get(friendId);
       const unreadCount = unreadCountMap.get(friendId) || 0;
+      const preference = preferenceByFriendId.get(friendId);
 
       return {
         friend: { ...friendData, _id: friendData.id },
@@ -103,6 +174,8 @@ router.get('/conversations', protect, async (req, res, next) => {
           message: lastMessage.content 
         } : null,
         unreadCount,
+        isPinned: preference?.pinned || false,
+        isMuted: preference?.muted || false,
         // Preserve friendship status so clients can distinguish 'accepted' vs 'removed'
         requestStatus: friendship.status
       };
@@ -114,14 +187,57 @@ router.get('/conversations', protect, async (req, res, next) => {
     // Calculate total unread
     const totalUnread = conversations.reduce((sum, c) => sum + c.unreadCount, 0);
 
-    // Sort by last message time
+    // Pinned conversations always lead; the rest remain newest-first.
     conversations.sort((a, b) => {
+      if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
       const aTime = a.lastMessage?.createdAt || 0;
       const bTime = b.lastMessage?.createdAt || 0;
       return new Date(bTime) - new Date(aTime);
     });
 
     res.json({ success: true, conversations, totalUnread });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// @route   PUT /api/direct-messages/conversations/:friendId/preferences
+// @desc    Update the current user's direct-message preferences for one friend
+// @access  Private
+router.put('/conversations/:friendId/preferences', protect, async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { friendId } = req.params;
+    const { pinned, muted } = req.body;
+
+    if (pinned === undefined && muted === undefined) {
+      return res.status(400).json({ success: false, message: 'Provide a pin or mute preference' });
+    }
+    if ((pinned !== undefined && typeof pinned !== 'boolean') || (muted !== undefined && typeof muted !== 'boolean')) {
+      return res.status(400).json({ success: false, message: 'Conversation preferences must be boolean values' });
+    }
+
+    const friendship = await prisma.friend.findFirst({
+      where: {
+        status: { in: ['accepted', 'pending', 'removed'] },
+        OR: [
+          { fromUserId: userId, toUserId: friendId },
+          { fromUserId: friendId, toUserId: userId },
+        ],
+      },
+      select: { id: true },
+    });
+    if (!friendship) {
+      return res.status(404).json({ success: false, message: 'Conversation not found' });
+    }
+
+    const preference = await prisma.conversationPreference.upsert({
+      where: { userId_friendId: { userId, friendId } },
+      create: { userId, friendId, ...(pinned !== undefined ? { pinned } : {}), ...(muted !== undefined ? { muted } : {}) },
+      update: { ...(pinned !== undefined ? { pinned } : {}), ...(muted !== undefined ? { muted } : {}) },
+    });
+
+    res.json({ success: true, preference });
   } catch (error) {
     next(error);
   }
@@ -159,6 +275,7 @@ router.get('/:friendId', protect, async (req, res, next) => {
     const userId = req.user.id;
     const friendId = req.params.friendId;
     const { last_id, limit = 100 } = req.query;
+    const pageSize = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 100);
 
     // Verify relationship exists (accepted OR pending OR removed)
     const friendship = await prisma.friend.findFirst({
@@ -215,9 +332,13 @@ router.get('/:friendId', protect, async (req, res, next) => {
         fromUser: { select: { id: true, username: true } },
         toUser: { select: { id: true, username: true } }
       },
-      orderBy: { createdAt: 'asc' },
-      take: parseInt(limit)
+      // An initial load must return the latest window, not the oldest history.
+      // Delta requests continue forward from the supplied message.
+      orderBy: { createdAt: isDeltaSync ? 'asc' : 'desc' },
+      take: pageSize
     });
+
+    if (!isDeltaSync) messages.reverse();
 
     // Mark messages from friend as read (idempotent) only if relationship is accepted.
     // While pending/removed, we avoid toggling read state to reduce UI thrash.
@@ -248,7 +369,8 @@ router.get('/:friendId', protect, async (req, res, next) => {
       sender: { ...m.fromUser, _id: m.fromUser.id },
       recipient: { ...m.toUser, _id: m.toUser.id },
       isRead: m.read,
-      replyTo: m.replyToText ? { _id: m.replyToId, message: m.replyToText } : null
+      replyTo: m.replyToText ? { _id: m.replyToId, message: m.replyToText } : null,
+      reactions: parseReactions(m.reactions)
     }));
 
     res.json({ 
@@ -535,6 +657,8 @@ router.post('/:friendId', protect, async (req, res, next) => {
       message.trim(),
       userId
     ).catch(err => logger.error('Push notification error for DM:', err));
+
+    fireTrophyCheck(userId);
 
     res.json({ success: true, message: formattedDm });
   } catch (error) {

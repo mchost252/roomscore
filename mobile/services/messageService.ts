@@ -27,9 +27,28 @@ export interface FriendUser {
   id: string;
   username: string;
   avatar: string | null;
+  bio?: string | null;
   isFriend?: boolean;
   requestStatus?: 'none' | 'pending_sent' | 'pending_received' | 'accepted';
   requestId?: string | null;
+}
+
+export interface FriendProfile {
+  id: string;
+  username: string;
+  avatar: string | null;
+  coverImage: string | null;
+  bio: string | null;
+  streak: number;
+  longestStreak: number;
+  totalTasksCompleted: number;
+  lastActive: string;
+  createdAt: string;
+  mutualRooms: { id: string; name: string; description?: string | null }[];
+  mutualRoomMembers: { id: string; username: string; avatar: string | null }[];
+  mutualRoomsCount: number;
+  tasksTogether: number;
+  friendsSince: string;
 }
 
 export interface MessageRequest {
@@ -76,8 +95,9 @@ class MessageService {
     this.listeners.get(event)?.delete(handler);
   }
 
-  private emit(event: string, data?: any): void {
-    console.log(`[MsgService] Emitting event: ${event}`, data ? 'with data' : '');
+  emit(event: string, data?: any): void {
+    // Use debug-level logging to avoid flooding release logs; handlers still run.
+    if (console.debug) console.debug && console.debug(`[MsgService] Emitting event: ${event}`, data ? 'with data' : '');
     this.listeners.get(event)?.forEach(h => {
       try { h(data); } catch (e) { console.warn(`[MsgService] Event handler error (${event}):`, e); }
     });
@@ -88,6 +108,7 @@ class MessageService {
   private currentUserId: string | null = null;
   private unsubscribers: (() => void)[] = [];
   private deletedByMe = new Set<string>(); // Track friends user has deleted (initiated)
+  private blockedUsers = new Set<string>();
 
   // Friendship cache — avoids API calls for every message send
   private friendshipCache = new Map<string, { isFriend: boolean; requestId?: string; requestStatus: string }>();
@@ -114,9 +135,26 @@ class MessageService {
 
   async initialize(userId: string): Promise<void> {
     if (this.isInitialized && this.currentUserId === userId) return;
+    await sqliteService.initialize();
     this.currentUserId = userId;
     this.setupSocketListeners();
     this.isInitialized = true;
+    const localBlocks = await sqliteService.getBlockedUsers();
+    this.blockedUsers = new Set(localBlocks.map(block => block.user_id));
+    try {
+      const response = await api.get('/blocks');
+      if (response.data.success) {
+        for (const block of response.data.blocks || []) {
+          const user = block.user || {};
+          if (user.id) {
+            this.blockedUsers.add(user.id);
+            await sqliteService.saveBlockedUser({ user_id: user.id, username: user.username || 'User', avatar: user.avatar || null, created_at: new Date(block.createdAt).getTime() });
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('[MsgService] Failed to load blocked users:', error);
+    }
 
     // Load friendship cache so sendMessage can check inline
     try {
@@ -138,6 +176,7 @@ class MessageService {
     this.unsubscribers = [];
     this.listeners.clear();
     this.friendshipCache.clear();
+    this.blockedUsers.clear();
     if (this.typingTimeout) {
       clearTimeout(this.typingTimeout);
       this.typingTimeout = null;
@@ -170,6 +209,7 @@ class MessageService {
         const senderId = data.fromUserId || data.sender?._id || data.sender?.id;
         const recipientId = data.toUserId || data.recipient?._id || data.recipient?.id;
         const content = data.content || data.message;
+        if (senderId && recipientId && this.currentUserId && this.blockedUsers.has(senderId === this.currentUserId ? recipientId : senderId)) return;
 
         const localMsg: LocalDirectMessage = {
           id: data.id || data._id,
@@ -183,12 +223,21 @@ class MessageService {
           created_at: new Date(data.createdAt).getTime(),
           synced: 1,
         };
-
-        await sqliteService.saveDirectMessage(localMsg);
-
-        // Determine friend context
         const isFromMe = senderId === this.currentUserId;
         const friendId = isFromMe ? recipientId : senderId;
+        const existingMessages = this.currentUserId
+          ? await sqliteService.getDirectMessages(this.currentUserId, friendId, 500)
+          : [];
+        const duplicate = existingMessages.find(message =>
+          message.id === localMsg.id ||
+          (message.from_user_id === localMsg.from_user_id &&
+            message.to_user_id === localMsg.to_user_id &&
+            message.content === localMsg.content &&
+            Math.abs(message.created_at - localMsg.created_at) < 5000)
+        );
+        if (!duplicate) await sqliteService.saveDirectMessage(localMsg);
+
+        // Determine friend context
         const friendUsername = isFromMe
           ? (data.recipient?.username || 'User')
           : (data.sender?.username || 'User');
@@ -214,7 +263,45 @@ class MessageService {
     // ── Typing indicator ─────────────────────────────────
     this.unsubscribers.push(
       syncEngine.on('dm:typing', (data: { userId: string; username: string; isTyping: boolean }) => {
+        if (this.blockedUsers.has(data.userId)) return;
         this.emit('typing:changed', data);
+      })
+    );
+    this.unsubscribers.push(syncEngine.on('user:blocked', async (data: { blockedUserId: string; userId: string }) => {
+      const isBlocker = data.userId === this.currentUserId;
+      const target = isBlocker ? data.blockedUserId : data.userId;
+      if (!target) return;
+      this.blockedUsers.add(target);
+      if (isBlocker) {
+        await sqliteService.saveBlockedUser({ user_id: target, username: 'User', avatar: null, created_at: Date.now() });
+      }
+      await sqliteService.deleteConversation(target);
+      if (this.currentUserId) await sqliteService.deleteConversationMessages(this.currentUserId, target);
+      this.emit('conversation:list');
+      this.emit('user:blocked', { userId: target });
+    }));
+    this.unsubscribers.push(syncEngine.on('user:unblocked', (data: { blockedUserId: string; userId: string }) => {
+      const target = data.userId === this.currentUserId ? data.blockedUserId : data.userId;
+      if (!target) return;
+      this.blockedUsers.delete(target);
+      sqliteService.removeBlockedUser(target).catch(error => console.warn('[MsgService] Failed to remove local block:', error));
+      this.emit('user:unblocked', data);
+    }));
+
+    // ── Reaction events ──────────────────────────────────
+    this.unsubscribers.push(
+      syncEngine.on('dm:reaction', async (data: any) => {
+        const msgId: string = data?.messageId || data?.message_id;
+        const emoji: string = data?.emoji;
+        const action: string = data?.action;
+        const userId: string = data?.userId || 'unknown';
+        if (!msgId || !emoji || !action) return;
+        if (action === 'add') {
+          await sqliteService.addReaction(msgId, emoji, userId);
+        } else if (action === 'remove') {
+          await sqliteService.removeReaction(msgId, emoji, userId);
+        }
+        this.emit('message:reaction', { messageId: msgId, emoji, action, userId });
       })
     );
 
@@ -371,8 +458,7 @@ class MessageService {
     requestStatus?: string,
     requestId?: string | null,
   ): Promise<void> {
-    const convs = await sqliteService.getConversations();
-    const existing = convs.find(c => c.friend_id === friendId);
+    const existing = await sqliteService.getConversationByFriendId(friendId);
 
     const finalStatus = requestStatus !== undefined
       ? requestStatus
@@ -406,6 +492,8 @@ class MessageService {
       updated_at: timestamp,
       request_status: finalStatus,
       request_id: requestId || null,
+      is_pinned: 0,
+      is_muted: 0,
     };
     await sqliteService.saveConversation(newConv);
   }
@@ -485,6 +573,7 @@ class MessageService {
     replyTo?: { id: string; text: string },
   ): Promise<LocalDirectMessage> {
     if (!this.currentUserId) throw new Error('MessageService not initialized');
+    if (this.blockedUsers.has(friendId)) throw new Error('You cannot message a blocked user');
     
     // Validate message content
     if (!content || !content.trim()) {
@@ -577,6 +666,10 @@ class MessageService {
   // ═══════════════════════════════════════════════════════════
 
   async retryMessage(localId: string, friendId: string, content: string, replyToId?: string | null): Promise<void> {
+    if (this.blockedUsers.has(friendId)) {
+      await sqliteService.promoteMessageStatus(localId, 'failed');
+      throw new Error('You cannot message a blocked user');
+    }
     await sqliteService.updateMessageStatus(localId, 'sending');
     this.emit('message:status', { type: 'retry', localId });
 
@@ -604,6 +697,7 @@ class MessageService {
 
   async getMessages(friendId: string, before?: number, opts?: { skipSync?: boolean }): Promise<LocalDirectMessage[]> {
     if (!this.currentUserId) return [];
+    if (this.blockedUsers.has(friendId)) return [];
 
     // Skip if we've deleted this friend - don't fetch from server
     if (this.deletedByMe.has(friendId)) {
@@ -649,6 +743,15 @@ class MessageService {
         if (response.data.success && response.data.messages) {
           let hasNewMessages = false;
 
+          // Fetch local messages ONCE before the loop and index by id for O(1) lookups.
+          // This eliminates the N+1 query pattern (previously one full fetch per server message).
+          const existingLocalMessages = this.currentUserId
+            ? await sqliteService.getDirectMessages(this.currentUserId, friendId, 500)
+            : [];
+          const existingById = new Map<string, LocalDirectMessage>(
+            existingLocalMessages.map(m => [m.id, m])
+          );
+
           for (const msg of response.data.messages) {
             const fromId = msg.sender?._id || msg.fromUserId;
             const toId = msg.recipient?._id || msg.toUserId;
@@ -668,27 +771,39 @@ class MessageService {
               created_at: new Date(msg.createdAt).getTime(),
               synced: 1,
             };
+            const serverReactions = Array.isArray(msg.reactions) ? msg.reactions : [];
+            await sqliteService.replaceReactions(
+              localMsg.id,
+              serverReactions.filter((reaction: any) => reaction?.emoji && reaction?.userId)
+            );
 
             // saveDirectMessage uses INSERT OR REPLACE — but we need promotion semantics.
-            // Check if the message already exists locally with a higher status.
-            if (this.currentUserId) {
-              const existingMessages = await sqliteService.getDirectMessages(this.currentUserId, friendId, 200);
-              const existing = existingMessages.find(m => m.id === localMsg.id);
-              if (existing) {
-                // Only update if the new status is a promotion
-                if (shouldPromote(existing.status, localMsg.status)) {
-                  await sqliteService.promoteMessageStatus(localMsg.id, localMsg.status, 1);
-                }
-                // Skip saving the full message (would overwrite other fields)
-                continue;
+            // Check if the message already exists locally with a higher status (O(1) Map lookup).
+            const existing = existingById.get(localMsg.id) || existingLocalMessages.find(existingMessage =>
+              existingMessage.from_user_id === localMsg.from_user_id &&
+              existingMessage.to_user_id === localMsg.to_user_id &&
+              existingMessage.content === localMsg.content &&
+              Math.abs(existingMessage.created_at - localMsg.created_at) < 5000
+            );
+            if (existing) {
+              if (existing.id !== localMsg.id && existing.local_id.startsWith('local_')) {
+                await sqliteService.updateMessageId(existing.local_id, localMsg.id);
               }
+              // Only update if the new status is a promotion
+              if (shouldPromote(existing.status, localMsg.status)) {
+                await sqliteService.promoteMessageStatus(localMsg.id, localMsg.status, 1);
+              }
+              // Skip saving the full message (would overwrite other fields)
+              continue;
             }
 
             await sqliteService.saveDirectMessage(localMsg);
             hasNewMessages = true;
           }
 
-          if (hasNewMessages) {
+          // Reactions are synchronized alongside existing messages, so a delta
+          // can change message metadata without adding a new message row.
+          if (hasNewMessages || response.data.messages.length > 0) {
             this.emit('messages_synced', friendId);
           }
         }
@@ -747,21 +862,29 @@ class MessageService {
         if (response.data.success && response.data.conversations) {
           const seenFriendIds = new Set<string>();
 
+          // Fetch all local conversations ONCE upfront so we can look up existing
+          // entries by friend_id without re-querying inside the loop (was 2 full
+          // fetches per sync: one inside the loop, one for the cleanup pass).
+          const allLocalConvs = await sqliteService.getConversations();
+          const localConvMap = new Map<string, LocalConversation>(
+            allLocalConvs.map(c => [c.friend_id, c])
+          );
+
           for (const conv of response.data.conversations as any[]) {
             const friendId = conv.friend?.id || conv.friend?._id;
             if (!friendId || seenFriendIds.has(friendId)) continue;
-            
+
             // Skip if I deleted this friend - don't re-create conversation
             if (this.deletedByMe.has(friendId)) {
               console.log('[MsgService] Skipping sync for deleted friend:', friendId);
               seenFriendIds.add(friendId);
               continue;
             }
-            
+
             seenFriendIds.add(friendId);
 
-            // Check existing local conversation for data we want to preserve
-            const existing = (await sqliteService.getConversations()).find(c => c.friend_id === friendId);
+            // O(1) lookup instead of a second getConversations() call
+            const existing = localConvMap.get(friendId);
 
             const localConv: LocalConversation = {
               friend_id: friendId,
@@ -774,8 +897,33 @@ class MessageService {
               updated_at: Date.now(),
               request_status: conv.requestStatus || existing?.request_status || 'none',
               request_id: conv.requestId || existing?.request_id || null,
+              is_pinned: conv.isPinned ? 1 : 0,
+              is_muted: conv.isMuted ? 1 : 0,
             };
             await sqliteService.saveConversation(localConv);
+            if (conv.requestMessage && localConv.request_id) {
+              const requestMessageId = `request_${localConv.request_id}`;
+              const requestFromId = localConv.request_status === 'pending_sent'
+                ? this.currentUserId
+                : friendId;
+              const requestToId = localConv.request_status === 'pending_sent'
+                ? friendId
+                : this.currentUserId;
+              if (requestFromId && requestToId) {
+                await sqliteService.saveDirectMessage({
+                  id: requestMessageId,
+                  local_id: requestMessageId,
+                  from_user_id: requestFromId,
+                  to_user_id: requestToId,
+                  content: conv.requestMessage,
+                  status: 'sent',
+                  reply_to_id: null,
+                  reply_to_text: null,
+                  created_at: new Date(conv.createdAt || Date.now()).getTime(),
+                  synced: 1,
+                });
+              }
+            }
             this.friendshipCache.set(friendId, {
               isFriend: localConv.request_status === 'none' || localConv.request_status === 'accepted',
               requestStatus: localConv.request_status === 'accepted' ? 'accepted' : localConv.request_status,
@@ -783,11 +931,11 @@ class MessageService {
             });
           }
 
-          // Clean up stale pending conversations not in server response
-          const freshFriendIds = Array.from(seenFriendIds);
-          const existingConvs = await sqliteService.getConversations();
-          for (const oldConv of existingConvs) {
-            if (!freshFriendIds.includes(oldConv.friend_id)) {
+          // Clean up stale pending conversations not in server response.
+          // Reuse the already-fetched local list — no second DB call needed.
+          const freshFriendIds = seenFriendIds;
+          for (const oldConv of allLocalConvs) {
+            if (!freshFriendIds.has(oldConv.friend_id)) {
               if (oldConv.request_status?.startsWith('pending_')) {
                 await sqliteService.deleteConversation(oldConv.friend_id);
               }
@@ -808,6 +956,29 @@ class MessageService {
       await this.conversationsFetchPromise;
     } finally {
       this.conversationsFetchPromise = null;
+    }
+  }
+
+  async updateConversationPreferences(friendId: string, preferences: { pinned?: boolean; muted?: boolean }): Promise<void> {
+    await sqliteService.updateConversationPreferences(friendId, {
+      isPinned: preferences.pinned,
+      isMuted: preferences.muted,
+    });
+    this.emit('conversation:list');
+
+    try {
+      const response = await api.put(`/direct-messages/conversations/${friendId}/preferences`, preferences);
+      if (!response.data?.success) throw new Error(response.data?.message || 'Could not save conversation preference');
+
+      await sqliteService.updateConversationPreferences(friendId, {
+        isPinned: response.data.preference.pinned,
+        isMuted: response.data.preference.muted,
+      });
+      this.emit('conversation:list');
+    } catch (error) {
+      console.warn('[MsgService] updateConversationPreferences failed:', error);
+      await this.fetchAndMergeConversations();
+      throw error;
     }
   }
 
@@ -860,6 +1031,7 @@ class MessageService {
   // ═══════════════════════════════════════════════════════════
 
   async sendFriendRequest(recipientId: string, content?: string): Promise<{ success: boolean; requestId?: string; error?: string }> {
+    if (this.blockedUsers.has(recipientId)) return { success: false, error: 'This user is blocked' };
     try {
       const response = await api.post('/friends/request', { recipientId, message: content });
       if (response.data.success) {
@@ -868,6 +1040,21 @@ class MessageService {
         // Clear from deleted list so sync will work properly
         this.deletedByMe.delete(recipientId);
         
+        const requestText = content?.trim();
+        if (requestText && this.currentUserId && requestId) {
+          await sqliteService.saveDirectMessage({
+            id: `request_${requestId}`,
+            local_id: `request_${requestId}`,
+            from_user_id: this.currentUserId,
+            to_user_id: recipientId,
+            content: requestText,
+            status: 'sent',
+            reply_to_id: null,
+            reply_to_text: null,
+            created_at: Date.now(),
+            synced: 1,
+          });
+        }
         // Create local conversation immediately (pending_sent status)
         await this.ensureConversation(
           recipientId, 
@@ -938,8 +1125,17 @@ class MessageService {
   }
 
   async blockUser(friendId: string): Promise<boolean> {
-    const convs = await sqliteService.getConversations();
-    const conv = convs.find(c => c.friend_id === friendId);
+    const user = (await sqliteService.getConversations()).find(c => c.friend_id === friendId);
+    try {
+      const response = await api.post('/blocks', { userId: friendId });
+      if (!response.data.success) return false;
+      this.blockedUsers.add(friendId);
+      await sqliteService.saveBlockedUser({ user_id: friendId, username: user?.username || 'User', avatar: user?.avatar || null, created_at: Date.now() });
+    } catch (error) {
+      console.warn('[MsgService] Block request failed:', error);
+      return false;
+    }
+    const conv = user;
     if (conv?.request_id) {
       await this.declineRequest(conv.request_id, friendId);
     }
@@ -950,6 +1146,45 @@ class MessageService {
     this.friendshipCache.delete(friendId);
     this.emit('conversation:list');
     return true;
+  }
+
+  async unblockUser(friendId: string): Promise<boolean> {
+    if (!friendId) return false;
+    try {
+      const response = await api.delete(`/blocks/${friendId}`);
+      if (response.data?.success !== true) return false;
+      this.blockedUsers.delete(friendId);
+      await sqliteService.removeBlockedUser(friendId);
+      this.emit('conversation:list');
+      return true;
+    } catch (error) {
+      console.warn('[MsgService] Unblock request failed:', error);
+      return false;
+    }
+  }
+
+  async getBlockedUsers(): Promise<any[]> {
+    const local = await sqliteService.getBlockedUsers();
+    try {
+      const response = await api.get('/blocks');
+      if (response.data.success) {
+        const blocks = response.data.blocks || [];
+        for (const block of blocks) {
+          const user = block.user || block;
+          if (user.id) {
+            this.blockedUsers.add(user.id);
+            await sqliteService.saveBlockedUser({ user_id: user.id, username: user.username || 'User', avatar: user.avatar || null, created_at: new Date(block.createdAt).getTime() });
+          }
+        }
+        return blocks.map((block: any) => {
+          const user = block.user || block;
+          return { ...user, id: user.id || user._id || user.user_id };
+        }).filter((user: any) => Boolean(user.id));
+      }
+    } catch (error) {
+      console.warn('[MsgService] Fetch blocked users failed:', error);
+    }
+    return local.map(u => ({ id: u.user_id, username: u.username, avatar: u.avatar }));
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -985,6 +1220,25 @@ class MessageService {
     try {
       await api.delete(`/direct-messages/${friendId}`);
     } catch {}
+  }
+
+  async clearConversationHistory(friendId: string): Promise<void> {
+    if (!this.currentUserId) return;
+
+    // Clear the server first so the next background sync cannot restore stale rows.
+    await api.delete(`/direct-messages/${friendId}`);
+    await sqliteService.deleteConversationMessages(this.currentUserId, friendId);
+
+    const conversation = await sqliteService.getConversationByFriendId(friendId);
+    if (conversation) {
+      await sqliteService.saveConversation({
+        ...conversation,
+        last_message: '',
+        last_message_at: Date.now(),
+        unread_count: 0,
+      });
+    }
+    this.emit('conversation:list');
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -1033,11 +1287,7 @@ class MessageService {
   // ═══════════════════════════════════════════════════════════
 
   async getUnreadCount(): Promise<number> {
-    const convs = await sqliteService.getConversations();
-    return convs.reduce((sum, c) => {
-      const isPendingReq = c.request_status === 'pending_received' ? 1 : 0;
-      return sum + c.unread_count + isPendingReq;
-    }, 0);
+    return sqliteService.getUnreadTotal();
   }
 
   async getServerUnreadCount(): Promise<number> {
@@ -1080,6 +1330,7 @@ class MessageService {
           id: f._id || f.id,
           username: f.username,
           avatar: f.avatar || null,
+          bio: f.bio || null,
           isFriend: true,
           requestStatus: 'accepted' as const,
         }));
@@ -1115,6 +1366,33 @@ class MessageService {
   }
 
   // ═══════════════════════════════════════════════════════════
+  // Friend Profile (for chat dropdown)
+  // ═══════════════════════════════════════════════════════════
+
+  async getFriendProfile(friendId: string): Promise<FriendProfile | null> {
+    try {
+      const response = await api.get(`/friends/${friendId}/profile`);
+      if (response.data.success) {
+        const profile = response.data.profile || response.data.user;
+        if (profile) {
+          return {
+            ...profile,
+            id: profile.id || profile._id,
+            avatar: profile.avatar || null,
+            coverImage: profile.coverImage || profile.cover || profile.banner || null,
+            bio: profile.bio || null,
+          } as FriendProfile;
+        }
+      }
+      console.warn('[MsgService] Friend profile response did not include a profile:', response.data);
+      return null;
+    } catch (error) {
+      console.warn('[MsgService] Friend profile request failed:', error);
+      return null;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
   // Offline Queue Flush
   // ═══════════════════════════════════════════════════════════
 
@@ -1127,7 +1405,7 @@ class MessageService {
 
     for (const msg of pending) {
       const friendship = this.friendshipCache.get(msg.to_user_id);
-      if (!friendship?.isFriend) continue;
+      if (this.blockedUsers.has(msg.to_user_id) || !friendship?.isFriend) continue;
 
       try {
         const response = await api.post(`/direct-messages/${msg.to_user_id}`, {
@@ -1151,6 +1429,7 @@ class MessageService {
   private async flushQueueForFriend(friendId: string): Promise<void> {
     const pending = await sqliteService.getUnsyncedMessages();
     const forFriend = pending.filter(m => m.to_user_id === friendId);
+    if (this.blockedUsers.has(friendId)) return;
     if (forFriend.length === 0) return;
 
     for (const msg of forFriend) {
@@ -1171,6 +1450,35 @@ class MessageService {
       }
     }
     this.emit('conversation:list');
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // Message Reactions
+  // ═══════════════════════════════════════════════════════════
+
+  async addMessageReaction(messageId: string, emoji: string, userId?: string): Promise<void> {
+    const uid = userId || this.currentUserId || 'unknown';
+    await sqliteService.addReaction(messageId, emoji, uid);
+    this.emit('message:reaction', { messageId, emoji, action: 'add', userId: uid });
+    // Emit to socket for real-time visibility to others
+    const recipientId = this.currentUserId
+      ? await sqliteService.getDirectMessagePeer(messageId, this.currentUserId)
+      : null;
+    try { syncEngine.emit('dm:reaction', { messageId, emoji, action: 'add', userId: uid, recipientId }); } catch {}
+  }
+
+  async removeMessageReaction(messageId: string, emoji: string, userId?: string): Promise<void> {
+    const uid = userId || this.currentUserId || 'unknown';
+    await sqliteService.removeReaction(messageId, emoji, uid);
+    this.emit('message:reaction', { messageId, emoji, action: 'remove', userId: uid });
+    const recipientId = this.currentUserId
+      ? await sqliteService.getDirectMessagePeer(messageId, this.currentUserId)
+      : null;
+    try { syncEngine.emit('dm:reaction', { messageId, emoji, action: 'remove', userId: uid, recipientId }); } catch {}
+  }
+
+  async getMessageReactions(messageId: string): Promise<{ emoji: string; count: number; userReacted: boolean }[]> {
+    return sqliteService.getReactions(messageId, this.currentUserId || undefined);
   }
 }
 

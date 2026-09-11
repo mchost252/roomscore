@@ -8,6 +8,7 @@ import syncEngine from '../services/syncEngine';
 import messageService from '../services/messageService';
 import sqliteService from '../services/sqliteService';
 import { initRoomDb } from '../db/roomDb';
+import notificationService from '../services/notificationService';
 
 interface AuthContextType {
   user: User | null;
@@ -39,6 +40,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [loading, setLoading] = useState(true);
   // FIX: useRef so the cooldown persists across re-renders (was a plain `let` before)
   const lastLoadUserAttemptRef = useRef(0);
+  const notificationCountsUnsubscribeRef = useRef<(() => void) | null>(null);
   const LOAD_USER_COOLDOWN = 30000; // 30 seconds
 
   // Helper: safely initialize all messaging services
@@ -59,6 +61,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } catch (err) {
       console.warn('[Auth] MessageService init failed (non-fatal):', err);
     }
+    await notificationService.syncUnreadBadge();
+    
+    // Auto-register push token on login/init
+    notificationService.registerNativeDevice().catch(err => {
+      console.warn('[Auth] Auto push token registration failed:', err);
+    });
+
+    notificationCountsUnsubscribeRef.current?.();
+    notificationCountsUnsubscribeRef.current = syncEngine.on('notification:counts', (counts) => {
+      notificationService.applyUnreadCounts(counts as {
+        total: number;
+        notifications: number;
+        messages: number;
+        friendRequests: number;
+        rooms: number;
+      }).catch((err) => console.warn('[Auth] Failed to update notification badge:', err));
+    });
   };
 
   // Load user on mount
@@ -248,6 +267,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Disconnect real-time services
       syncEngine.disconnect();
       messageService.disconnect();
+      await notificationService.unregisterCurrentNativeDevice().catch((err) => {
+        console.warn('[Auth] Failed to unregister push device:', err);
+      });
       
       // FIX: Clear local data on logout to prevent cross-user data leakage
       try {

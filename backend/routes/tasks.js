@@ -3,12 +3,29 @@ const router = express.Router();
 const { prisma } = require('../config/database');
 const NotificationService = require('../services/notificationService');
 const PushNotificationService = require('../services/pushNotificationService');
-const { protect, isRoomMember } = require('../middleware/auth');
+const { protect, isRoomMember, isRoomAdmin } = require('../middleware/auth');
 const { validate, createTaskSchema, updateTaskSchema } = require('../middleware/validation');
 const logger = require('../utils/logger');
+const cloudinaryService = require('../services/cloudinaryService');
+const { evaluateAndUnlock } = require('../services/trophyService');
+
+// Fire-and-forget trophy evaluator. Never throws into the calling route.
+function fireTrophyCheck(userId) {
+  if (!userId) return;
+  evaluateAndUnlock(userId).catch((err) =>
+    logger.error(`Trophy evaluation failed for ${userId}:`, err.message),
+  );
+}
 
 // Helper to get today's date string (YYYY-MM-DD)
 const getTodayString = () => new Date().toISOString().split('T')[0];
+const normalizeTaskType = (type) => type === 'weekly' ? 'daily' : (type || 'daily');
+const taskAppearsOnDate = (task, date) => {
+  const dateStr = date.toISOString().split('T')[0];
+  if (task.taskType === 'one-time') return !!task.dueDate && new Date(task.dueDate).toISOString().split('T')[0] === dateStr;
+  if (task.taskType === 'custom') return (task.daysOfWeek || '').split(',').map(Number).includes(date.getDay());
+  return true;
+};
 
 // @route   GET /api/rooms/:roomId/tasks
 // @desc    Get today's tasks for room
@@ -22,12 +39,14 @@ router.get('/:roomId/tasks', protect, isRoomMember, async (req, res, next) => {
     const todayStr = getTodayString();
 
     // Get all active tasks for this room
-    const tasks = await prisma.roomTask.findMany({
+    const allTasks = await prisma.roomTask.findMany({
       where: {
         roomId: req.params.roomId,
         isActive: true
       }
     });
+    const today = new Date();
+    const tasks = allTasks.filter(task => taskAppearsOnDate(task, today));
 
     // Get completions for today (for current user)
     const userCompletions = await prisma.taskCompletion.findMany({
@@ -72,6 +91,7 @@ router.get('/:roomId/tasks', protect, isRoomMember, async (req, res, next) => {
       
       return {
         ...task,
+        taskType: normalizeTaskType(task.taskType),
         _id: task.id,
         isCompleted: completedTaskIds.has(task.id),
         completionId: userCompletions.find(c => c.taskId === task.id)?.id,
@@ -107,23 +127,26 @@ router.get('/:roomId/tasks', protect, isRoomMember, async (req, res, next) => {
 
 // @route   POST /api/rooms/:roomId/tasks
 // @desc    Create a new task
-// @access  Private (must be member, check permissions)
-router.post('/:roomId/tasks', protect, isRoomMember, validate(createTaskSchema), async (req, res, next) => {
+// @access  Private (room owner or admin)
+router.post('/:roomId/tasks', protect, isRoomAdmin, validate(createTaskSchema), async (req, res, next) => {
   try {
-    const { title, description, points, taskType, frequency, daysOfWeek } = req.body;
+    const { title, description, points, taskType, frequency, daysOfWeek, dueDate, hasThread } = req.body;
 
-    // Check permissions (only owner can create tasks for now)
-    const isOwner = req.room.ownerId === req.user.id;
+    // Owners and room admins may manage tasks.
+    const isManager = req.roomRole === 'owner' || req.roomRole === 'admin';
 
-    if (!isOwner) {
+    if (!isManager) {
       return res.status(403).json({
         success: false,
-        message: 'Only room owner can create tasks'
+        message: 'Only the room owner or a room admin can create tasks'
       });
     }
 
     // Determine taskType - support both taskType and frequency fields
-    const finalTaskType = taskType || frequency || 'daily';
+    const finalTaskType = normalizeTaskType(taskType || frequency);
+    if (finalTaskType === 'one-time' && !dueDate) {
+      return res.status(400).json({ success: false, message: 'One-time tasks require a date' });
+    }
 
     // Validate daysOfWeek for custom frequency
     let finalDaysOfWeek = [];
@@ -144,8 +167,10 @@ router.post('/:roomId/tasks', protect, isRoomMember, validate(createTaskSchema),
         description: description || null,
         taskType: finalTaskType,
         daysOfWeek: daysOfWeekString,
+        dueDate: finalTaskType === 'one-time' ? new Date(dueDate) : null,
         points: points || 10,
-        isActive: true
+        isActive: true,
+        hasThread: hasThread === true
       }
     });
 
@@ -159,7 +184,7 @@ router.post('/:roomId/tasks', protect, isRoomMember, validate(createTaskSchema),
       try {
         await NotificationService.createNotification({
           recipientId: memberId,
-          type: 'new_task',
+          type: 'room_task_created',
           title: `New Task in ${req.room.name}`,
           message: `${req.user.username} created: ${title}`,
           roomId: req.params.roomId
@@ -198,8 +223,8 @@ router.post('/:roomId/tasks', protect, isRoomMember, validate(createTaskSchema),
 
 // @route   PUT /api/rooms/:roomId/tasks/:taskId
 // @desc    Update a task
-// @access  Private (owner only)
-router.put('/:roomId/tasks/:taskId', protect, isRoomMember, validate(updateTaskSchema), async (req, res, next) => {
+// @access  Private (room owner or admin)
+router.put('/:roomId/tasks/:taskId', protect, isRoomAdmin, validate(updateTaskSchema), async (req, res, next) => {
   try {
     const task = await prisma.roomTask.findUnique({
       where: { id: req.params.taskId }
@@ -212,25 +237,33 @@ router.put('/:roomId/tasks/:taskId', protect, isRoomMember, validate(updateTaskS
       });
     }
 
-    // Check permissions (only owner can update)
-    const isOwner = req.room.ownerId === req.user.id;
+    // Owners and room admins may manage tasks.
+    const isManager = req.room.ownerId === req.user.id ||
+      req.room.members?.some(m => m.userId === req.user.id && m.status === 'active' && m.role === 'admin');
 
-    if (!isOwner) {
+    if (!isManager) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized to update this task'
+        message: 'Only the room owner or a room admin can update this task'
       });
     }
 
     // Update fields
-    const { title, description, points, taskType, isActive } = req.body;
+    const { title, description, points, taskType, frequency, daysOfWeek, dueDate, isActive, hasThread } = req.body;
     const updateData = {};
 
     if (title) updateData.title = title;
     if (description !== undefined) updateData.description = description;
     if (points) updateData.points = points;
-    if (taskType) updateData.taskType = taskType;
+    const requestedType = taskType || frequency;
+    if (requestedType) updateData.taskType = normalizeTaskType(requestedType);
+    if (daysOfWeek !== undefined) updateData.daysOfWeek = Array.isArray(daysOfWeek) ? daysOfWeek.filter(d => d >= 0 && d <= 6).join(',') || null : null;
+    if (dueDate !== undefined) updateData.dueDate = dueDate ? new Date(dueDate) : null;
+    if (normalizeTaskType(requestedType || task.taskType) === 'one-time' && !(dueDate || task.dueDate)) {
+      return res.status(400).json({ success: false, message: 'One-time tasks require a date' });
+    }
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (hasThread !== undefined) updateData.hasThread = hasThread;
 
     const updatedTask = await prisma.roomTask.update({
       where: { id: req.params.taskId },
@@ -256,8 +289,8 @@ router.put('/:roomId/tasks/:taskId', protect, isRoomMember, validate(updateTaskS
 
 // @route   DELETE /api/rooms/:roomId/tasks/:taskId
 // @desc    Delete a task
-// @access  Private (owner only)
-router.delete('/:roomId/tasks/:taskId', protect, isRoomMember, async (req, res, next) => {
+// @access  Private (room owner or admin)
+router.delete('/:roomId/tasks/:taskId', protect, isRoomAdmin, async (req, res, next) => {
   try {
     const task = await prisma.roomTask.findUnique({
       where: { id: req.params.taskId }
@@ -270,13 +303,13 @@ router.delete('/:roomId/tasks/:taskId', protect, isRoomMember, async (req, res, 
       });
     }
 
-    // Check permissions (only owner can delete)
-    const isOwner = req.room.ownerId === req.user.id;
+    // Owners and room admins may manage tasks.
+    const isManager = req.roomRole === 'owner' || req.roomRole === 'admin';
 
-    if (!isOwner) {
+    if (!isManager) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized to delete this task'
+        message: 'Only the room owner or a room admin can delete this task'
       });
     }
 
@@ -324,6 +357,10 @@ router.post('/:roomId/tasks/:taskId/complete', protect, isRoomMember, async (req
         success: false,
         message: 'Task is not active'
       });
+    }
+
+    if (!taskAppearsOnDate(task, new Date())) {
+      return res.status(400).json({ success: false, message: 'Task is not scheduled for today' });
     }
 
     const todayStr = getTodayString();
@@ -596,6 +633,7 @@ router.post('/:roomId/tasks/:taskId/complete', protect, isRoomMember, async (req
     });
 
     logger.info(`Task completed by ${req.user.email}: ${task.title}`);
+    fireTrophyCheck(req.user.id);
     res.status(201).json({
       success: true,
       completion: { ...completion, _id: completion.id },
@@ -699,6 +737,7 @@ router.delete('/:roomId/tasks/:taskId/complete', protect, isRoomMember, async (r
     });
 
     logger.info(`Task completion removed by ${req.user.email}`);
+    fireTrophyCheck(req.user.id);
     res.json({
       success: true,
       message: 'Task completion removed'
@@ -970,11 +1009,12 @@ router.put('/:roomId/tasks/:taskId/assign/:userId', protect, isRoomMember, async
       });
     }
 
-    // Only the assigned user can update their status, or owner can update any
-    const isOwner = req.room.ownerId === req.user.id;
+    // The assigned user can update their status; owners/admins can update any.
+    const isManager = req.room.ownerId === req.user.id ||
+      req.room.members?.some(m => m.userId === req.user.id && m.status === 'active' && m.role === 'admin');
     const isAssignedUser = req.user.id === req.params.userId;
 
-    if (!isOwner && !isAssignedUser) {
+    if (!isManager && !isAssignedUser) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to update this assignment'
@@ -1099,11 +1139,12 @@ router.get('/:roomId/tasks/calendar', protect, isRoomMember, async (req, res, ne
     const shouldTaskAppearOnDate = (task, date) => {
       const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, etc.
       
-      if (task.taskType === 'daily') {
+      const taskType = normalizeTaskType(task.taskType);
+      if (taskType === 'daily') {
         return true;
-      } else if (task.taskType === 'weekly') {
-        return dayOfWeek === 1; // Every Monday
-      } else if (task.taskType === 'custom' && task.daysOfWeek) {
+      } else if (taskType === 'one-time') {
+        return !!task.dueDate && task.dueDate.toISOString().split('T')[0] === date.toISOString().split('T')[0];
+      } else if (taskType === 'custom' && task.daysOfWeek) {
         const days = task.daysOfWeek.split(',').map(d => parseInt(d));
         return days.includes(dayOfWeek);
       }
@@ -1128,6 +1169,7 @@ router.get('/:roomId/tasks/calendar', protect, isRoomMember, async (req, res, ne
 
           tasksByDate[dateStr].push({
             ...task,
+            taskType: normalizeTaskType(task.taskType),
             _id: task.id,
             completions: taskCompletions.map(c => ({
               userId: c.user.id,
@@ -1193,9 +1235,8 @@ router.get('/:roomId/tasks/:taskId/nodes', protect, isRoomMember, async (req, re
 // @access  Private (must be member)
 router.post('/:roomId/tasks/:taskId/nodes', protect, isRoomMember, async (req, res, next) => {
   try {
-    const { type, content, mediaUrl, status, clientReferenceId } = req.body;
+    const { type, content, mediaUrl, status, clientReferenceId, replyToId, replyToText, replyToUsername } = req.body;
 
-    // Validate task belongs to room
     const task = await prisma.roomTask.findUnique({
       where: { id: req.params.taskId }
     });
@@ -1207,6 +1248,14 @@ router.post('/:roomId/tasks/:taskId/nodes', protect, isRoomMember, async (req, r
       });
     }
 
+    // Guard: node creation only allowed when the task thread is enabled
+    if (!task.hasThread) {
+      return res.status(403).json({
+        success: false,
+        message: 'Task thread is disabled'
+      });
+    }
+
     const node = await prisma.roomTaskNode.create({
       data: {
         roomId: req.params.roomId,
@@ -1215,18 +1264,19 @@ router.post('/:roomId/tasks/:taskId/nodes', protect, isRoomMember, async (req, r
         type: type || 'MESSAGE',
         content: content || null,
         mediaUrl: mediaUrl || null,
-        status: status || 'PENDING'
+        status: status || 'PENDING',
+        replyToId: replyToId || null,
+        replyToText: replyToText || null,
+        replyToUsername: replyToUsername || null
       },
       include: {
         user: { select: { id: true, username: true, avatar: true } }
       }
     });
 
-    // Echo back the clientReferenceId if provided
     const safeNode = { ...node, _id: node.id };
     if (clientReferenceId) safeNode.clientReferenceId = clientReferenceId;
 
-    // Emit socket event for real-time sync
     const io = req.app.get('io');
     io.to(req.params.roomId).emit('thread:node_created', {
       roomId: req.params.roomId,
@@ -1304,7 +1354,7 @@ router.put('/:roomId/tasks/:taskId/nodes/:nodeId', protect, isRoomMember, async 
 
 // @route   DELETE /api/rooms/:roomId/tasks/:taskId/nodes/:nodeId
 // @desc    Delete a node
-// @access  Private (owner only - node owner or room owner)
+// @access  Private (node owner, room owner, or room admin)
 router.delete('/:roomId/tasks/:taskId/nodes/:nodeId', protect, isRoomMember, async (req, res, next) => {
   try {
     const node = await prisma.roomTaskNode.findUnique({
@@ -1320,9 +1370,10 @@ router.delete('/:roomId/tasks/:taskId/nodes/:nodeId', protect, isRoomMember, asy
 
     // Only node owner or room owner can delete
     const isNodeOwner = node.userId === req.user.id;
-    const isRoomOwner = req.room.ownerId === req.user.id;
+    const isRoomManager = req.room.ownerId === req.user.id ||
+      req.room.members?.some(m => m.userId === req.user.id && m.status === 'active' && m.role === 'admin');
 
-    if (!isNodeOwner && !isRoomOwner) {
+    if (!isNodeOwner && !isRoomManager) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to delete this node'

@@ -5,6 +5,7 @@ const { prisma } = require('../config/database');
 const NotificationService = require('../services/notificationService');
 const PushNotificationService = require('../services/pushNotificationService');
 const logger = require('../utils/logger');
+const { isBlocked, blockedResponse } = require('../utils/blocking');
 
 // @route   POST /api/friends/request
 // @desc    Send friend request
@@ -17,6 +18,7 @@ router.post('/request', protect, async (req, res, next) => {
     if (requesterId === recipientId) {
       return res.status(400).json({ success: false, message: 'Cannot send friend request to yourself' });
     }
+    if (await isBlocked(requesterId, recipientId)) return blockedResponse(res);
 
     // Check if recipient exists
     const recipient = await prisma.user.findUnique({
@@ -158,6 +160,7 @@ router.put('/accept/:requestId', protect, async (req, res, next) => {
     if (friendRequest.toUserId !== req.user.id) {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
+    if (await isBlocked(req.user.id, friendRequest.fromUserId)) return blockedResponse(res);
 
     if (friendRequest.status !== 'pending') {
       return res.status(400).json({ success: false, message: 'Request already processed' });
@@ -171,7 +174,7 @@ router.put('/accept/:requestId', protect, async (req, res, next) => {
     // Notify requester with in-app notification
     await NotificationService.createNotification({
       recipientId: friendRequest.fromUserId,
-      type: 'friend_accepted',
+      type: 'friend_request_accepted',
       title: 'Friend Request Accepted',
       message: `${req.user.username} accepted your friend request`
     });
@@ -191,7 +194,7 @@ router.put('/accept/:requestId', protect, async (req, res, next) => {
       }).catch(() => null);
 
       io.to(`user:${friendRequest.fromUserId}`).emit('notification', {
-        type: 'friend_accepted',
+        type: 'friend_request_accepted',
         title: 'Friend Request Accepted',
         message: `${req.user.username} accepted your friend request`,
         friendId: userId
@@ -436,6 +439,118 @@ router.get('/', protect, async (req, res, next) => {
   }
 });
 
+// @route   GET /api/friends/:friendId/profile
+// @desc    Get detailed friend profile for chat dropdown
+// @access  Private
+router.get('/:friendId/profile', protect, async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { friendId } = req.params;
+
+    // Verify friendship exists
+    const friendship = await prisma.friend.findFirst({
+      where: {
+        status: 'accepted',
+        OR: [
+          { fromUserId: userId, toUserId: friendId },
+          { fromUserId: friendId, toUserId: userId },
+        ],
+      },
+    });
+
+    if (!friendship) {
+      return res.status(404).json({ success: false, message: 'Not friends with this user' });
+    }
+
+    // Fetch friend's user data
+    const friend = await prisma.user.findUnique({
+      where: { id: friendId },
+      select: {
+        id: true, username: true, avatar: true, coverImage: true,
+        bio: true, streak: true, longestStreak: true,
+        totalTasksCompleted: true, lastActive: true, createdAt: true,
+      },
+    });
+
+    if (!friend) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Find mutual rooms
+    const myRoomIds = (await prisma.roomMember.findMany({
+      where: { userId, status: 'active' },
+      select: { roomId: true },
+    })).map(r => r.roomId);
+
+    const mutualMemberships = await prisma.roomMember.findMany({
+      where: { userId: friendId, roomId: { in: myRoomIds }, status: 'active' },
+      include: {
+        room: { select: { id: true, name: true, description: true } },
+      },
+    });
+
+    const mutualRooms = mutualMemberships.map(m => m.room);
+
+    // Get mutual room member avatars (first 3 unique members across mutual rooms, excluding both users)
+    const mutualRoomIds = mutualRooms.map(r => r.id);
+    let mutualRoomMembers = [];
+    if (mutualRoomIds.length > 0) {
+      const members = await prisma.roomMember.findMany({
+        where: {
+          roomId: { in: mutualRoomIds },
+          status: 'active',
+          userId: { notIn: [userId, friendId] },
+        },
+        include: { user: { select: { id: true, username: true, avatar: true } } },
+        take: 10,
+      });
+      // Deduplicate by userId
+      const seen = new Set();
+      mutualRoomMembers = members.filter(m => {
+        if (seen.has(m.user.id)) return false;
+        seen.add(m.user.id);
+        return true;
+      }).slice(0, 3).map(m => m.user);
+    }
+
+    // Count active shared-room tasks currently assigned to either friend.
+    let tasksTogether = 0;
+    if (mutualRoomIds.length > 0) {
+      tasksTogether = await prisma.roomTask.count({
+        where: {
+          roomId: { in: mutualRoomIds },
+          isActive: true,
+          status: { in: ['upcoming', 'running'] },
+          assignments: {
+            some: {
+              userId: { in: [userId, friendId] },
+              status: { in: ['pending', 'accepted'] },
+            },
+          },
+        },
+      });
+    }
+
+    // Friends since
+    const friendsSince = friendship.createdAt;
+
+    res.json({
+      success: true,
+      profile: {
+        ...friend,
+        coverImage: friend.coverImage || null,
+        mutualRooms,
+        mutualRoomMembers,
+        mutualRoomsCount: mutualRooms.length,
+        tasksTogether,
+        friendsSince,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // @route   GET /api/friends/requests
 // @desc    Get pending friend requests (received)
 // @access  Private
@@ -523,9 +638,14 @@ router.get('/search', protect, async (req, res, next) => {
     const filteredUsers = users.filter(u => 
       u.username.toLowerCase().includes(query.toLowerCase())
     );
+    const blocked = await prisma.userBlock.findMany({
+      where: { OR: [{ blockerId: req.user.id }, { blockedId: req.user.id }] },
+      select: { blockerId: true, blockedId: true },
+    });
+    const blockedIds = new Set(blocked.map(b => b.blockerId === req.user.id ? b.blockedId : b.blockerId));
 
     // Format for frontend compatibility (use filteredUsers for case-insensitive results)
-    const formattedUsers = filteredUsers.map(u => ({
+    const formattedUsers = filteredUsers.filter(u => !blockedIds.has(u.id)).map(u => ({
       ...u,
       _id: u.id,
       totalPoints: u.totalTasksCompleted || 0,

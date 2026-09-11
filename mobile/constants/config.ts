@@ -1,4 +1,4 @@
-import Constants from 'expo-constants';
+﻿import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 // ==================== CONFIGURATION ====================
@@ -6,8 +6,8 @@ import { Platform } from 'react-native';
 const USE_LOCAL_DEV = true; // <-- CHANGE THIS to false when ready for production
 
 // Local server URL (emulator/simulator)
-const LOCAL_API_URL = 'http://10.184.252.150:5000';  // Physical device
-const LOCAL_SOCKET_URL = 'http://10.184.252.150:5000';
+const LOCAL_API_URL = 'http://192.168.1.145:5000';  // Physical device
+const LOCAL_SOCKET_URL = 'http://192.168.1.145:5000';
 
 const LOCAL_WEB_URL = 'http://localhost:5000';  // Browser testing
 const LOCAL_WEB_SOCKET_URL = 'http://localhost:5000';
@@ -30,7 +30,7 @@ const isWebPlatform = (): boolean => {
 };
 
 // Debug: log the detected platform
-console.log('🔍 Platform detection:', { 
+console.log('ðŸ” Platform detection:', { 
   PlatformOS: Platform.OS, 
   isWeb: isWebPlatform(),
   hasWindow: typeof window !== 'undefined',
@@ -53,9 +53,9 @@ const getApiUrl = (): string => {
 };
 
 // AI Agent URLs
-const LOCAL_AI_URL = 'http://10.126.141.150:3000/api/chat';
+const LOCAL_AI_URL = 'http://192.168.1.145:3000/api/chat';
 const LOCAL_WEB_AI_URL = 'http://localhost:3000/api/chat';
-const LOCAL_AI_TASK_URL = 'http://10.126.141.150:3000/api/task-assist';
+const LOCAL_AI_TASK_URL = 'http://192.168.1.145:3000/api/task-assist';
 const LOCAL_WEB_AI_TASK_URL = 'http://localhost:3000/api/task-assist';
 
 // ... existing code ...
@@ -88,7 +88,12 @@ export const API_BASE_URL = getApiUrl();
 export const SOCKET_URL = getSocketUrl();
 export const AI_AGENT_URL = getAiUrl();
 export const AI_TASK_ASSIST_URL = getAiTaskUrl();
-export const API_TIMEOUT = 30000; // 30 seconds - increased for Railway/Neon cold starts
+export const API_TIMEOUT = 30000;
+
+export const CLOUDINARY_CLOUD_NAME = 'dbdevaaxz';
+export const CLOUDINARY_UPLOAD_PRESET = 'krios_unsigned';
+export const CLOUDINARY_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
+export const CLOUDINARY_DELETE_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/destroy`;
 
 // Token storage keys
 export const TOKEN_KEY = 'auth_token';
@@ -119,8 +124,12 @@ export const API_ENDPOINTS = {
   DIRECT_MESSAGES: '/api/direct-messages',
 } as const;
 
-console.log('🌐 API Configuration:');
+console.log('ðŸŒ API Configuration:');
 console.log('  - Environment:', USE_LOCAL_DEV ? 'LOCAL DEVELOPMENT' : 'PRODUCTION');
 console.log('  - API URL:', API_BASE_URL);
 console.log('  - Socket URL:', SOCKET_URL);
 console.log('  - Timeout:', API_TIMEOUT / 1000, 'seconds');
+
+
+
+

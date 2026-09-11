@@ -1,13 +1,15 @@
-import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useLayoutEffect, useMemo } from 'react';
 import { useFocusEffect } from 'expo-router';
 import {
   View, Text, StyleSheet, Alert, TouchableOpacity, ScrollView,
   TextInput, Animated, Dimensions, Platform, StatusBar,
-  KeyboardAvoidingView, Pressable, Image, Switch, Modal
+  KeyboardAvoidingView, Pressable, Image, Switch, Modal,
+  InteractionManager,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import Svg, { Path } from 'react-native-svg';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../context/ThemeContext';
@@ -125,23 +127,35 @@ export default function HomeScreen() {
   const [tasks, setTasks]                   = useState<PersonalTask[]>([]);
   const [loading, setLoading]               = useState(false);
   const [threadMap, setThreadMap]           = useState<Record<string,ThreadEntry[]>>({});
-  const taskDates = tasks.filter(t=>t.dueDate).map(t=>new Date(t.dueDate!));
-  let tasksForDate = searchQuery.trim()
-    ? tasks.filter(t => t.title.toLowerCase().includes(searchQuery.toLowerCase().trim()))
-    : statusFilter
-      // When status filter is active, show ALL INCOMPLETE tasks with that status (ignore selectedDate)
-      ? tasks.filter(t => !t.isCompleted && getTaskStatus(t.dueDate ? new Date(t.dueDate) : null) === statusFilter)
-      // When no filter, show tasks for the selected date
-      : tasks.filter(t=>{
-          if (!t.dueDate) return isSameDay(new Date(t.createdAt), selectedDate);
-          return isSameDay(new Date(t.dueDate), selectedDate);
-        });
-  const pendingCount = tasks.filter(t=>!t.isCompleted).length;
-  // Task status counts using configurable logic (convert string dates to Date objects)
-  const ongoingCount = tasks.filter(t => !t.isCompleted && getTaskStatus(t.dueDate ? new Date(t.dueDate) : null) === 'ongoing').length;
-  const upcomingCount = tasks.filter(t => !t.isCompleted && getTaskStatus(t.dueDate ? new Date(t.dueDate) : null) === 'upcoming').length;
-  const dueCount = tasks.filter(t => !t.isCompleted && getTaskStatus(t.dueDate ? new Date(t.dueDate) : null) === 'due').length;
-  const done = tasks.filter(t=>t.isCompleted);
+  const taskDates = useMemo(
+    () => tasks.filter(t => t.dueDate).map(t => new Date(t.dueDate!)),
+    [tasks]
+  );
+  const tasksForDate = useMemo(() => {
+    if (searchQuery.trim()) {
+      return tasks.filter(t => t.title.toLowerCase().includes(searchQuery.toLowerCase().trim()));
+    }
+    if (statusFilter) {
+      return tasks.filter(t => !t.isCompleted && getTaskStatus(t.dueDate ? new Date(t.dueDate) : null) === statusFilter);
+    }
+    return tasks.filter(t => {
+      if (!t.dueDate) return isSameDay(new Date(t.createdAt), selectedDate);
+      return isSameDay(new Date(t.dueDate), selectedDate);
+    });
+  }, [tasks, searchQuery, statusFilter, selectedDate]);
+  const { pendingCount, ongoingCount, upcomingCount, dueCount, done } = useMemo(() => {
+    let pending = 0, ongoing = 0, upcoming = 0, due = 0;
+    const completed: PersonalTask[] = [];
+    for (const t of tasks) {
+      if (t.isCompleted) { completed.push(t); continue; }
+      pending++;
+      const status = getTaskStatus(t.dueDate ? new Date(t.dueDate) : null);
+      if (status === 'ongoing') ongoing++;
+      else if (status === 'upcoming') upcoming++;
+      else if (status === 'due') due++;
+    }
+    return { pendingCount: pending, ongoingCount: ongoing, upcomingCount: upcoming, dueCount: due, done: completed };
+  }, [tasks]);
 
   const openTaskSheet = useCallback((task: PersonalTask) => {
     router.push({
@@ -188,14 +202,18 @@ export default function HomeScreen() {
   }, [user]);
 
   // ── Smart notifications ───────────────────────────────────────────────────
+  // Run once on mount, deferred past the slide-in animation via InteractionManager.
+  // Previously ran on every `tasks` mutation (toggle, add, delete) which competed
+  // with the JS thread during screen transitions.
+  const hasScheduledNotifications = useRef(false);
   useEffect(() => {
-    const initNotifications = async () => {
+    if (hasScheduledNotifications.current || tasks.length === 0) return;
+    hasScheduledNotifications.current = true;
+    const handle = InteractionManager.runAfterInteractions(async () => {
       await notificationService.initialize();
-      if (tasks.length > 0) {
-        await notificationService.scheduleSmartNotifications(tasks);
-      }
-    };
-    initNotifications();
+      await notificationService.scheduleSmartNotifications(tasks);
+    });
+    return () => handle.cancel();
   }, [tasks]);
   const addTaskAnim                         = useRef(new Animated.Value(H)).current;
   const [newTaskTitle, setNewTaskTitle]     = useState('');
@@ -210,32 +228,8 @@ export default function HomeScreen() {
   const [clarificationQuestions, setClarificationQuestions] = useState<ClarificationQuestion[]>([]);
   const [pendingTask, setPendingTask] = useState<PersonalTask | null>(null);
 
-  // ── AI Predictive Suggestions ──────────────────────────────────────────────
-  const [aiSuggestion, setAiSuggestion] = useState<{ message: string; action: string } | null>(null);
-  const [showAiToast, setShowAiToast] = useState(false);
-  const [showAiEntry, setShowAiEntry] = useState(true);
+  const { showAiToast: showAiToastCtx, hideAiToast: hideAiToastCtx, aiToast } = React.useContext(HomeNavContext);
   const focusHighlightAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    // Showcase predictive AI: Trigger a suggestion after 6s
-    const timer = setTimeout(() => {
-      setAiSuggestion({
-        message: "You usually start focusing now. Shall I begin a session?",
-        action: "Start Focus"
-      });
-      setShowAiToast(true);
-
-      // Subtle highlight effect for 0.5s
-      Animated.sequence([
-        Animated.timing(focusHighlightAnim, { toValue: 1, duration: 250, useNativeDriver: false }),
-        Animated.delay(500),
-        Animated.timing(focusHighlightAnim, { toValue: 0, duration: 250, useNativeDriver: false }),
-      ]).start();
-    }, 6000);
-    return () => clearTimeout(timer);
-  }, []);
-
-
 
   const openAddTask = useCallback(()=>{
     // Instant open - reset animation value to 0 to prevent off-screen invisible modal freeze
@@ -387,8 +381,7 @@ export default function HomeScreen() {
   const fMins = String(Math.floor(focusSecs/60)).padStart(2,'0');
   const fSecs = String(focusSecs%60).padStart(2,'0');
 
-  // ── Nav / Theme ───────────────────────────────────────────────────────────
-  const [navStyle, setNavStyle]             = useState<'bottom'|'sidebar'>('bottom');
+  // ── Theme ─────────────────────────────────────────────────────────────────
 
   // ── Effects ────────────────────────────────────────────────────────────────
   useEffect(()=>{
@@ -404,8 +397,6 @@ export default function HomeScreen() {
   }, []);
 
   useFocusEffect(useCallback(()=>{
-    AsyncStorage.getItem('krios_nav_style').then(v=>{ if(v==='sidebar'||v==='bottom') setNavStyle(v); });
-
     // Inject shared functions into Layout whenever Home is focused
     setOpenAIChat(openAIChat);
     setOpenAddTask(openAddTask);
@@ -509,7 +500,9 @@ export default function HomeScreen() {
 
       {/* ════ CALENDAR PULL-DOWN OVERLAY ════ */}
       {calPulled&&(
-        <Pressable style={[StyleSheet.absoluteFillObject,{backgroundColor:'rgba(0,0,0,0.3)',zIndex:49}]} onPress={pushCalUp}/>
+        <Pressable onPress={pushCalUp} style={[StyleSheet.absoluteFillObject,{zIndex:49}]}> 
+          <BlurView intensity={40} tint={t.isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+        </Pressable>
       )}
       <Animated.View style={[s.calDropdown,{backgroundColor:t.isDark?'rgba(10,10,22,0.98)':'rgba(248,248,255,0.98)',borderColor:t.isDark?'rgba(99,102,241,0.3)':'rgba(99,102,241,0.2)',borderWidth:1.5,top:insets.top,transform:[{translateY:calPullAnim}]}]}>
         {/* Multi-layer gradient for depth and shine */}
@@ -745,63 +738,6 @@ export default function HomeScreen() {
           </View>
         </Skia3DCard>
 
-        {/* KRIOS AI BETA CARD - compact predictive entry point */}
-        {showAiEntry && (
-          <View style={{marginTop: calView === 'month' ? 12 : 14, marginBottom: 12, borderRadius: 22, overflow: 'hidden', borderWidth: 1, borderColor: t.isDark ? 'rgba(129,140,248,0.30)' : 'rgba(99,102,241,0.16)', shadowColor: '#6366f1', shadowOffset: { width: 0, height: 10 }, shadowOpacity: t.isDark ? 0.20 : 0.10, shadowRadius: 18, elevation: 8}}>
-            <LinearGradient
-              colors={t.isDark
-                ? ['rgba(11,13,31,0.98)', 'rgba(21,18,50,0.98)', 'rgba(9,12,28,0.98)']
-                : ['rgba(255,255,255,0.98)', 'rgba(244,247,255,0.98)', 'rgba(248,245,255,0.98)']}
-              start={{x: 0, y: 0}}
-              end={{x: 1, y: 1}}
-              style={{padding: 14}}
-            >
-              <LinearGradient
-                colors={['rgba(34,211,238,0.18)', 'rgba(129,140,248,0.16)', 'rgba(168,85,247,0.12)', 'transparent']}
-                start={{x: 0, y: 0}}
-                end={{x: 1, y: 0}}
-                style={{position: 'absolute', left: 0, right: 0, top: 0, height: 2}}
-              />
-              <View style={{flexDirection: 'row', alignItems: 'center', gap: 12}}>
-                <TouchableOpacity onPress={openAIChat} activeOpacity={0.82} style={{width: 46, height: 46, borderRadius: 18, overflow: 'hidden'}}>
-                  <LinearGradient colors={['#22d3ee', '#6366f1', '#a855f7']} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={{flex: 1, alignItems: 'center', justifyContent: 'center'}}>
-                    <Ionicons name="sparkles" size={20} color="#fff" />
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                <TouchableOpacity onPress={openAIChat} activeOpacity={0.82} style={{flex: 1, minWidth: 0}}>
-                  <View style={{flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 3}}>
-                    <Text style={{color: t.text, fontSize: 13, fontWeight: '800', letterSpacing: 0.2}}>Krios AI</Text>
-                    <View style={{paddingHorizontal: 6, paddingVertical: 2, borderRadius: 7, backgroundColor: t.isDark ? 'rgba(129,140,248,0.16)' : 'rgba(99,102,241,0.10)', borderWidth: 1, borderColor: t.isDark ? 'rgba(129,140,248,0.24)' : 'rgba(99,102,241,0.14)'}}>
-                      <Text style={{fontSize: 8, color: t.primary, fontWeight: '900', letterSpacing: 0.7}}>BETA</Text>
-                    </View>
-                    <View style={{width: 5, height: 5, borderRadius: 3, backgroundColor: '#22d3ee'}} />
-                  </View>
-                  <Text style={{color: t.text, fontSize: 15, fontWeight: '700', marginBottom: 2}} numberOfLines={1}>Need a smarter next move?</Text>
-                  <Text style={{color: t.textSub, fontSize: 12, lineHeight: 16}} numberOfLines={1}>Ask, break down, or start focus from your tasks.</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity onPress={() => setShowAiEntry(false)} style={{width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.05)'}} hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
-                  <Ionicons name="close" size={14} color={t.textHint} />
-                </TouchableOpacity>
-              </View>
-
-              <View style={{flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12}}>
-                <TouchableOpacity onPress={openAIChat} activeOpacity={0.82} style={{flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, paddingVertical: 8, borderRadius: 12, backgroundColor: t.primary}}>
-                  <Text style={{color: '#fff', fontSize: 12, fontWeight: '800'}}>Ask Krios</Text>
-                  <Ionicons name="arrow-forward" size={13} color="#fff" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={openFocus} activeOpacity={0.82} style={{flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 12, borderWidth: 1, borderColor: t.isDark ? 'rgba(34,211,238,0.22)' : 'rgba(99,102,241,0.14)', backgroundColor: t.isDark ? 'rgba(34,211,238,0.08)' : 'rgba(99,102,241,0.06)'}}>
-                  <Ionicons name="scan" size={13} color={t.primary} />
-                  <Text style={{color: t.primary, fontSize: 12, fontWeight: '800'}}>Focus</Text>
-                </TouchableOpacity>
-                <View style={{flex: 1}} />
-                <Text style={{color: t.textHint, fontSize: 10, fontWeight: '700', letterSpacing: 0.6}}>CONTEXT READY</Text>
-              </View>
-            </LinearGradient>
-          </View>
-        )}
-
         {/* DATE DIVIDER LINE — like reference image */}
         <View style={s.dateDivider}>
           <View style={[s.dateDividerLine,{backgroundColor:t.isDark?t.primary:'#6366f1',opacity:t.isDark?0.5:0.35}]}/>
@@ -1010,47 +946,7 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Bottom tab bar is now rendered globally in (home)/_layout.tsx */}
-      {false && navStyle==='bottom'&&(
-        <>
-        <View />
-        <View>
-          {/* Home */}
-          <TouchableOpacity style={s.tabItem} onPress={()=>{}}>
-            <Ionicons name="home" size={22} color={t.primary}/>
-            <View style={[s.tabActiveDot,{backgroundColor:t.primary}]}/>
-          </TouchableOpacity>
-          {/* Rooms */}
-          <TouchableOpacity style={s.tabItem} onPress={()=>router.push('/(home)/rooms')}>
-            <Ionicons name="planet-outline" size={22} color={t.textHint}/>
-          </TouchableOpacity>
-          {/* Center FAB */}
-          <View style={{width:72, alignItems:'center', marginTop:-24}}>
-            <TouchableOpacity onPress={openAddTask} activeOpacity={0.85}
-              style={[s.fab,{shadowColor:t.primary,shadowOffset:{width:0,height:12},shadowOpacity:0.6,shadowRadius:24,elevation:20}]}>
-              <LinearGradient colors={['#818cf8','#6366f1','#4f46e5']} start={{x:0,y:0}} end={{x:1,y:1}} style={s.fabGrad}>
-                <Ionicons name="add" size={28} color="#fff"/>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-          {/* Messages */}
-          <TouchableOpacity style={s.tabItem} onPress={()=>router.push('/(home)/messages')}>
-            <View>
-              <Ionicons name="chatbubbles-outline" size={22} color={t.textHint}/>
-              {unreadCount > 0 && (
-                <View style={{position:'absolute',top:-4,right:-8,backgroundColor:'#6366f1',borderRadius:8,minWidth:16,height:16,paddingHorizontal:4,alignItems:'center',justifyContent:'center'}}>
-                  <Text style={{color:'#fff',fontSize:9,fontWeight:'800'}}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
-                </View>
-              )}
-            </View>
-          </TouchableOpacity>
-          {/* Profile */}
-          <TouchableOpacity style={s.tabItem} onPress={()=>router.push('/(home)/profile')}>
-            <Ionicons name="person-outline" size={22} color={t.textHint}/>
-          </TouchableOpacity>
-        </View>
-        </>
-      )}
+      {/* Bottom tab bar is rendered globally in (home)/_layout.tsx */}
 
       {/* ════ FOCUS SIGN BOARD — slides in from right edge ════ */}
       {focusActive&&(
@@ -1083,17 +979,19 @@ export default function HomeScreen() {
         <Text style={s.toastText}>{toast}</Text>
       </Animated.View>
 
-      {/* ════ AI PREDICTIVE TOAST ════ */}
-      <AIBlobToast
-        visible={showAiToast}
-        message={aiSuggestion?.message || ''}
-        actionLabel={aiSuggestion?.action}
-        onAction={() => {
-          setShowAiToast(false);
-          openFocus();
-        }}
-        onClose={() => setShowAiToast(false)}
-      />
+      {/* ════ AI PREDICTIVE TOAST ═════ */}
+      {aiToast && (
+        <AIBlobToast
+          visible={!!showAiToastCtx}
+          message={aiToast.message}
+          actionLabel={aiToast.action}
+          onAction={() => {
+            hideAiToastCtx();
+            openFocus();
+          }}
+          onClose={hideAiToastCtx}
+        />
+      )}
 
       {/* ════ AI CLARIFICATION SHEET ════ */}
 
@@ -1124,10 +1022,9 @@ export default function HomeScreen() {
 
       {/* ════ ADD TASK SHEET — dark glass card with enhanced Skia glow ════ */}
       <Modal visible={showAddTask} transparent animationType="fade" onRequestClose={closeAddTask}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <Animated.View pointerEvents="auto" style={[s.sheet,{transform:[{translateY:addTaskAnim}]}]}>
             <Pressable style={[StyleSheet.absoluteFillObject,{backgroundColor:'rgba(0,0,0,0.6)'}]} onPress={closeAddTask}/>
-            <View style={[s.addTaskCard,{backgroundColor:t.isDark?'rgba(10,10,22,0.98)':'rgba(248,248,255,0.98)',borderColor:'#6366f133'}]}>
+             <View style={[s.addTaskCard,{backgroundColor:t.isDark?'rgba(10,10,22,0.98)':'rgba(248,248,255,0.98)',borderColor:'#6366f133',paddingBottom:insets.bottom}]}>
               {/* Enhanced gradient overlay */}
               <LinearGradient colors={['#6366f122','#8b5cf615','transparent']} start={{x:0.5,y:0}} end={{x:0.5,y:1}} style={[StyleSheet.absoluteFill,{borderRadius:28}]}/>
 
@@ -1198,7 +1095,6 @@ export default function HomeScreen() {
               </ScrollView>
             </View>
           </Animated.View>
-        </KeyboardAvoidingView>
       </Modal>
 
       {/* ════ TASK OPTIONS SHEET (Edit / Delete) ════ */}

@@ -61,7 +61,7 @@ export default function RoomOnboardingModal({ visible, tasks, onComplete }: Room
                 Room Unlocked
               </Text>
               <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-                Select initial missions to engage
+                Select initial tasks to work on
               </Text>
             </View>
           </View>

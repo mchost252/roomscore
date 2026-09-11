@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import api from '../../services/api';
@@ -106,20 +106,20 @@ export function useRoomsManager() {
     }
   }, [router, hookRefresh]);
 
-  const filteredMyRooms = myRooms.filter(room => {
+  const filteredMyRooms = useMemo(() => myRooms.filter(room => {
     const isExpired = room.endDate && new Date() > new Date(room.endDate);
     if (isExpired && !room.isPremium) return false;
     
     const query = searchQuery.toLowerCase();
     return room.name.toLowerCase().includes(query) ||
            room.description?.toLowerCase().includes(query);
-  });
+  }), [myRooms, searchQuery]);
 
-  const filteredPublicRooms = publicRooms.filter(room => {
+  const filteredPublicRooms = useMemo(() => publicRooms.filter(room => {
     const query = searchQuery.toLowerCase();
     return room.name.toLowerCase().includes(query) ||
            room.description?.toLowerCase().includes(query);
-  });
+  }), [publicRooms, searchQuery]);
 
   return {
     // Data

@@ -97,7 +97,7 @@ router.post('/:roomId', protect, isRoomMember, async (req, res) => {
       await Promise.allSettled(
         recipientIds.map(uid => NotificationService.createNotification({
           recipientId: uid,
-          type: 'nudge',
+          type: 'nudge_received',
           title: '🔔 Nudge from your room',
           message: `${req.user.username} nudged the room: don't forget today's tasks.`,
           roomId,

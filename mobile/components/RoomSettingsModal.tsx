@@ -12,11 +12,14 @@ import {
   Switch,
   Alert,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '../context/ThemeContext';
 import RoomService from '../services/roomService';
+import { uploadImage } from '../services/cloudinaryService';
 import type { RoomDetail } from '../types/room';
 import { roomStorage } from '../db/roomDb';
 import ConfirmationModal from './ConfirmationModal';
@@ -49,8 +52,13 @@ export function RoomSettingsModal({
   const [description, setDescription] = useState('');
   const [isPublic, setIsPublic] = useState(false);
   const [requireApproval, setRequireApproval] = useState(false);
+  const [showJoinCode, setShowJoinCode] = useState(false);
   const [retention, setRetention] = useState(3);
   const [maxMembers, setMaxMembers] = useState('20');
+  const [coverImage, setCoverImage] = useState<string | null>(null);
+  const [roomDp, setRoomDp] = useState<string | null>(null);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
+  const [uploadingRoomDp, setUploadingRoomDp] = useState(false);
 
   // ── Loading states ──────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false);
@@ -70,8 +78,11 @@ export function RoomSettingsModal({
       setDescription(room.description || '');
       setIsPublic(!!room.isPublic);
       setRequireApproval(!!room.requireApproval);
+      setShowJoinCode(!!room.showJoinCode);
       setRetention(room.chatRetentionDays ?? 3);
       setMaxMembers(String(room.maxMembers ?? 20));
+      setCoverImage(room.coverImage || null);
+      setRoomDp(room.roomDp || null);
       setHasChanges(false);
     }
   }, [visible, room]);
@@ -86,28 +97,69 @@ export function RoomSettingsModal({
   );
 
   // ── Save handler (owner only) ───────────────────────────────────────────
+  const handlePickImage = useCallback(async (type: 'banner' | 'dp') => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: type === 'banner' ? [16, 9] : [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled) {
+        const imageUri = result.assets[0].uri;
+        if (type === 'banner') {
+          setUploadingBanner(true);
+          const cloudinaryUrl = await uploadImage(imageUri, 'roomscore/rooms');
+          setCoverImage(cloudinaryUrl);
+        } else {
+          setUploadingRoomDp(true);
+          const cloudinaryUrl = await uploadImage(imageUri, 'roomscore/room-dp');
+          setRoomDp(cloudinaryUrl);
+        }
+        setHasChanges(true);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch (error) {
+      console.error('Image picker error:', error);
+      Alert.alert('Error', 'Failed to upload image. Please try again.');
+    } finally {
+      setUploadingBanner(false);
+      setUploadingRoomDp(false);
+    }
+  }, []);
+
   const handleSave = useCallback(async () => {
     if (!room || !hasChanges) return;
     setSaving(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      // Call both update endpoints in parallel
+      const roomUpdate = RoomService.updateRoom(roomId, {
+        name: name.trim() || room.name,
+        description: description.trim(),
+        isPublic,
+        maxMembers: parseInt(maxMembers, 10) || room.maxMembers,
+        coverImage: coverImage === null ? null : (coverImage || undefined),
+        roomDp: roomDp === null ? null : (roomDp || undefined),
+      });
+
+      const dpUpdate = roomDp !== (room.roomDp || null)
+        ? RoomService.updateRoomDp(roomId, roomDp ?? null)
+        : Promise.resolve(null);
+
       await Promise.all([
-        RoomService.updateRoom(roomId, {
-          name: name.trim() || room.name,
-          description: description.trim(),
-          isPublic,
-          maxMembers: parseInt(maxMembers, 10) || room.maxMembers,
-        }),
+        roomUpdate,
+        dpUpdate,
         RoomService.updateSettings(roomId, {
           isPublic,
           chatRetentionDays: retention,
           requireApproval,
+          showJoinCode,
         })
       ]);
 
-      // Update local state with all fields (name/description are local-only for now)
       onSave({
         ...room,
         name: name.trim() || room.name,
@@ -115,8 +167,11 @@ export function RoomSettingsModal({
         isPublic,
         isPrivate: !isPublic,
         requireApproval,
+        showJoinCode,
         chatRetentionDays: retention,
         maxMembers: parseInt(maxMembers, 10) || room.maxMembers,
+        coverImage: coverImage || null,
+        roomDp: roomDp || null,
       });
       onClose();
     } catch (error: any) {
@@ -125,7 +180,7 @@ export function RoomSettingsModal({
     } finally {
       setSaving(false);
     }
-  }, [room, roomId, name, description, isPublic, requireApproval, retention, maxMembers, hasChanges, onSave, onClose]);
+  }, [room, roomId, name, description, isPublic, requireApproval, showJoinCode, retention, maxMembers, coverImage, roomDp, hasChanges, onSave, onClose]);
 
   const removeRoomFromLocalCache = useCallback(() => {
     try {
@@ -269,6 +324,92 @@ export function RoomSettingsModal({
                     },
                   ]}
                 />
+
+                <Text style={[styles.label, { color: colors.textSecondary }]}>
+                  Room banner
+                </Text>
+                <TouchableOpacity
+                  onPress={() => handlePickImage('banner')}
+                  disabled={uploadingBanner}
+                  style={[
+                    styles.imagePickerBtn,
+                    {
+                      backgroundColor: colors.inputBg,
+                      borderColor: colors.borderColor,
+                    },
+                  ]}
+                >
+                  {uploadingBanner ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <>
+                      <Ionicons name="image" size={18} color={colors.primary} />
+                      <Text style={[styles.imagePickerText, { color: colors.text }]}>
+                        {coverImage ? 'Change banner image' : 'Pick banner image'}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+                {coverImage ? (
+                  <>
+                    <View style={[styles.imagePreviewWrap, { borderColor: colors.borderColor }]}>
+                      <Image source={{ uri: coverImage }} style={styles.imagePreview} resizeMode="cover" />
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setCoverImage(null);
+                        setHasChanges(true);
+                      }}
+                      style={[styles.clearImageBtn, { borderColor: colors.borderColor }]}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                      <Text style={[styles.clearImageText, { color: '#ef4444' }]}>Remove banner</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : null}
+
+                <Text style={[styles.label, { color: colors.textSecondary, marginTop: 18 }]}>
+                  Room display picture
+                </Text>
+                <TouchableOpacity
+                  onPress={() => handlePickImage('dp')}
+                  disabled={uploadingRoomDp}
+                  style={[
+                    styles.imagePickerBtn,
+                    {
+                      backgroundColor: colors.inputBg,
+                      borderColor: colors.borderColor,
+                    },
+                  ]}
+                >
+                  {uploadingRoomDp ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <>
+                      <Ionicons name="person-circle-outline" size={18} color={colors.primary} />
+                      <Text style={[styles.imagePickerText, { color: colors.text }]}>
+                        {roomDp ? 'Change room DP' : 'Pick room DP'}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+                {roomDp ? (
+                  <>
+                    <View style={[styles.dpPreviewWrap, { borderColor: colors.borderColor }]}>
+                      <Image source={{ uri: roomDp }} style={styles.dpPreviewImage} resizeMode="cover" />
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setRoomDp(null);
+                        setHasChanges(true);
+                      }}
+                      style={[styles.clearImageBtn, { borderColor: colors.borderColor }]}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                      <Text style={[styles.clearImageText, { color: '#ef4444' }]}>Remove room DP</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : null}
               </View>
             )}
 
@@ -334,6 +475,37 @@ export function RoomSettingsModal({
                   <Switch
                     value={requireApproval}
                     onValueChange={(v) => updateField(setRequireApproval, v)}
+                    trackColor={{
+                      false: isDark ? '#333' : '#ccc',
+                      true: colors.primary,
+                    }}
+                  />
+                </View>
+
+                <View
+                  style={[
+                    styles.divider,
+                    { backgroundColor: colors.borderColor },
+                  ]}
+                />
+
+                <View style={styles.toggleRow}>
+                  <View style={styles.toggleInfo}>
+                    <Text style={[styles.toggleLabel, { color: colors.text }]}>
+                      Show Join Code
+                    </Text>
+                    <Text
+                      style={[
+                        styles.toggleDesc,
+                        { color: colors.textTertiary },
+                      ]}
+                    >
+                      Members can see and copy the room code
+                    </Text>
+                  </View>
+                  <Switch
+                    value={showJoinCode}
+                    onValueChange={(v) => updateField(setShowJoinCode, v)}
                     trackColor={{
                       false: isDark ? '#333' : '#ccc',
                       true: colors.primary,
@@ -416,7 +588,7 @@ export function RoomSettingsModal({
                   ]}
                 />
 
-                {/* Max Members — display */}
+                {/* Max Members — stepper */}
                 <View style={styles.toggleRow}>
                   <View style={styles.toggleInfo}>
                     <Text style={[styles.toggleLabel, { color: colors.text }]}>
@@ -428,14 +600,46 @@ export function RoomSettingsModal({
                         { color: colors.textTertiary },
                       ]}
                     >
-                      Maximum squad size
+                      Maximum squad size (5-100)
                     </Text>
                   </View>
-                  <Text
-                    style={[styles.maxMembersValue, { color: colors.textSecondary }]}
-                  >
-                    {maxMembers}
-                  </Text>
+                  <View style={styles.stepper}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        const current = parseInt(maxMembers, 10) || 20;
+                        if (current > 5) updateField(setMaxMembers, String(current - 1));
+                      }}
+                      style={[
+                        styles.stepperBtn,
+                        {
+                          backgroundColor: colors.inputBg,
+                          opacity: (parseInt(maxMembers, 10) || 20) <= 5 ? 0.4 : 1,
+                        },
+                      ]}
+                    >
+                      <Ionicons name="remove" size={16} color={colors.text} />
+                    </TouchableOpacity>
+                    <Text
+                      style={[styles.stepperValue, { color: colors.text }]}
+                    >
+                      {maxMembers}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => {
+                        const current = parseInt(maxMembers, 10) || 20;
+                        if (current < 100) updateField(setMaxMembers, String(current + 1));
+                      }}
+                      style={[
+                        styles.stepperBtn,
+                        {
+                          backgroundColor: colors.inputBg,
+                          opacity: (parseInt(maxMembers, 10) || 20) >= 100 ? 0.4 : 1,
+                        },
+                      ]}
+                    >
+                      <Ionicons name="add" size={16} color={colors.text} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
             )}
@@ -707,6 +911,60 @@ const styles = StyleSheet.create({
   },
   area: { minHeight: 80, textAlignVertical: 'top' },
 
+  // ── Image picker ──────────────────────────────────────────────────────
+  imagePickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 8,
+  },
+  imagePickerText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  clearImageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  clearImageText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  imagePreviewWrap: {
+    borderWidth: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  imagePreview: {
+    width: '100%',
+    height: 120,
+  },
+  dpPreviewWrap: {
+    alignSelf: 'center',
+    borderWidth: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  dpPreviewImage: {
+    width: 88,
+    height: 88,
+    borderRadius: 16,
+  },
+
   // ── Toggle rows ───────────────────────────────────────────────────────
   toggleRow: {
     flexDirection: 'row',
@@ -806,6 +1064,18 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
   },
+  backdropGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 4 },
+  backdropOption: {
+    width: '30%', alignItems: 'center', gap: 4,
+    borderRadius: 10, borderWidth: 1.5, borderColor: 'transparent',
+    paddingVertical: 6,
+  },
+  backdropPreview: {
+    width: '100%', height: 40, borderRadius: 8, overflow: 'hidden',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+  },
+  backdropPreviewInner: { flex: 1 },
+  backdropLabel: { fontSize: 9, fontWeight: '700' },
 });
 
 export default RoomSettingsModal;

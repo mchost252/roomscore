@@ -61,8 +61,7 @@ const BIO_KEY = 'krios_user_bio';
 
 type TabKey = 'identity' | 'rhythm' | 'trophies';
 type TrophyRarity = 'common' | 'rare' | 'epic' | 'legendary';
-type TrophyGroupKey = 'consistency' | 'social' | 'mastery';
-type ExpandKey = 'bio' | 'account' | 'insights' | TrophyGroupKey;
+type ExpandKey = 'bio' | 'account' | 'insights';
 
 interface ThemeTokens {
   bg: string;
@@ -74,18 +73,6 @@ interface ThemeTokens {
   muted: string;
   faint: string;
   primary: string;
-}
-
-interface Trophy {
-  id: string;
-  group: TrophyGroupKey;
-  title: string;
-  description: string;
-  detail: string;
-  icon: string;
-  rarity: TrophyRarity;
-  unlocked: boolean;
-  progress: string;
 }
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -235,42 +222,6 @@ function AccountRow({
   return <View style={styles.accountRow}>{content}</View>;
 }
 
-function TrophyCard({ trophy, C }: { trophy: Trophy; C: ThemeTokens }) {
-  const rarity = rarityMap[trophy.rarity];
-  return (
-    <View
-      style={[
-        styles.trophyCard,
-        {
-          backgroundColor: trophy.unlocked ? C.elevated : 'rgba(148,163,184,0.08)',
-          borderColor: trophy.unlocked ? `${rarity.color}66` : C.border,
-          opacity: trophy.unlocked ? 1 : 0.62,
-        },
-      ]}
-    >
-      <LinearGradient
-        colors={
-          trophy.unlocked
-            ? [`${rarity.color}2a`, 'rgba(255,255,255,0.00)']
-            : ['rgba(148,163,184,0.10)', 'rgba(148,163,184,0.00)']
-        }
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={[styles.trophyIcon, { backgroundColor: `${rarity.color}22` }]}>
-        <Ionicons name={(trophy.unlocked ? trophy.icon : 'lock-closed') as any} size={22} color={trophy.unlocked ? rarity.color : C.faint} />
-      </View>
-      <Text style={[styles.trophyTitle, { color: C.text }]} numberOfLines={1}>{trophy.title}</Text>
-      <Text style={[styles.trophyDesc, { color: C.muted }]} numberOfLines={2}>{trophy.description}</Text>
-      <View style={styles.trophyFooter}>
-        <Text style={[styles.rarityText, { color: trophy.unlocked ? rarity.color : C.faint }]}>{rarity.label}</Text>
-        <Text style={[styles.progressText, { color: C.faint }]}>{trophy.progress}</Text>
-      </View>
-    </View>
-  );
-}
-
 const rarityMap: Record<TrophyRarity, { label: string; color: string }> = {
   common: { label: 'Common', color: '#38bdf8' },
   rare: { label: 'Rare', color: '#8b5cf6' },
@@ -314,9 +265,6 @@ export default function ProfileScreen() {
     bio: true,
     account: false,
     insights: true,
-    consistency: true,
-    social: false,
-    mastery: false,
   });
   const [editingBio, setEditingBio] = useState(false);
   const [bioDraft, setBioDraft] = useState(user?.bio || '');
@@ -356,11 +304,10 @@ export default function ProfileScreen() {
   const realHeatmap = useMemo(() => (activity ? toHeatmapData(activity) : null), [activity]);
   const consistency = activity?.consistency ?? 0;
 
-  // Server-driven trophy data. The local fake list in `trophies` below is
-  // kept for backward compatibility with existing styles, but `serverTrophies`
-  // is what the trophies tab actually renders.
+  // Server-driven trophy data — the catalog endpoint is the single source
+  // of truth for both the count line and the earned row.
   const [serverTrophies, setServerTrophies] = useState<ServerTrophy[]>([]);
-  const serverTrophyCount = serverTrophies.length;
+  const [serverTrophyTotal, setServerTrophyTotal] = useState(0);
   const serverUnlockedCount = useMemo(
     () => serverTrophies.filter((t) => t.unlocked).length,
     [serverTrophies],
@@ -377,8 +324,11 @@ export default function ProfileScreen() {
 
   const loadTrophies = useCallback(async () => {
     try {
-      const unlocked = await trophyService.fetchUnlocked();
-      if (unlocked) setServerTrophies(unlocked);
+      const payload = await trophyService.fetch();
+      if (payload?.trophies) {
+        setServerTrophies(payload.trophies);
+        setServerTrophyTotal(payload.trophies.length);
+      }
     } catch {
       // Swallow — the trophies tab will show its own empty state.
     }
@@ -582,111 +532,6 @@ export default function ProfileScreen() {
     { icon: 'trophy', label: 'Best streak', value: `${longest}d`, color: '#a855f7' },
   ], [consistency, longest, streak, total]);
 
-  const trophies = useMemo<Trophy[]>(() => [
-    {
-      id: 'first-task',
-      group: 'consistency',
-      title: 'First Proof',
-      description: 'Complete your first task.',
-      detail: 'The first visible signal that Krios can trust your momentum.',
-      icon: 'checkmark-circle',
-      rarity: 'common',
-      unlocked: total >= 1,
-      progress: `${Math.min(total, 1)}/1`,
-    },
-    {
-      id: 'seven-streak',
-      group: 'consistency',
-      title: 'Seven-Day Heat',
-      description: 'Hold a 7 day streak.',
-      detail: 'A full week without dropping the rhythm.',
-      icon: 'flame',
-      rarity: 'rare',
-      unlocked: longest >= 7,
-      progress: `${Math.min(longest, 7)}/7`,
-    },
-    {
-      id: 'thirty-streak',
-      group: 'consistency',
-      title: 'Thirty-Day Signal',
-      description: 'Reach a 30 day streak.',
-      detail: 'Long enough for the room to know your pattern is real.',
-      icon: 'radio',
-      rarity: 'legendary',
-      unlocked: longest >= 30,
-      progress: `${Math.min(longest, 30)}/30`,
-    },
-    {
-      id: 'profile-photo',
-      group: 'social',
-      title: 'Face Card',
-      description: 'Add a profile photo.',
-      detail: 'A real avatar makes your account easier to recognize across rooms and chats.',
-      icon: 'person-circle',
-      rarity: 'common',
-      unlocked: Boolean(user?.avatar),
-      progress: user?.avatar ? 'Ready' : 'Photo',
-    },
-    {
-      id: 'clean-record',
-      group: 'social',
-      title: 'Clean Record',
-      description: 'Complete your public profile.',
-      detail: 'This unlocks when your avatar and bio are both set.',
-      icon: 'shield-checkmark',
-      rarity: profileComplete ? 'rare' : 'common',
-      unlocked: profileComplete,
-      progress: profileComplete ? 'Ready' : 'Bio + photo',
-    },
-    {
-      id: 'fifty-tasks',
-      group: 'mastery',
-      title: 'Fifty Finishes',
-      description: 'Complete 50 total tasks.',
-      detail: 'Proof that your output is no longer occasional.',
-      icon: 'rocket',
-      rarity: 'epic',
-      unlocked: total >= 50,
-      progress: `${Math.min(total, 50)}/50`,
-    },
-    {
-      id: 'hundred-tasks',
-      group: 'mastery',
-      title: 'Century Mode',
-      description: 'Complete 100 total tasks.',
-      detail: 'A deeper layer of consistency built one task at a time.',
-      icon: 'medal',
-      rarity: 'legendary',
-      unlocked: total >= 100,
-      progress: `${Math.min(total, 100)}/100`,
-    },
-  ], [longest, profileComplete, total, user?.avatar]);
-
-  const unlockedTrophies = trophies.filter((trophy) => trophy.unlocked).length;
-  const trophyGroups = useMemo(() => ([
-    {
-      key: 'consistency' as const,
-      title: 'Consistency',
-      subtitle: 'Streaks, rhythm, and repeat wins',
-      icon: 'flame',
-      items: trophies.filter((trophy) => trophy.group === 'consistency'),
-    },
-    {
-      key: 'social' as const,
-      title: 'Room Identity',
-      subtitle: 'Presence and profile signals',
-      icon: 'people',
-      items: trophies.filter((trophy) => trophy.group === 'social'),
-    },
-    {
-      key: 'mastery' as const,
-      title: 'Long Game',
-      subtitle: 'Big completion milestones',
-      icon: 'trophy',
-      items: trophies.filter((trophy) => trophy.group === 'mastery'),
-    },
-  ]), [trophies]);
-
   const renderAvatar = (size: number, small?: boolean) => (
     <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}>
       {user?.avatar ? (
@@ -853,8 +698,6 @@ export default function ProfileScreen() {
           </Text>
         </View>
         <AccountRow icon="settings-outline" label="Settings" value="Preferences and app controls" color="#8b5cf6" C={C} onPress={() => router.push('/(home)/settings')} />
-        <AccountRow icon="lock-closed-outline" label="Privacy" value="Coming soon" color="#10b981" C={C} onPress={() => Alert.alert('Privacy', 'Privacy controls are coming soon.')} />
-        <AccountRow icon="help-circle-outline" label="Help and support" value="Coming soon" color="#38bdf8" C={C} onPress={() => Alert.alert('Help and support', 'Support tools are coming soon.')} />
         <AccountRow icon="log-out-outline" label="Sign out" color="#ef4444" C={C} destructive onPress={() => setShowLogoutConfirm(true)} />
       </ExpandablePanel>
     </View>
@@ -909,7 +752,7 @@ export default function ProfileScreen() {
           <View>
             <Text style={[styles.summaryEyebrow, { color: C.muted }]}>Trophy case</Text>
             <Text style={[styles.summaryTitle, { color: C.text }]}>
-              {serverUnlockedCount}/{Math.max(serverTrophyCount, trophies.length)} unlocked
+              {serverUnlockedCount}/{serverTrophyTotal} unlocked
             </Text>
           </View>
           <TouchableOpacity onPress={() => router.push('/(home)/trophies')} style={{ paddingVertical: 6, paddingHorizontal: 12 }} activeOpacity={0.7}>
@@ -918,43 +761,31 @@ export default function ProfileScreen() {
         </View>
       </Surface>
 
-      {/* Minimal earned row — server data when available, fall back to local list */}
+      {/* Earned row — server catalog data only */}
       <View style={{ gap: 10 }}>
         <Text style={{ fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.5, color: C.muted, marginBottom: 4 }}>Earned</Text>
         <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
-          {earnedTrophies.length > 0
-            ? earnedTrophies.map((trophy) => {
-                const r = rarityMap[trophy.rarity];
-                return (
-                  <TouchableOpacity
-                    key={trophy.id}
-                    onPress={() => router.push('/(home)/trophies')}
-                    style={{ width: (SCREEN_WIDTH - 58) / 2, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: `${r.color}33`, backgroundColor: C.elevated }}
-                    activeOpacity={0.85}
-                  >
-                    <LinearGradient colors={[`${r.color}15`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 12 }}>
-                      <View style={{ width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: `${r.color}22`, marginBottom: 8 }}>
-                        <Ionicons name={iconForServerTrophy(trophy) as any} size={18} color={r.color} />
-                      </View>
-                      <Text style={{ fontSize: 13, fontWeight: '900', color: C.text, marginBottom: 3 }} numberOfLines={1}>{trophy.title}</Text>
-                      <Text style={{ fontSize: 11, fontWeight: '600', color: C.muted }} numberOfLines={1}>{r.label}</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                );
-              })
-            : trophies.filter((t) => t.unlocked).slice(0, 4).map((trophy) => (
-                <TouchableOpacity key={trophy.id} onPress={() => router.push('/(home)/trophies')} style={{ width: (SCREEN_WIDTH - 58) / 2, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: `${rarityMap[trophy.rarity].color}33`, backgroundColor: C.elevated }} activeOpacity={0.85}>
-                  <LinearGradient colors={[`${rarityMap[trophy.rarity].color}15`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 12 }}>
-                    <View style={{ width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: `${rarityMap[trophy.rarity].color}22`, marginBottom: 8 }}>
-                      <Ionicons name={trophy.icon as any} size={18} color={rarityMap[trophy.rarity].color} />
-                    </View>
-                    <Text style={{ fontSize: 13, fontWeight: '900', color: C.text, marginBottom: 3 }} numberOfLines={1}>{trophy.title}</Text>
-                    <Text style={{ fontSize: 11, fontWeight: '600', color: C.muted }} numberOfLines={1}>{rarityMap[trophy.rarity].label}</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              ))}
+          {earnedTrophies.map((trophy) => {
+            const r = rarityMap[trophy.rarity];
+            return (
+              <TouchableOpacity
+                key={trophy.id}
+                onPress={() => router.push('/(home)/trophies')}
+                style={{ width: (SCREEN_WIDTH - 58) / 2, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: `${r.color}33`, backgroundColor: C.elevated }}
+                activeOpacity={0.85}
+              >
+                <LinearGradient colors={[`${r.color}15`, 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 12 }}>
+                  <View style={{ width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: `${r.color}22`, marginBottom: 8 }}>
+                    <Ionicons name={iconForServerTrophy(trophy) as any} size={18} color={r.color} />
+                  </View>
+                  <Text style={{ fontSize: 13, fontWeight: '900', color: C.text, marginBottom: 3 }} numberOfLines={1}>{trophy.title}</Text>
+                  <Text style={{ fontSize: 11, fontWeight: '600', color: C.muted }} numberOfLines={1}>{r.label}</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            );
+          })}
         </View>
-        {serverUnlockedCount === 0 && earnedTrophies.length === 0 && (
+        {earnedTrophies.length === 0 && (
           <Text style={{ color: C.muted, fontSize: 12, fontWeight: '600', marginTop: 6 }}>No trophies earned yet. Complete tasks to unlock.</Text>
         )}
       </View>
@@ -1478,67 +1309,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     marginTop: 4,
   },
-  summaryMedal: {
-    width: 52,
-    height: 52,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(245,158,11,0.15)',
-  },
-  trophyGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  trophyCard: {
-    width: (SCREEN_WIDTH - 82) / 2,
-    minHeight: 136,
-    borderRadius: 18,
-    borderWidth: 1,
-    overflow: 'hidden',
-    padding: 12,
-  },
-  trophyIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  trophyTitle: {
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  trophyDesc: {
-    fontSize: 11,
-    lineHeight: 16,
-    fontWeight: '600',
-    marginTop: 5,
-    minHeight: 32,
-  },
-  trophyFooter: {
-    marginTop: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  rarityText: {
-    fontSize: 10,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-  },
-  progressText: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  groupNote: {
-    fontSize: 12,
-    fontWeight: '600',
-    lineHeight: 18,
-    marginTop: 12,
-  },
   version: {
     textAlign: 'center',
     fontSize: 11,
@@ -1639,7 +1409,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
 });
-
 
 
 

@@ -1,4 +1,4 @@
-import { io, Socket } from 'socket.io-client';
+﻿import { io, Socket } from 'socket.io-client';
 import NetInfo from '@react-native-community/netinfo';
 import sqliteService from './sqliteService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -55,7 +55,7 @@ class SyncEngine {
     // Connect to WebSocket
     this.connect();
 
-    console.log('✅ Sync Engine initialized');
+    console.log('âœ… Sync Engine initialized');
   }
 
   /**
@@ -66,7 +66,7 @@ class SyncEngine {
 
     // Use configured socket URL (falls back to Railway in production)
     const { SOCKET_URL } = require('../constants/config');
-    const API_URL = SOCKET_URL || process.env.EXPO_PUBLIC_SOCKET_URL || process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    const API_URL = SOCKET_URL || process.env.EXPO_PUBLIC_SOCKET_URL || process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.145:5000';
     
     this.socket = io(API_URL, {
       auth: { token: this.token },
@@ -78,7 +78,7 @@ class SyncEngine {
 
     // Connection events
     this.socket.on('connect', () => {
-      console.log('🔌 WebSocket connected');
+      console.log('ðŸ”Œ WebSocket connected');
       this.reconnectAttempts = 0;
       // Request fresh online list (helps after reconnects)
       try { this.socket?.emit('users:getOnline'); } catch {}
@@ -92,12 +92,12 @@ class SyncEngine {
     });
 
     this.socket.on('disconnect', (reason) => {
-      console.log('🔌 WebSocket disconnected:', reason);
+      console.log('ðŸ”Œ WebSocket disconnected:', reason);
     });
 
     this.socket.on('connect_error', (error) => {
-      console.error('❌ WebSocket connection error:', error.message);
-      // If authentication error (JWT expired), don't blindly retry — let the auth flow handle it
+      console.error('âŒ WebSocket connection error:', error.message);
+      // If authentication error (JWT expired), don't blindly retry â€” let the auth flow handle it
       if (error.message === 'Authentication error') {
         console.log('Token likely expired, waiting for AuthContext to refresh and re-initialize');
         return;
@@ -127,7 +127,7 @@ class SyncEngine {
       if (!this.socket?.connected && attempts < maxAttempts) {
         const netState = await NetInfo.fetch();
         if (netState.isConnected) {
-          console.log('🌐 Internet available, reconnecting...');
+          console.log('ðŸŒ Internet available, reconnecting...');
           clearInterval(checkInterval);
           this.reconnectAttempts = 0;
           this.connect();
@@ -135,7 +135,7 @@ class SyncEngine {
       } else if (attempts >= maxAttempts) {
         // Stop trying after 1 minute
         clearInterval(checkInterval);
-        console.log('⏰ Stopped reconnect attempts');
+        console.log('â° Stopped reconnect attempts');
       }
     }, 5000); // Check every 5 seconds
   }
@@ -157,6 +157,8 @@ class SyncEngine {
     this.socket.on('member:joined', (data) => this.handleEvent('member:joined', data));
     this.socket.on('member:left', (data) => this.handleEvent('member:left', data));
     this.socket.on('member:kicked', (data) => this.handleEvent('member:kicked', data));
+    this.socket.on('member:roleChanged', (data) => this.handleEvent('member:roleChanged', data));
+    this.socket.on('room:roleChanged', (data) => this.handleEvent('room:roleChanged', data));
     this.socket.on('room:premiumUpdated', (data) => this.handleEvent('room:premiumUpdated', data));
     this.socket.on('room:task:created', (data) => this.handleEvent('task:created', data));
     this.socket.on('room:task:updated', (data) => this.handleEvent('task:updated', data));
@@ -189,8 +191,12 @@ class SyncEngine {
     this.socket.on('dm:typing', (data) => this.handleEvent('dm:typing', data));
     this.socket.on('dm:read', (data) => this.handleEvent('dm:read', data));
     this.socket.on('dm:delivered', (data) => this.handleEvent('dm:delivered', data));
+    this.socket.on('notification:counts', (data) => this.handleEvent('notification:counts', data));
+    this.socket.on('notification:new', (data) => this.handleEvent('notification:new', data));
     this.socket.on('user:status', (data) => this.handleEvent('user:status', data));
     this.socket.on('users:online', (data) => this.handleEvent('users:online', data));
+    this.socket.on('user:blocked', (data) => this.handleEvent('user:blocked', data));
+    this.socket.on('user:unblocked', (data) => this.handleEvent('user:unblocked', data));
 
     // Friend events
     this.socket.on('friend:request', (data) => this.handleEvent('friend:request', data));
@@ -262,7 +268,7 @@ class SyncEngine {
     if (this.syncQueue.length === 0) return;
     if (!this.socket?.connected) return;
 
-    console.log(`🔄 Processing ${this.syncQueue.length} queued changes...`);
+    console.log(`ðŸ”„ Processing ${this.syncQueue.length} queued changes...`);
 
     const itemsToSync = [...this.syncQueue];
     const successIds: string[] = [];
@@ -278,7 +284,7 @@ class SyncEngine {
         
         // Remove after 5 failed attempts
         if (item.retries >= 5) {
-          console.warn('⚠️ Removing item after 5 failed attempts:', item.id);
+          console.warn('âš ï¸ Removing item after 5 failed attempts:', item.id);
           successIds.push(item.id);
         }
       }
@@ -288,7 +294,7 @@ class SyncEngine {
     this.syncQueue = this.syncQueue.filter(item => !successIds.includes(item.id));
     await this.saveSyncQueue();
 
-    console.log(`✅ Synced ${successIds.length} items, ${this.syncQueue.length} remaining`);
+    console.log(`âœ… Synced ${successIds.length} items, ${this.syncQueue.length} remaining`);
   }
 
   /**
@@ -325,11 +331,11 @@ class SyncEngine {
       this.isOnline = state.isConnected ?? false;
 
       if (!wasOnline && this.isOnline) {
-        console.log('📡 Back online - syncing...');
+        console.log('ðŸ“¡ Back online - syncing...');
         this.connect();
         this.processSyncQueue();
       } else if (wasOnline && !this.isOnline) {
-        console.log('📡 Offline - queueing changes');
+        console.log('ðŸ“¡ Offline - queueing changes');
       }
     });
   }
@@ -353,7 +359,7 @@ class SyncEngine {
       const stored = await AsyncStorage.getItem('sync_queue');
       if (stored) {
         this.syncQueue = JSON.parse(stored);
-        console.log(`📥 Loaded ${this.syncQueue.length} queued changes`);
+        console.log(`ðŸ“¥ Loaded ${this.syncQueue.length} queued changes`);
       }
     } catch (error) {
       console.error('Failed to load sync queue:', error);
@@ -366,7 +372,7 @@ class SyncEngine {
   disconnect(): void {
     this.socket?.disconnect();
     this.eventHandlers.clear();
-    console.log('🔌 Sync Engine disconnected');
+    console.log('ðŸ”Œ Sync Engine disconnected');
   }
 
   /**

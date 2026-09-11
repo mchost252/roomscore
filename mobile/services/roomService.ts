@@ -109,6 +109,7 @@ export interface RoomChatMessage {
   replyToId?: string | null;
   replyToText?: string | null;
   createdAt: string;
+  reactions?: Array<{ emoji: string; userId: string }>;
 }
 
 function mapChatMessage(raw: any): RoomChatMessage {
@@ -124,6 +125,7 @@ function mapChatMessage(raw: any): RoomChatMessage {
     replyToId: raw.replyToId,
     replyToText: raw.replyToText,
     createdAt: raw.createdAt || new Date().toISOString(),
+    reactions: Array.isArray(raw.reactions) ? raw.reactions : [],
   };
 }
 

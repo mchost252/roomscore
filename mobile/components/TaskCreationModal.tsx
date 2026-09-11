@@ -24,6 +24,8 @@ interface TaskCreationModalProps {
     points?: number;
     taskType?: string;
     daysOfWeek?: number[];
+    dueDate?: string;
+    hasThread?: boolean;
   }) => void;
   isEditMode?: boolean;
   taskData?: Task | null;
@@ -40,15 +42,21 @@ export function TaskCreationModal({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [points, setPoints] = useState('10');
-  const [taskType, setTaskType] = useState<'daily' | 'weekly' | 'custom'>('daily');
+  const [taskType, setTaskType] = useState<'daily' | 'one-time' | 'custom'>('daily');
   const [taskDays, setTaskDays] = useState<number[]>([]);
+  const [dueDate, setDueDate] = useState('');
+  const [hasThread, setHasThread] = useState(false);
+  const [errorText, setErrorText] = useState('');
 
   useEffect(() => {
     if (visible && taskData) {
       setTitle(taskData.title);
       setDescription(taskData.description || '');
       setPoints(String(taskData.points ?? 10));
-      setTaskType((taskData.taskType as any) || 'daily');
+      setTaskType(taskData.taskType === 'weekly' ? 'daily' : ((taskData.taskType as any) || 'daily'));
+      setDueDate(taskData.dueDate ? String(taskData.dueDate).slice(0, 10) : '');
+      setHasThread(taskData.hasThread ?? false);
+      setErrorText('');
       
       // Parse days of week if stored as comma separated string
       if (taskData.daysOfWeek) {
@@ -56,6 +64,7 @@ export function TaskCreationModal({
         setTaskDays(parsed);
       } else {
         setTaskDays([]);
+        setDueDate('');
       }
     }
     if (visible && !taskData) {
@@ -64,6 +73,8 @@ export function TaskCreationModal({
       setPoints('10');
       setTaskType('daily');
       setTaskDays([]);
+      setHasThread(false);
+      setErrorText('');
     }
   }, [visible, taskData]);
 
@@ -76,14 +87,43 @@ export function TaskCreationModal({
   };
 
   const submit = () => {
-    if (!title.trim()) return;
+    const trimmedTitle = title.trim();
+    const numericPoints = Number.parseInt(points, 10);
+
+    if (!trimmedTitle) {
+      setErrorText('Task title is required.');
+      return;
+    }
+
+    if (trimmedTitle.length < 3) {
+      setErrorText('Task title must be at least 3 characters.');
+      return;
+    }
+
+    if (!Number.isFinite(numericPoints) || numericPoints < 1 || numericPoints > 10) {
+      setErrorText('Points must be between 1 and 10.');
+      return;
+    }
+
+    if (taskType === 'custom' && taskDays.length === 0) {
+      setErrorText('Choose at least one day for a custom task.');
+      return;
+    }
+    if (taskType === 'one-time' && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+      setErrorText('Enter a date as YYYY-MM-DD for a one-time task.');
+      return;
+    }
+
+    setErrorText('');
     onSubmit({
       id: isEditMode ? taskData?.id : undefined,
-      title: title.trim(),
+      title: trimmedTitle,
       description: description.trim() || undefined,
-      points: parseInt(points, 10) || 10,
+      points: numericPoints,
       taskType: taskType,
       daysOfWeek: taskType === 'custom' ? taskDays : [],
+      dueDate: taskType === 'one-time' ? dueDate : undefined,
+      hasThread,
     });
   };
 
@@ -125,18 +165,24 @@ export function TaskCreationModal({
             </Text>
             <TextInput
               value={title}
-              onChangeText={setTitle}
+              onChangeText={(value) => {
+                setTitle(value);
+                if (errorText) setErrorText('');
+              }}
               placeholder="Task title"
               placeholderTextColor={colors.placeholder}
               style={[
                 styles.input,
                 {
                   color: colors.text,
-                  borderColor: colors.borderColor,
+                  borderColor: errorText ? '#ef4444' : colors.borderColor,
                   backgroundColor: colors.inputBg,
                 },
               ]}
             />
+            {errorText ? (
+              <Text style={styles.errorText}>{errorText}</Text>
+            ) : null}
             <Text style={[styles.label, { color: colors.textSecondary }]}>
               Description
             </Text>
@@ -160,7 +206,7 @@ export function TaskCreationModal({
               Frequency
             </Text>
             <View style={styles.durationRow}>
-              {(['daily', 'weekly', 'custom'] as const).map((f) => (
+              {(['daily', 'custom', 'one-time'] as const).map((f) => (
                 <TouchableOpacity 
                   key={f} 
                   onPress={() => setTaskType(f)} 
@@ -202,6 +248,13 @@ export function TaskCreationModal({
                 ))}
               </View>
             )}
+            {taskType === 'one-time' && (
+              <>
+                <Text style={[styles.label, { color: colors.textSecondary }]}>Date (YYYY-MM-DD)</Text>
+                <TextInput value={dueDate} onChangeText={setDueDate} placeholder="2026-09-02" placeholderTextColor={colors.placeholder}
+                  style={[styles.input, { color: colors.text, borderColor: colors.borderColor, backgroundColor: colors.inputBg }]} />
+              </>
+            )}
 
             <Text style={[styles.label, { color: colors.textSecondary }]}>
               Points
@@ -219,6 +272,52 @@ export function TaskCreationModal({
                 },
               ]}
             />
+
+            {/* Task Thread opt-in (default OFF) */}
+            <TouchableOpacity
+              style={[
+                styles.threadRow,
+                {
+                  backgroundColor: colors.inputBg,
+                  borderColor: hasThread ? colors.primary : colors.borderColor,
+                },
+              ]}
+              onPress={() => setHasThread((v) => !v)}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.threadIconWrap, { backgroundColor: hasThread ? colors.primary : 'transparent' }]}>
+                <Ionicons
+                  name="chatbubbles-outline"
+                  size={18}
+                  color={hasThread ? '#fff' : colors.textSecondary}
+                />
+              </View>
+              <View style={styles.threadTextWrap}>
+                <Text style={[styles.threadTitle, { color: colors.text }]}>
+                  Task Thread
+                </Text>
+                <Text style={[styles.threadSub, { color: colors.textSecondary }]}>
+                  Members can discuss & post proof
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.switchTrack,
+                  { backgroundColor: hasThread ? colors.primary : (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)') },
+                ]}
+                onPress={() => setHasThread((v) => !v)}
+                activeOpacity={0.8}
+                hitSlop={6}
+              >
+                <View
+                  style={[
+                    styles.switchThumb,
+                    { transform: [{ translateX: hasThread ? 18 : 0 }] },
+                  ]}
+                />
+              </TouchableOpacity>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={[styles.primary, { backgroundColor: colors.primary }]}
               onPress={submit}
@@ -262,6 +361,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   area: { minHeight: 88, textAlignVertical: 'top' },
+  errorText: {
+    color: '#ef4444',
+    fontSize: 12,
+    marginTop: 6,
+    marginBottom: 2,
+    fontWeight: '600',
+  },
   primary: {
     marginTop: 20,
     paddingVertical: 14,
@@ -275,6 +381,38 @@ const styles = StyleSheet.create({
   daysRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
   dayBtn: { width: 38, height: 38, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   dayBtnText: { fontSize: 14, fontWeight: '800' },
+  threadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 20,
+    gap: 10,
+  },
+  threadIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  threadTextWrap: { flex: 1 },
+  threadTitle: { fontSize: 14, fontWeight: '700' },
+  threadSub: { fontSize: 11, marginTop: 2 },
+  switchTrack: {
+    width: 40,
+    height: 22,
+    borderRadius: 11,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  switchThumb: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#fff',
+  },
 });
 
 export default TaskCreationModal;

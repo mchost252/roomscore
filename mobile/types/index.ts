@@ -44,6 +44,7 @@ export interface UserProfile {
   avatar_url?: string;
   /** Alias used by some screens — prefer `avatar_url` when syncing from API */
   avatar?: string;
+  coverImage?: string | null;
   aura_level: 'BRONZE' | 'SILVER' | 'GOLD';
   heat_state: boolean;
   weekly_points: number;

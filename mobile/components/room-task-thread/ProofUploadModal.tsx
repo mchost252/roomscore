@@ -7,6 +7,7 @@ import { View, Text, Modal, TouchableOpacity, StyleSheet, ActivityIndicator, Tex
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
+import { uploadImage as uploadToCloudinary } from '../../services/cloudinaryService';
 
 interface ProofUploadModalProps {
   visible: boolean;
@@ -31,11 +32,10 @@ export default function ProofUploadModal({ visible, onClose, onSkip, onUpload, m
     const res = await ImagePicker.launchCameraAsync({
       allowsEditing: true,
       quality: 0.5,
-      base64: true,
+      base64: false,
     });
-    if (!res.canceled && res.assets[0].base64) {
-      const mime = res.assets[0].uri.endsWith('.png') ? 'image/png' : 'image/jpeg';
-      setSelectedImage(`data:${mime};base64,${res.assets[0].base64}`);
+    if (!res.canceled && res.assets[0].uri) {
+      setSelectedImage(res.assets[0].uri);
     }
   };
 
@@ -49,23 +49,26 @@ export default function ProofUploadModal({ visible, onClose, onSkip, onUpload, m
       allowsEditing: true,
       quality: 0.5,
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      base64: true,
+      base64: false,
     });
-    if (!res.canceled && res.assets[0].base64) {
-      const mime = res.assets[0].uri.endsWith('.png') ? 'image/png' : 'image/jpeg';
-      setSelectedImage(`data:${mime};base64,${res.assets[0].base64}`);
+    if (!res.canceled && res.assets[0].uri) {
+      setSelectedImage(res.assets[0].uri);
     }
   };
 
-  const submitUpload = () => {
+  const submitUpload = async () => {
     if (!selectedImage) return;
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      onUpload(selectedImage, caption.trim());
+    try {
+      const cloudinaryUrl = await uploadToCloudinary(selectedImage, 'krios/proofs');
+      onUpload(cloudinaryUrl, caption.trim());
       setSelectedImage(null);
       setCaption('');
-    }, 500);
+    } catch (error: any) {
+      alert(error?.message || 'Failed to upload image.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const cancelSelection = () => {

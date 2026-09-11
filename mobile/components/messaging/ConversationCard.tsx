@@ -1,11 +1,20 @@
-import React, { memo, useCallback, useRef } from 'react';
+import React, { memo, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  Animated, PanResponder, Dimensions,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { LocalConversation } from '../../services/sqliteService';
+import { useTheme } from '../../context/ThemeContext';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  interpolate,
+  Extrapolation,
+} from 'react-native-reanimated';
 
 const { width: SW } = Dimensions.get('window');
 const DELETE_THRESHOLD = -80;
@@ -16,6 +25,7 @@ interface ConversationCardProps {
   conversation: LocalConversation;
   isDark: boolean;
   onPress: () => void;
+  onLongPress?: () => void;
   onDelete?: () => void;
 }
 
@@ -34,46 +44,23 @@ function formatRelativeTime(ts: number): string {
 }
 
 function getInitials(name: string): string {
+  if (!name) return '?';
   return name.charAt(0).toUpperCase();
 }
 
-function ConversationCard({ conversation, isDark, onPress, onDelete }: ConversationCardProps) {
+function ConversationCard({ conversation, isDark, onPress, onLongPress, onDelete }: ConversationCardProps) {
+  const { colors } = useTheme();
   const hasUnread = conversation.unread_count > 0;
   const isOnline = conversation.is_online === 1;
   const isPendingSent = conversation.request_status === 'pending_sent';
   const isPendingReceived = conversation.request_status === 'pending_received';
   const isPending = isPendingSent || isPendingReceived;
 
-  // Swipe-to-delete
-  const translateX = useRef(new Animated.Value(0)).current;
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 12 && Math.abs(gs.dy) < 12,
-      onPanResponderMove: (_, gs) => {
-        if (gs.dx < 0) translateX.setValue(Math.max(gs.dx, -120));
-      },
-      onPanResponderRelease: (_, gs) => {
-        if (gs.dx < DELETE_THRESHOLD) {
-          Animated.spring(translateX, { 
-            toValue: -90, useNativeDriver: true, 
-            tension: 180, friction: 18 
-          }).start();
-        } else {
-          Animated.spring(translateX, { 
-            toValue: 0, useNativeDriver: true, 
-            tension: 180, friction: 18 
-          }).start();
-        }
-      },
-    })
-  ).current;
+  // UI-Thread Swipe-to-delete
+  const translateX = useSharedValue(0);
 
   const closeSwipe = useCallback(() => {
-    Animated.spring(translateX, { 
-      toValue: 0, useNativeDriver: true, 
-      tension: 180, friction: 18 
-    }).start();
+    translateX.value = withSpring(0, { stiffness: 180, damping: 18 });
   }, [translateX]);
 
   const triggerDelete = useCallback(() => {
@@ -81,21 +68,42 @@ function ConversationCard({ conversation, isDark, onPress, onDelete }: Conversat
     onDelete?.();
   }, [closeSwipe, onDelete]);
 
+  const panGesture = Gesture.Pan()
+    .activeOffsetX([-10, 10]) // Require horizontal movement to activate
+    .onUpdate((e) => {
+      if (e.translationX < 0) {
+        translateX.value = Math.max(e.translationX, -120);
+      }
+    })
+    .onEnd((e) => {
+      if (e.translationX < DELETE_THRESHOLD) {
+        translateX.value = withSpring(-90, { stiffness: 180, damping: 18 });
+      } else {
+        translateX.value = withSpring(0, { stiffness: 180, damping: 18 });
+      }
+    });
+
+  const animatedCardStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  const animatedDeleteStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      translateX.value,
+      [-90, -20, 0],
+      [1, 0.5, 0],
+      Extrapolation.CLAMP
+    ),
+  }));
+
   const textColor = isDark ? '#f1f5f9' : '#1e293b';
   const subtextColor = isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)';
   const divider = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
 
-  // Delete action opacity — only visible when swiped
-  const deleteOpacity = translateX.interpolate({
-    inputRange: [-90, -20, 0],
-    outputRange: [1, 0.5, 0],
-    extrapolate: 'clamp',
-  });
-
   return (
     <View style={styles.swipeContainer}>
       {/* Delete action — hidden until swiped */}
-      <Animated.View style={[styles.deleteAction, { opacity: deleteOpacity, zIndex: 1 }]}>
+      <Animated.View style={[styles.deleteAction, animatedDeleteStyle, { zIndex: 1 }]}>
         <TouchableOpacity
           onPress={triggerDelete}
           style={styles.deleteBtn}
@@ -105,105 +113,109 @@ function ConversationCard({ conversation, isDark, onPress, onDelete }: Conversat
         </TouchableOpacity>
       </Animated.View>
 
-      {/* Main card */}
-      <Animated.View
-        style={[styles.cardOuter, { transform: [{ translateX }], zIndex: 2 }]}
-        {...panResponder.panHandlers}
-      >
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={() => { closeSwipe(); onPress(); }}
-          style={[styles.card, { borderBottomColor: divider }]}
-        >
-          {/* Avatar */}
-          <View style={styles.avatarWrap}>
-            {conversation.avatar ? (
-              <Image source={{ uri: conversation.avatar }} style={styles.avatar} />
-            ) : (
-              <LinearGradient
-                colors={isPending ? [VIOLET_ACCENT, '#a78bfa'] as any : [ACCENT_COLOR, VIOLET_ACCENT] as any}
-                style={styles.avatar}
-              >
-                <Text style={styles.initials}>{getInitials(conversation.username)}</Text>
-              </LinearGradient>
-            )}
-            {isOnline && !isPending && (
-              <View style={[styles.onlineRing, { borderColor: isDark ? '#080810' : '#f8f9ff' }]}>
-                <View style={styles.onlineDot} />
-              </View>
-            )}
-          </View>
-
-          {/* Content */}
-          <View style={styles.contentCol}>
-            <View style={styles.topRow}>
-              <Text
-                style={[
-                  styles.username,
-                  { color: textColor },
-                  hasUnread && styles.usernameUnread,
-                ]}
-                numberOfLines={1}
-              >
-                {conversation.username}
-              </Text>
-              <Text
-                style={[
-                  styles.time,
-                  { color: hasUnread ? ACCENT_COLOR : subtextColor },
-                ]}
-              >
-                {formatRelativeTime(conversation.last_message_at)}
-              </Text>
+      {/* Main card wrapped in Gesture Detector */}
+      <GestureDetector gesture={panGesture}>
+        <Animated.View style={[styles.cardOuter, animatedCardStyle, { zIndex: 2 }]}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => { closeSwipe(); onPress(); }}
+            onLongPress={() => { closeSwipe(); onLongPress?.(); }}
+            delayLongPress={350}
+            style={[styles.card, { borderBottomColor: divider }]}
+          >
+            {/* Avatar */}
+            <View style={styles.avatarWrap}>
+              {conversation.avatar ? (
+                <Image source={{ uri: conversation.avatar }} style={styles.avatar} />
+              ) : (
+                <LinearGradient
+                  colors={isPending ? [VIOLET_ACCENT, '#a78bfa'] as any : [ACCENT_COLOR, VIOLET_ACCENT] as any}
+                  style={styles.avatar}
+                >
+                  <Text style={styles.initials}>{getInitials(conversation.username || '')}</Text>
+                </LinearGradient>
+              )}
+              {isOnline && !isPending && (
+                <View style={[styles.onlineRing, { borderColor: colors.bg }]}>
+                  <View style={styles.onlineDot} />
+                </View>
+              )}
             </View>
 
-            <View style={styles.bottomRow}>
-              {isPendingSent && (
-                <View style={styles.pendingRow}>
-                  <Ionicons name="time-outline" size={13} color={VIOLET_ACCENT} />
-                  <Text style={[styles.preview, { color: VIOLET_ACCENT }]} numberOfLines={1}>
-                    Request sent
-                  </Text>
-                </View>
-              )}
-              {isPendingReceived && (
-                <View style={styles.pendingRow}>
-                  <View style={[styles.requestDot, { backgroundColor: VIOLET_ACCENT }]} />
-                  <Text style={[styles.preview, { color: VIOLET_ACCENT, fontWeight: '600' }]} numberOfLines={1}>
-                    Message request
-                  </Text>
-                </View>
-              )}
-              {!isPending && (
+            {/* Content */}
+            <View style={styles.contentCol}>
+              <View style={styles.topRow}>
                 <Text
                   style={[
-                    styles.preview,
-                    {
-                      color: hasUnread
-                        ? isDark ? 'rgba(255,255,255,0.75)' : 'rgba(0,0,0,0.7)'
-                        : subtextColor,
-                    },
-                    hasUnread && styles.previewUnread,
+                    styles.username,
+                    { color: textColor },
+                    hasUnread && styles.usernameUnread,
                   ]}
                   numberOfLines={1}
                 >
-                  {conversation.last_message || 'Start a conversation'}
+                  {conversation.username}
                 </Text>
-              )}
+                <Text
+                  style={[
+                    styles.time,
+                    { color: hasUnread ? ACCENT_COLOR : subtextColor },
+                  ]}
+                >
+                  {formatRelativeTime(conversation.last_message_at)}
+                </Text>
+                {conversation.is_muted === 1 && (
+                  <Ionicons name="notifications-off-outline" size={14} color={subtextColor} />
+                )}
+              </View>
 
-              {hasUnread && !isPending && (
-                <View style={styles.badge}>
-                  <LinearGradient colors={[ACCENT_COLOR, VIOLET_ACCENT] as any} style={styles.badgeGrad}>
-                    <Text style={styles.badgeText}>
-                      {conversation.unread_count > 99 ? '99+' : conversation.unread_count}
+              <View style={styles.bottomRow}>
+                {isPendingSent && (
+                  <View style={styles.pendingRow}>
+                    <Ionicons name="time-outline" size={13} color={VIOLET_ACCENT} />
+                    <Text style={[styles.preview, { color: VIOLET_ACCENT }]} numberOfLines={1}>
+                      Request sent
                     </Text>
-                  </LinearGradient>
-                </View>
-              )}
+                  </View>
+                )}
+                {isPendingReceived && (
+                  <View style={styles.pendingRow}>
+                    <View style={[styles.requestDot, { backgroundColor: VIOLET_ACCENT }]} />
+                    <Text style={[styles.preview, { color: VIOLET_ACCENT, fontWeight: '600' }]} numberOfLines={1}>
+                      Message request
+                    </Text>
+                  </View>
+                )}
+                {!isPending && (
+                  <Text
+                    style={[
+                      styles.preview,
+                      {
+                        color: hasUnread
+                          ? isDark ? 'rgba(255,255,255,0.75)' : 'rgba(0,0,0,0.7)'
+                          : subtextColor,
+                      },
+                      hasUnread && styles.previewUnread,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {conversation.last_message || 'Start a conversation'}
+                  </Text>
+                )}
+
+                {hasUnread && !isPending && (
+                  <View style={styles.badge}>
+                    <LinearGradient colors={[ACCENT_COLOR, VIOLET_ACCENT] as any} style={styles.badgeGrad}>
+                      <Text style={styles.badgeText}>
+                        {conversation.unread_count > 99 ? '99+' : conversation.unread_count}
+                      </Text>
+                    </LinearGradient>
+                  </View>
+                )}
+              </View>
             </View>
-          </View>
-        </TouchableOpacity>
-      </Animated.View>
+          </TouchableOpacity>
+        </Animated.View>
+      </GestureDetector>
     </View>
   );
 }

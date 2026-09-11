@@ -36,6 +36,9 @@ const personalTaskRoutes = require('./routes/personalTasks');
 const aiRoutes = require('./routes/ai');
 const internalRoutes = require('./routes/internal');
 const activityRoutes = require('./routes/activity');
+const trophyRoutes = require('./routes/trophies');
+const blockRoutes = require('./routes/blocks');
+const focusRoutes = require('./routes/focus');
 
 
 // Import socket handler
@@ -205,6 +208,9 @@ app.use('/api/personal-tasks', personalTaskRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/internal', internalRoutes);
 app.use('/api/activity', activityRoutes);
+app.use('/api/trophies', trophyRoutes);
+app.use('/api/blocks', blockRoutes);
+app.use('/api/me', focusRoutes);
 
 // Health check
 

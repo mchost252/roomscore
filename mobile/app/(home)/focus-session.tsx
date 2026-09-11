@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, StatusBar,
   Dimensions, ScrollView, Modal, TextInput, ImageBackground,
-  Image, Platform,
+  Image, Platform, ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,9 +18,12 @@ import { useFocusTimer } from '../../hooks/useFocusTimer';
 import CircularProgress from '../../components/ui/CircularProgress';
 import ConfettiCelebration from '../../components/ConfettiCelebration';
 import focusService from '../../services/focusService';
-import focusSoundService, { SoundOption } from '../../services/focusSoundService';
+import focusSoundService, { SoundOption, SoundStatus } from '../../services/focusSoundService';
 import taskService from '../../services/taskService';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
+import ConfirmationModal from '../../components/ConfirmationModal';
+import XPReward from '../../components/ui/XPReward';
 
 let ImagePicker: any = null;
 try {
@@ -36,12 +39,12 @@ const MINI_BOTTOM = 40;
 const MINI_RADIUS = 22;
 
 // ── Background presets ──
-const BG_PRESETS = [
-  { id: 'default',  name: 'Starry Night', image: require('../../assets/session_bg_default.png'),  accent: '#818cf8', rotate: false },
-  { id: 'cosmic',   name: 'Cosmic',       image: require('../../assets/focus session.png'),        accent: '#818cf8', rotate: true  },
-  { id: 'forest',   name: 'Forest',       image: require('../../assets/focused.png'),              accent: '#34d399', rotate: true  },
-  { id: 'rooms',    name: 'Ocean Depth',  image: require('../../assets/rooms_header_bg.jpeg'),     accent: '#06b6d4', rotate: true  },
-  { id: 'aurora',   name: 'Aurora',       image: require('../../assets/room_header_bg_new.webp'),  accent: '#a855f7', rotate: true  },
+const BG_PRESETS: { id: string; name: string; image: any; accent: string; rotate: boolean; cat: 'ambient' | 'nature' }[] = [
+  { id: 'default',  name: 'Starry Night', image: require('../../assets/session_bg_default.png'),  accent: '#818cf8', rotate: false, cat: 'ambient' },
+  { id: 'cosmic',   name: 'Cosmic',       image: require('../../assets/focus session.png'),        accent: '#818cf8', rotate: true,  cat: 'ambient' },
+  { id: 'forest',   name: 'Forest',       image: require('../../assets/focused.png'),              accent: '#34d399', rotate: true,  cat: 'nature'  },
+  { id: 'rooms',    name: 'Ocean Depth',  image: require('../../assets/rooms_header_bg.jpeg'),     accent: '#06b6d4', rotate: true,  cat: 'nature'  },
+  { id: 'aurora',   name: 'Aurora',       image: require('../../assets/room_header_bg_new.webp'),  accent: '#a855f7', rotate: true,  cat: 'ambient' },
 ];
 
 const TIME_OPTIONS = [15, 25, 45, 60];
@@ -54,6 +57,7 @@ export default function FocusSessionScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { isDark } = useTheme();
   const params = useLocalSearchParams<{ taskId?: string; taskTitle?: string }>();
   const taskId = params.taskId || '';
   const taskTitle = params.taskTitle || 'Deep Work Session';
@@ -71,6 +75,12 @@ export default function FocusSessionScreen() {
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Session stats
+  const [sessionsTodayCount, setSessionsTodayCount] = useState<number>(0);
+  const [sessionReward, setSessionReward] = useState<number | null>(null);
+  const [showXpAnim, setShowXpAnim] = useState(false);
+  const [showStopConfirm, setShowStopConfirm] = useState(false);
+
   // ── Modals ──
   const [showBgPicker, setShowBgPicker] = useState(false);
   const [showSoundPicker, setShowSoundPicker] = useState(false);
@@ -79,7 +89,6 @@ export default function FocusSessionScreen() {
   const [sounds, setSounds] = useState<SoundOption[]>([]);
   const [currentSoundId, setCurrentSoundId] = useState('silence');
   const [volume, setVolume] = useState(0.6);
-  const [playingPreviewId, setPlayingPreviewId] = useState<string | null>(null);
 
   // ── Minimize animation ──
   // 0 = fullscreen, 1 = minimized pill
@@ -102,12 +111,38 @@ export default function FocusSessionScreen() {
     if (timer.state === 'completed' && screenState === 'active') handleComplete();
   }, [timer.state]);
 
+  // Compute today's completed sessions count on mount and when sessions change
+  const computeSessionsToday = useCallback(async () => {
+    try {
+      const completed = await focusService.getCompletedSessions();
+      const today = new Date().toDateString();
+      const count = completed.filter(s => new Date(s.completedAt || s.startedAt).toDateString() === today).length;
+      setSessionsTodayCount(count);
+    } catch (e) {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    computeSessionsToday();
+  }, [computeSessionsToday]);
+
   // ── Toast helper ──
   const showToast = useCallback((msg: string) => {
     setToast(msg);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 3000);
   }, []);
+
+  const [soundStatus, setSoundStatus] = useState<SoundStatus>({ loading: false, playing: false, soundId: null, error: null });
+
+  // Playback status → spinner / error toast (remote streams fail silently otherwise)
+  useEffect(() => {
+    return focusSoundService.onStatus((s) => {
+      setSoundStatus(s);
+      if (s.error) showToast('Could not load sound. Check your connection.');
+    });
+  }, [showToast]);
 
   // ── Minimize / Expand ──
   const minimize = useCallback(() => {
@@ -122,6 +157,14 @@ export default function FocusSessionScreen() {
       runOnJS(setIsMinimized)(false); // only unblock touches after fully expanded
     });
   }, []);
+
+  // ── Pause button micro-animation (subtle scale on press) ──
+  const pauseScale = useSharedValue(1);
+  const pauseScaleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pauseScale.value }],
+  }));
+  const onPausePressIn = () => { pauseScale.value = withTiming(0.94, { duration: 120 }); };
+  const onPausePressOut = () => { pauseScale.value = withTiming(1, { duration: 200 }); };
 
   // ── Animated container style (fullscreen ↔ pill) ──
   const containerStyle = useAnimatedStyle(() => {
@@ -174,11 +217,35 @@ export default function FocusSessionScreen() {
     router.back();
   };
 
-  const handleSkip = () => { timer.skip(); };
+  // Leaving mid-session discards it — confirm via in-app modal (Alert.alert
+  // is a raw browser popup on web and is often blocked entirely).
+  const confirmStop = () => {
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setShowStopConfirm(true);
+  };
 
   const handleComplete = async () => {
     setScreenState('complete');
-    if (sessionId) await focusService.completeSession(sessionId);
+    let completedSession = null;
+    if (sessionId) {
+      try {
+        completedSession = await focusService.completeSession(sessionId);
+      } catch (e) {
+        console.debug('[focus-session] completeSession failed', (e as any)?.message || e);
+      }
+    }
+
+    // Update local stats
+    try {
+      await computeSessionsToday();
+      if (completedSession && (completedSession as any).reward != null) {
+        const r = (completedSession as any).reward as number;
+        setSessionReward(r);
+        // show XP animation
+        setShowXpAnim(true);
+      }
+    } catch {}
+
     await focusSoundService.fadeOut(1000);
     setShowConfetti(true);
     if (isMinimized) expand();
@@ -245,8 +312,10 @@ export default function FocusSessionScreen() {
 
   const filteredSounds = sounds.filter(s => {
     if (soundTab === 'All') return true;
-    if (soundTab === 'Nature') return ['forest', 'rain'].includes(s.id) || s.description?.toLowerCase().includes('nature');
-    if (soundTab === 'Lo-fi') return s.id === 'lofi' || s.description?.toLowerCase().includes('chill');
+    // Match against name + description so user-added customs filter correctly too.
+    const hay = `${s.name} ${s.description || ''}`.toLowerCase();
+    if (soundTab === 'Nature') return ['forest', 'rain'].includes(s.id) || /(nature|rain|forest|ocean|thunder|bird|water|wind|night|cricket)/.test(hay);
+    if (soundTab === 'Lo-fi') return s.id === 'lofi' || /(lo-?fi|chill|calm|piano|sleepy)/.test(hay);
     return true;
   });
 
@@ -308,7 +377,7 @@ export default function FocusSessionScreen() {
           {/* Thumbnails */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false}
             contentContainerStyle={s.bgThumbRow}>
-            {BG_PRESETS.map(item => (
+            {BG_PRESETS.filter(item => (bgTab === 'Ambient' ? item.cat === 'ambient' : item.cat === 'nature')).map(item => (
               <TouchableOpacity key={item.id} onPress={() => { setBg(item); setCustomBgUri(null); }}
                 style={[s.bgThumb, bg.id === item.id && !customBgUri && s.bgThumbActive]}>
                 <ImageBackground source={item.image} style={StyleSheet.absoluteFill} resizeMode="cover" />
@@ -368,9 +437,13 @@ export default function FocusSessionScreen() {
                   <Text style={s.soundName}>{snd.name}</Text>
                   <Text style={s.soundDesc}>{snd.description}</Text>
                 </View>
-                {currentSoundId === snd.id
-                  ? <Ionicons name="pause" size={16} color="#6366f1" />
-                  : <Ionicons name="play" size={16} color="rgba(255,255,255,0.3)" />
+                {currentSoundId === snd.id && soundStatus.loading && soundStatus.soundId === snd.id
+                  ? <ActivityIndicator size="small" color="#6366f1" />
+                  : <Ionicons
+                      name={currentSoundId === snd.id && soundStatus.playing ? 'pause' : 'play'}
+                      size={16}
+                      color={currentSoundId === snd.id && soundStatus.playing ? '#6366f1' : 'rgba(255,255,255,0.3)'}
+                    />
                 }
               </TouchableOpacity>
             ))}
@@ -416,7 +489,7 @@ export default function FocusSessionScreen() {
           <TouchableOpacity onPress={() => router.back()} style={s.hdrBtn}>
             <Ionicons name="chevron-back" size={20} color="#fff" />
           </TouchableOpacity>
-          <Image source={require('../../assets/krios-logo.png')} style={s.logo} resizeMode="contain" />
+          <View style={{ width: 60 }} />
           <View style={{ width: 36 }} />
         </View>
 
@@ -491,6 +564,7 @@ export default function FocusSessionScreen() {
             {[
               { label: 'Focus Time', value: `${customDurText || duration}:00` },
               { label: 'Task', value: taskTitle },
+              ...(sessionReward != null ? [{ label: 'Reward', value: `+${sessionReward} XP` }] : []),
             ].map((row, i) => (
               <View key={i} style={[s.summaryRow, i > 0 && { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' }]}>
                 <Text style={s.summaryLabel}>{row.label}</Text>
@@ -535,10 +609,14 @@ export default function FocusSessionScreen() {
           </BlurView>
         </ScrollView>
 
-        <TouchableOpacity style={[s.primaryBtn, { backgroundColor: '#6366f1', marginTop: 10 }]} onPress={() => router.back()}>
-          <Ionicons name="home-outline" size={16} color="#fff" />
-          <Text style={s.primaryBtnTxt}>Back to Room</Text>
-        </TouchableOpacity>
+          {sessionReward != null && showXpAnim && (
+            <XPReward amount={sessionReward} onComplete={() => setShowXpAnim(false)} />
+          )}
+
+          <TouchableOpacity style={[s.primaryBtn, { backgroundColor: '#6366f1', marginTop: 10 }]} onPress={() => router.back()}>
+            <Ionicons name="home-outline" size={16} color="#fff" />
+            <Text style={s.primaryBtnTxt}>Back to Room</Text>
+          </TouchableOpacity>
       </View>
     </Animated.View>
   );
@@ -549,10 +627,10 @@ export default function FocusSessionScreen() {
       <View style={[s.safe, { paddingTop: insets.top + 10, paddingBottom: insets.bottom + 16 }]}>
         {/* Header */}
         <View style={s.header}>
-          <TouchableOpacity onPress={handleStop} style={s.hdrBtn}>
+          <TouchableOpacity onPress={confirmStop} style={s.hdrBtn}>
             <Ionicons name="chevron-back" size={20} color="#fff" />
           </TouchableOpacity>
-          <Image source={require('../../assets/krios-logo.png')} style={s.logo} resizeMode="contain" />
+          <View style={{ width: 60 }} />
           <TouchableOpacity style={s.hdrBtn} onPress={minimize}>
             <Ionicons name="chevron-down" size={20} color="#fff" />
           </TouchableOpacity>
@@ -565,64 +643,111 @@ export default function FocusSessionScreen() {
             <Text style={s.modePillTxt}>Deep Focus</Text>
           </View>
           <Text style={s.activeTitle} numberOfLines={1}>{taskTitle}</Text>
+          <Text style={s.activeSub} numberOfLines={1}>
+            {taskId ? `${duration}-minute session` : 'No agenda. Just you and your best.'}
+          </Text>
         </View>
 
-        {/* Timer */}
+        {/* Timer — countdown display; the ring fills ELAPSED clockwise from
+            the top over a greyed-out track */}
         <View style={s.timerWrap}>
           <CircularProgress
-            size={W * 0.68}
-            strokeWidth={3}
+            size={Math.min(W * 0.78, H * 0.36)}
+            strokeWidth={10}
             progress={timer.progress}
             timeDisplay={timer.timeDisplay}
+            elapsedMinutes={timer.elapsedMinutes}
+            remainingPercent={timer.remainingPercent}
             subtitle={`Until ${timer.endTime}`}
             label="FOCUSING"
           />
+          {/* Stats summary card — lives inside the timer group so the pair
+              centers together, tucked onto the ring's lower edge */}
+          <View style={s.statsRowWrap}>
+          <BlurView intensity={40} tint="dark" style={s.statsCard}>
+            <View style={s.statItem}>
+              <Ionicons name="trending-up-outline" size={18} color="#a78bfa" />
+              <View style={s.statTextWrap}>
+                <Text numberOfLines={1} ellipsizeMode="tail" style={s.statValue}>{Math.round(timer.progress * (timer.totalSeconds / 60))} min</Text>
+                <Text numberOfLines={2} ellipsizeMode="tail" style={s.statLabel}>Focused</Text>
+              </View>
+            </View>
+            <View style={s.statDivider} />
+            <View style={s.statItem}>
+              <Ionicons name="flame-outline" size={18} color="#fb923c" />
+              <View style={s.statTextWrap}>
+                <Text numberOfLines={1} ellipsizeMode="tail" style={s.statValue}>{sessionsTodayCount}</Text>
+                <Text numberOfLines={2} ellipsizeMode="tail" style={s.statLabel}>Sessions today</Text>
+              </View>
+            </View>
+            <View style={s.statDivider} />
+            <View style={s.statItem}>
+              <Ionicons name="star-outline" size={18} color="#facc15" />
+              <View style={s.statTextWrap}>
+                <Text numberOfLines={1} ellipsizeMode="tail" style={s.statValue}>{sessionReward != null ? `+${sessionReward} XP` : '—'}</Text>
+                <Text numberOfLines={2} ellipsizeMode="tail" style={s.statLabel}>Session reward</Text>
+              </View>
+            </View>
+            </BlurView>
+          </View>
         </View>
 
-        {/* Tagline */}
-        <Text style={s.tagline}>Focus. Learn. Grow.</Text>
+        {/* Bottom rounded action bar */}
+        <View style={{ width: '100%', alignItems: 'center', justifyContent: 'flex-end', paddingHorizontal: 16 }}>
+          <BlurView intensity={40} tint="dark" style={s.bottomBar}>
+            <View style={s.bottomBarInner}>
+              <TouchableOpacity style={s.bottomActionBtn} onPress={() => setShowBgPicker(true)}>
+                <View style={s.bottomActionIcon}><Ionicons name="image-outline" size={18} color="#fff" /></View>
+                <Text style={s.bottomActionLabel} numberOfLines={1}>Background</Text>
+              </TouchableOpacity>
 
-        {/* 5-button action bar */}
-        <View style={s.actionBar}>
-          {/* Background */}
-          <TouchableOpacity style={s.actionBtn} onPress={() => setShowBgPicker(true)}>
-            <View style={s.actionIcon}><Ionicons name="image-outline" size={18} color="#fff" /></View>
-            <Text style={s.actionLabel}>Background</Text>
-          </TouchableOpacity>
+              <TouchableOpacity style={s.bottomActionBtn} onPress={() => setShowSoundPicker(true)}>
+                <View style={s.bottomActionIcon}><Ionicons name="musical-notes-outline" size={18} color="#fff" /></View>
+                <Text style={s.bottomActionLabel} numberOfLines={1}>Sound</Text>
+              </TouchableOpacity>
 
-          {/* Sound */}
-          <TouchableOpacity style={s.actionBtn} onPress={() => setShowSoundPicker(true)}>
-            <View style={s.actionIcon}><Ionicons name="musical-notes-outline" size={18} color="#fff" /></View>
-            <Text style={s.actionLabel}>Sound</Text>
-          </TouchableOpacity>
+              <TouchableOpacity
+                onPress={screenState === 'paused' ? handleResume : handlePause}
+                activeOpacity={0.95}
+                onPressIn={onPausePressIn}
+                onPressOut={onPausePressOut}
+                style={s.bottomActionCenterBtn}
+              >
+                <Animated.View style={[s.bottomPauseCenter, pauseScaleStyle]}>
+                  <View style={s.bottomPauseGlow} />
+                  <LinearGradient colors={[bg.accent, '#4f46e5']} style={s.pauseInner}>
+                    <Ionicons name={screenState === 'paused' ? 'play' : 'pause'} size={24} color="#fff" />
+                  </LinearGradient>
+                </Animated.View>
+                <Text style={s.bottomActionLabel} numberOfLines={1}>{screenState === 'paused' ? 'Resume' : 'Pause'}</Text>
+              </TouchableOpacity>
 
-          {/* Pause — center large */}
-          <TouchableOpacity style={s.pauseBtn}
-            onPress={screenState === 'paused' ? handleResume : handlePause} activeOpacity={0.85}>
-            <View style={s.pauseCenter}>
-              <View style={[s.pauseRing, { borderColor: bg.accent }]} />
-              <LinearGradient colors={[bg.accent, '#4f46e5']} style={s.pauseInner}>
-                <Ionicons name={screenState === 'paused' ? 'play' : 'pause'} size={26} color="#fff" />
-              </LinearGradient>
+              <TouchableOpacity style={s.bottomActionBtn}
+                onPress={() => showToast('AI Assist is unavailable during sessions. Visit the home screen to chat with Krios.') }>
+                <View style={s.bottomActionIcon}><Ionicons name="sparkles-outline" size={18} color="#fff" /></View>
+                <Text style={s.bottomActionLabel} numberOfLines={1}>AI Assist</Text>
+                <View style={s.betaPill}><Text style={s.betaTxt}>Beta</Text></View>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={s.bottomActionBtn} onPress={confirmStop}>
+                <View style={[s.bottomActionIcon, { backgroundColor: 'rgba(239,68,68,0.15)' }]}>
+                  <Ionicons name="stop" size={18} color="#ef4444" />
+                </View>
+                <Text style={[s.bottomActionLabel, { color: '#ef4444' }]} numberOfLines={1}>End session</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={[s.actionLabel, { marginTop: 6 }]}>{screenState === 'paused' ? 'Resume' : 'Pause'}</Text>
-          </TouchableOpacity>
+          </BlurView>
 
-          {/* AI Assist */}
-          <TouchableOpacity style={s.actionBtn}
-            onPress={() => showToast('AI Assist is unavailable during sessions. Visit the home screen to chat with Krios.')}>
-            <View style={s.actionIcon}><Ionicons name="sparkles-outline" size={18} color="#fff" /></View>
-            <Text style={s.actionLabel}>AI Assist</Text>
-          </TouchableOpacity>
-
-          {/* End Session */}
-          <TouchableOpacity style={s.actionBtn} onPress={handleStop}>
-            <View style={[s.actionIcon, { backgroundColor: 'rgba(239,68,68,0.15)' }]}>
-              <Ionicons name="stop" size={18} color="#ef4444" />
+          {/* Focus mode footer */}
+          <View style={s.focusLockRow}>
+            <Ionicons name="lock-closed-outline" size={12} color="rgba(255,255,255,0.4)" />
+            <View>
+              <Text style={s.focusLockTxt}>Focus mode is on</Text>
+              <Text style={[s.focusLockTxt, { color: 'rgba(255,255,255,0.35)' }]}>Notifications are paused</Text>
             </View>
-            <Text style={[s.actionLabel, { color: '#ef4444' }]}>End</Text>
-          </TouchableOpacity>
+          </View>
         </View>
+
       </View>
     </Animated.View>
   );
@@ -632,8 +757,7 @@ export default function FocusSessionScreen() {
     <Animated.View style={[StyleSheet.absoluteFill, miniContentStyle]}>
       <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
       <TouchableOpacity style={s.miniInner} onPress={expand} activeOpacity={0.9}>
-        <Image source={require('../../assets/krios-logo.png')} style={s.miniLogo} resizeMode="contain" />
-        <View style={{ flex: 1, marginLeft: 10 }}>
+        <View style={{ flex: 1 }}>
           <Text style={s.miniTimer}>{timer.timeDisplay}</Text>
           <Text style={s.miniSub}>Focus. Learn. Grow.</Text>
         </View>
@@ -670,6 +794,19 @@ export default function FocusSessionScreen() {
         )}
       </Animated.View>
 
+      {/* End-session confirmation */}
+      <ConfirmationModal
+        visible={showStopConfirm}
+        title="End session?"
+        message="Your progress in this session will be lost."
+        confirmText="End session"
+        cancelText="Keep focusing"
+        isDark={isDark}
+        destructive
+        onConfirm={() => { setShowStopConfirm(false); handleStop(); }}
+        onCancel={() => setShowStopConfirm(false)}
+      />
+
       {/* Toast */}
       {toast && (
         <View style={s.toast} pointerEvents="none">
@@ -694,7 +831,6 @@ const s = StyleSheet.create({
   header: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20 },
   hdrBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   hdrTitle: { color: '#fff', fontSize: 15, fontWeight: '600' },
-  logo: { width: 60, height: 32 },
 
   // Setup
   setupBody: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 30 },
@@ -710,29 +846,42 @@ const s = StyleSheet.create({
   primaryBtnTxt: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
   // Mode pill
-  modePill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(52,211,153,0.12)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 16, marginBottom: 10 },
+  modePill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(52,211,153,0.12)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 16, marginBottom: 10, borderWidth: 1, borderColor: 'rgba(52,211,153,0.35)' },
   modePillTxt: { color: '#34d399', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
 
   // Active
   taskInfo: { alignItems: 'center', marginTop: 4 },
-  activeTitle: { color: '#fff', fontSize: 18, fontWeight: '700', textAlign: 'center', paddingHorizontal: 40 },
-  timerWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  tagline: { color: 'rgba(255,255,255,0.4)', fontSize: 13, fontWeight: '500', letterSpacing: 0.5, marginBottom: 20 },
+  activeTitle: { color: '#fff', fontSize: 22, fontWeight: '700', textAlign: 'center', paddingHorizontal: 32 },
+  activeSub: { color: 'rgba(255,255,255,0.55)', fontSize: 14, fontStyle: 'italic', fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', textAlign: 'center', paddingHorizontal: 40, marginTop: 4 },
+  timerWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingBottom: 44 },
 
-  // 5-button action bar
-  actionBar: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', width: W - 40, paddingBottom: 4 },
-  actionBtn: { alignItems: 'center', gap: 6, flex: 1 },
-  actionIcon: { width: 46, height: 46, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.07)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
-  actionLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 10, fontWeight: '500' },
-  pauseBtn: { alignItems: 'center', flex: 1.2 },
-  pauseCenter: { width: 76, height: 76, alignItems: 'center', justifyContent: 'center' },
-  pauseRing: { position: 'absolute', width: 76, height: 76, borderRadius: 38, borderWidth: 1, backgroundColor: 'rgba(99,102,241,0.15)' },
-  pauseInner: { width: 62, height: 62, borderRadius: 31, alignItems: 'center', justifyContent: 'center', shadowColor: '#8b5cf6', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.6, shadowRadius: 12, elevation: 8 },
+  pauseInner: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', shadowColor: '#8b5cf6', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.6, shadowRadius: 12, elevation: 8 },
+
+  // Stats summary (below timer)
+  statsRowWrap: { width: W, alignItems: 'center', marginTop: -32, marginBottom: 10, zIndex: 5 },
+  statsCard: { width: W * 0.88, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', backgroundColor: 'rgba(255,255,255,0.03)' },
+  statItem: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0 },
+  statTextWrap: { marginLeft: 8, flex: 1, minWidth: 0, alignItems: 'center' },
+  statDivider: { width: 1, height: 36, backgroundColor: 'rgba(255,255,255,0.06)', marginHorizontal: 8 },
+  statValue: { color: '#fff', fontSize: 15, fontWeight: '700', flexShrink: 1, textAlign: 'center' },
+  statLabel: { color: 'rgba(255,255,255,0.55)', fontSize: 10.5, flexShrink: 1, lineHeight: 14, textAlign: 'center' },
+
+  // Bottom rounded action bar (inset floating card, pause overlaps the top edge)
+  bottomBar: { width: W - 32, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', overflow: 'hidden', backgroundColor: 'rgba(8, 12, 28, 0.45)' },
+  bottomBarInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 2, paddingHorizontal: 8 },
+  bottomActionBtn: { alignItems: 'center', flex: 1, minWidth: 0 },
+  bottomActionIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.02)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
+  bottomActionLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 9.5, marginTop: 4, textAlign: 'center' },
+  bottomActionCenterBtn: { alignItems: 'center', width: 76 },
+  bottomPauseCenter: { width: 58, height: 58, borderRadius: 29, borderWidth: 1.5, borderColor: 'rgba(167,139,250,0.5)', alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  bottomPauseGlow: { position: 'absolute', width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(99,102,241,0.18)', opacity: 0.95 },
+  betaPill: { backgroundColor: '#6366f1', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, marginTop: 4 },
+  betaTxt: { color: '#fff', fontSize: 9, fontWeight: '700' },
+  focusLockRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 6 },
+  focusLockTxt: { color: 'rgba(255,255,255,0.45)', fontSize: 11, fontWeight: '500' },
 
   // Mini pill
-  miniContent: { flex: 1 },
   miniInner: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16 },
-  miniLogo: { width: 36, height: 20 },
   miniTimer: { color: '#fff', fontSize: 18, fontWeight: '700', letterSpacing: -0.5 },
   miniSub: { color: 'rgba(255,255,255,0.45)', fontSize: 11, marginTop: 1 },
   miniPauseBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(99,102,241,0.3)', alignItems: 'center', justifyContent: 'center' },
@@ -786,7 +935,6 @@ const s = StyleSheet.create({
   volRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)', gap: 10 },
   volTrack: { flex: 1, height: 4, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 2, position: 'relative', justifyContent: 'center' },
   volFill: { height: 4, backgroundColor: '#6366f1', borderRadius: 2, position: 'absolute', left: 0 },
-  volThumb: { position: 'absolute', width: 16, height: 16, borderRadius: 8, backgroundColor: '#6366f1', marginLeft: -8, top: -6 },
 
   // Toast
   toast: { position: 'absolute', bottom: 100, left: 20, right: 20, alignItems: 'center', zIndex: 9999 },

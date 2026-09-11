@@ -1,70 +1,146 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Stack, usePathname, useRouter } from 'expo-router';
-import { View, StyleSheet, PanResponder } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { View, StyleSheet, InteractionManager } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import { useSettingsStore } from '../../src/store/useSettingsStore';
+import {
+  HOME_TAB_ROUTES,
+  getHomeTabIndex as resolveHomeTabIndex,
+  isPrimaryHomePath,
+} from '../../constants/homeTabs';
 import SidebarNav from '../../components/SidebarNav';
 import BottomTabBar from '../../components/BottomTabBar';
 import { NotificationProvider } from '../../context/NotificationContext';
 import { HomeNavContext } from '../../context/HomeNavContext';
-
-const HOME_TAB_ROUTES = ['/(home)', '/(home)/rooms', '/(home)/messages', '/(home)/profile'];
-const HOME_TAB_COUNT = HOME_TAB_ROUTES.length;
-const SWIPE_DISTANCE_THRESHOLD = 34;
-const SWIPE_VELOCITY_THRESHOLD = 0.22;
-
-function isPrimaryHomePath(pathname: string) {
-  return pathname === '/' ||
-    pathname === '/(home)' ||
-    pathname === '/(home)/index' ||
-    pathname === '/rooms' ||
-    pathname === '/(home)/rooms' ||
-    pathname === '/messages' ||
-    pathname === '/(home)/messages' ||
-    pathname === '/profile' ||
-    pathname === '/(home)/profile';
-}
+import AIBlobToast from '../../components/ai/AIBlobToast';
+import { aiBehaviorEngine } from '../../services/aiBehaviorEngine';
+import { useAuth } from '../../context/AuthContext';
+import notificationService from '../../services/notificationService';
 
 export default function HomeLayout() {
   const pathname = usePathname();
   const router = useRouter();
-  const [navStyle, setNavStyle] = useState<'bottom' | 'sidebar'>('bottom');
-  const [aiChatFn, setAiChatFn] = useState<() => void>(() => () => {});
-  const [addTaskFn, setAddTaskFn] = useState<() => void>(() => () => {});
+  const { user } = useAuth();
+  // Subscribed to the settings store, so a change in Settings re-renders this
+  // layout immediately. Persisted via MMKV, which hydrates synchronously — no flash.
+  const navStyle = useSettingsStore((s) => s.navigationStyle);
+  // Screen-supplied handlers live in refs, not state. Every home screen calls
+  // setOpenAIChat/setOpenAddTask from its focus effect, so holding these in
+  // state re-rendered HomeLayout — and changed the onAddTask prop identity,
+  // defeating React.memo on the nav bars — on every single tab switch.
+  const aiChatRef = useRef<() => void>(() => {});
+  const addTaskRef = useRef<() => void>(() => {});
+  const openAIChat = useCallback(() => aiChatRef.current?.(), []);
+  const openAddTask = useCallback(() => addTaskRef.current?.(), []);
   const [homeTabAnimation, setHomeTabAnimation] = useState<'slide_from_right' | 'slide_from_left'>('slide_from_right');
   const [optimisticHomeTabIndex, setOptimisticHomeTabIndex] = useState<number | null>(null);
 
-  // ── Notification tap handler ────────────────────────────────────────────
-  // When user taps a notification, deep-link to the relevant task thread
-  useEffect(() => {
-    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
-      const data = response.notification.request.content.data;
-      if (!data) return;
+  const [aiToast, setAiToast] = useState<{ message: string; action: string } | null>(null);
+  const [showAiToast, setShowAiToast] = useState(false);
 
-      if (data.type === 'due-reminder' && data.taskId) {
-        router.push({
-          pathname: '/(home)/task-thread',
-          params: { taskId: data.taskId as string, taskTitle: response.notification.request.content.body || '' },
-        });
-      } else if (data.type === 'morning-digest' || data.type === 'evening-preview') {
-        // Navigate to home screen (tasks list)
-        router.push('/(home)');
+  const showAiToastFn = useCallback((toast: { message: string; action: string }) => {
+    setAiToast(toast);
+    setShowAiToast(true);
+  }, []);
+
+  const hideAiToastFn = useCallback(() => {
+    setShowAiToast(false);
+  }, []);
+
+  const handleNotificationData = useCallback((data: Record<string, unknown> | undefined, body = '') => {
+    if (!data) return;
+    const type = String(data.type || data.notificationType || '');
+    const roomId = data.roomId ? String(data.roomId) : '';
+    const friendId = String(data.friendId || data.senderId || '');
+    const taskId = data.taskId ? String(data.taskId) : '';
+
+    if (type === 'direct_message' && friendId) {
+      router.push({ pathname: '/(home)/chat', params: { friendId, requestStatus: 'accepted' } });
+    } else if (type === 'friend_request' || type === 'friend_request_accepted') {
+      router.push('/(home)/more');
+    } else if (roomId && (type.includes('room') || type === 'room_updated' || type === 'task_reminder' || type === 'task_completed')) {
+      if (type === 'room_updated') {
+        router.push({ pathname: '/(home)/room-chat', params: { roomId, roomName: String(data.roomName || 'Room') } });
+      } else if (taskId) {
+        router.push({ pathname: '/(home)/room-task-thread', params: { roomId, taskId, taskTitle: body } });
+      } else {
+        router.push({ pathname: '/(home)/room-detail', params: { roomId } });
       }
-    });
-
-    return () => subscription.remove();
+    } else if (taskId || type === 'due-reminder') {
+      router.push({ pathname: '/(home)/task-thread', params: { taskId, taskTitle: body } });
+    } else if (type === 'morning-digest' || type === 'evening-preview' || type === 'achievement_unlocked') {
+      router.push('/(home)');
+    }
+    notificationService.syncUnreadBadge().catch(() => {});
   }, [router]);
 
   useEffect(() => {
-    const load = async () => {
-      const v = await AsyncStorage.getItem('krios_nav_style');
-      if (v === 'sidebar' || v === 'bottom') setNavStyle(v);
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
+      handleNotificationData(
+        response.notification.request.content.data as Record<string, unknown>,
+        response.notification.request.content.body || '',
+      );
+    });
+    const receivedSubscription = Notifications.addNotificationReceivedListener(() => {
+      notificationService.syncUnreadBadge().catch(() => {});
+    });
+    Notifications.getLastNotificationResponseAsync().then(response => {
+      if (response) {
+        handleNotificationData(
+          response.notification.request.content.data as Record<string, unknown>,
+          response.notification.request.content.body || '',
+        );
+      }
+    }).catch(() => {});
+
+    return () => {
+      responseSubscription.remove();
+      receivedSubscription.remove();
     };
-    load();
-    // Poll infrequently — nav style rarely changes (only from settings)
-    const id = setInterval(load, 5000);
-    return () => clearInterval(id);
-  }, []);
+  }, [handleNotificationData]);
+
+  // AI toast — deferred past the slide-in animation and shown at most once per
+  // session. Previously ran aiBehaviorEngine.load() + getProfileSummary() on
+  // every mount, competing with the JS thread during the Home transition.
+  const aiToastShownRef = useRef(false);
+  useEffect(() => {
+    if (aiToastShownRef.current || !user?.id) return;
+    const handle = InteractionManager.runAfterInteractions(() => {
+      // Additional 4s delay — toast is low priority, let the screen fully settle
+      const timer = setTimeout(async () => {
+        try {
+          await aiBehaviorEngine.load();
+          const summary = await aiBehaviorEngine.getProfileSummary();
+
+          const hour = new Date().getHours();
+          const currentPeriod =
+            hour >= 5 && hour < 12
+              ? 'morning'
+              : hour >= 12 && hour < 17
+                ? 'afternoon'
+                : hour >= 17 && hour < 21
+                  ? 'evening'
+                  : 'night';
+
+          const hasFocusHistory =
+            summary.topCategories &&
+            Object.keys(summary.topCategories).length > 0;
+
+          if (hasFocusHistory || summary.preferredTimeOfDay === currentPeriod) {
+            aiToastShownRef.current = true;
+            showAiToastFn({
+              message: `You usually focus around ${currentPeriod}. Start a session?`,
+              action: 'Start Focus',
+            });
+          }
+        } catch {
+          // best-effort; never block UI on AI toast
+        }
+      }, 4000);
+      return () => clearTimeout(timer);
+    });
+    return () => handle.cancel();
+  }, [user?.id]); // showAiToastFn is stable (useCallback with no deps) — omit it
 
   useEffect(() => {
     const prefetch = (router as any).prefetch;
@@ -74,28 +150,40 @@ export default function HomeLayout() {
     });
   }, [router]);
 
-  const setOpenAIChatStable = useCallback((fn: () => void) => setAiChatFn(() => fn), []);
-  const setOpenAddTaskStable = useCallback((fn: () => void) => setAddTaskFn(() => fn), []);
-  const getHomeTabIndex = useCallback((pathOrRoute: string) => {
-    if (pathOrRoute.includes('/rooms')) return 1;
-    if (pathOrRoute.includes('/messages')) return 2;
-    if (pathOrRoute.includes('/profile')) return 3;
-    return 0;
-  }, []);
+  const setOpenAIChatStable = useCallback((fn: () => void) => { aiChatRef.current = fn; }, []);
+  const setOpenAddTaskStable = useCallback((fn: () => void) => { addTaskRef.current = fn; }, []);
+  const getHomeTabIndex = useCallback(
+    (pathOrRoute: string) => resolveHomeTabIndex(pathOrRoute),
+    [],
+  );
 
   const routeHomeTabIndex = getHomeTabIndex(pathname);
   const isPrimaryHomeTab = isPrimaryHomePath(pathname);
   const activeNavTabIndex = optimisticHomeTabIndex ?? routeHomeTabIndex;
 
-  const navigateHomeTab = useCallback((route: string) => {
-    const currentIndex = getHomeTabIndex(pathname);
-    const targetIndex = getHomeTabIndex(route);
-    if (targetIndex === currentIndex && isPrimaryHomePath(pathname)) return;
+  // pathname changes on every navigation. Reading it through a ref keeps
+  // navigateHomeTab referentially stable — without this, the callback identity
+  // changed on each transition and defeated React.memo on both nav bars.
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
 
-    setOptimisticHomeTabIndex(targetIndex);
+  const navigateHomeTab = useCallback((route: string) => {
+    const current = pathnameRef.current;
+    const currentIndex = getHomeTabIndex(current);
+    const targetIndex = getHomeTabIndex(route);
+    if (targetIndex === currentIndex && isPrimaryHomePath(current)) return;
+
+    // Animation direction must be set before the navigation commits so the Stack
+    // picks it up. The optimistic tab highlight is purely cosmetic, so it's
+    // deferred a frame — applying it synchronously forced a full HomeLayout +
+    // tab bar re-render in the same frame as the navigation, which is what made
+    // the screen visibly wait before sliding.
     setHomeTabAnimation(targetIndex >= currentIndex ? 'slide_from_right' : 'slide_from_left');
     router.replace(route as any);
-  }, [getHomeTabIndex, pathname, router]);
+    requestAnimationFrame(() => {
+      setOptimisticHomeTabIndex(targetIndex);
+    });
+  }, [getHomeTabIndex, router]);
 
   useEffect(() => {
     if (optimisticHomeTabIndex === null) return;
@@ -104,34 +192,21 @@ export default function HomeLayout() {
     }
   }, [optimisticHomeTabIndex, routeHomeTabIndex]);
 
-  const swipeResponder = useMemo(() => PanResponder.create({
-    onMoveShouldSetPanResponder: (_, gestureState) => {
-      if (!isPrimaryHomeTab) return false;
-      return Math.abs(gestureState.dx) > 10 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.2;
-    },
-    onPanResponderRelease: (_, gestureState) => {
-      const shouldSwipe = Math.abs(gestureState.dx) > SWIPE_DISTANCE_THRESHOLD || Math.abs(gestureState.vx) > SWIPE_VELOCITY_THRESHOLD;
-      if (!shouldSwipe) return;
-
-      const direction = gestureState.dx < 0 ? 1 : -1;
-      const targetIndex = Math.max(0, Math.min(HOME_TAB_COUNT - 1, routeHomeTabIndex + direction));
-      if (targetIndex === routeHomeTabIndex) return;
-      navigateHomeTab(HOME_TAB_ROUTES[targetIndex]);
-    },
-  }), [isPrimaryHomeTab, navigateHomeTab, routeHomeTabIndex]);
-
   const ctxValue = React.useMemo(() => ({
-    openAIChat: aiChatFn,
-    openAddTask: addTaskFn,
+    openAIChat,
+    openAddTask,
     navigateHomeTab,
     setOpenAIChat: setOpenAIChatStable,
     setOpenAddTask: setOpenAddTaskStable,
-  }), [aiChatFn, addTaskFn, navigateHomeTab, setOpenAIChatStable, setOpenAddTaskStable]);
+    aiToast,
+    showAiToast: showAiToastFn,
+    hideAiToast: hideAiToastFn,
+  }), [openAIChat, openAddTask, navigateHomeTab, setOpenAIChatStable, setOpenAddTaskStable, aiToast, showAiToastFn, hideAiToastFn]);
 
   return (
     <NotificationProvider>
       <HomeNavContext.Provider value={ctxValue}>
-        <View style={styles.root} {...swipeResponder.panHandlers}>
+        <View style={styles.root}>
           <Stack screenOptions={{ 
          headerShown: false, 
          animation: homeTabAnimation,
@@ -139,27 +214,55 @@ export default function HomeLayout() {
          contentStyle: { backgroundColor: '#080810' },
          presentation: 'card'
        }}>
-          <Stack.Screen name="index" options={{ animation: homeTabAnimation, gestureEnabled: true, presentation: 'card' }} />
-          <Stack.Screen name="rooms" options={{ animation: homeTabAnimation, gestureEnabled: true, presentation: 'card' }} />
-          <Stack.Screen name="room-detail" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
-          <Stack.Screen name="profile" options={{ animation: homeTabAnimation, gestureEnabled: true, presentation: 'card' }} />
-          <Stack.Screen name="settings" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
-          <Stack.Screen name="task-thread" options={{ animation: 'slide_from_bottom', gestureEnabled: true, presentation: 'modal' }} />
-          <Stack.Screen name="room-task-thread" options={{ animation: 'slide_from_bottom', gestureEnabled: true, presentation: 'modal' }} />
-          <Stack.Screen name="focus-session" options={{ animation: 'slide_from_bottom', gestureEnabled: true, presentation: 'fullScreenModal' }} />
-          <Stack.Screen name="ai-chat" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
-          <Stack.Screen name="messages" options={{ animation: homeTabAnimation, gestureEnabled: true, presentation: 'card' }} />
-          <Stack.Screen name="chat" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
-        </Stack>
+           <Stack.Screen name="index" options={{ animation: homeTabAnimation, gestureEnabled: true, presentation: 'card' }} />
+           <Stack.Screen name="rooms" options={{ animation: homeTabAnimation, gestureEnabled: true, presentation: 'card' }} />
+           <Stack.Screen name="room-detail" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
+           <Stack.Screen name="profile" options={{ animation: homeTabAnimation, gestureEnabled: true, presentation: 'card' }} />
+           <Stack.Screen name="settings" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
+           {/* More is a modal so Android hardware-back closes it and it can sit
+               above the nav overlay (which paints over <Stack>). */}
+           <Stack.Screen name="more" options={{ animation: 'slide_from_bottom', gestureEnabled: true, presentation: 'modal' }} />
+           <Stack.Screen name="appearance" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
+           <Stack.Screen name="activity" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
+           <Stack.Screen name="task-thread" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
+           <Stack.Screen name="room-task-thread" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
+           <Stack.Screen name="focus-session" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
+           <Stack.Screen name="ai-chat" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
+           <Stack.Screen name="messages" options={{ animation: homeTabAnimation, gestureEnabled: true, presentation: 'card' }} />
+           <Stack.Screen name="chat" options={{ animation: 'slide_from_right', gestureEnabled: true, presentation: 'card' }} />
+         </Stack>
 
-        {isPrimaryHomeTab && navStyle === 'sidebar' && (
-          <SidebarNav activeTabIndex={activeNavTabIndex} onAIPress={aiChatFn} onAddTask={addTaskFn} onNavigate={navigateHomeTab} />
+         {navStyle === 'sidebar' && (
+          <View
+            style={[styles.navOverlay, { opacity: isPrimaryHomeTab ? 1 : 0 }]}
+            pointerEvents={isPrimaryHomeTab ? 'box-none' : 'none'}
+          >
+            <SidebarNav activeTabIndex={activeNavTabIndex} onAIPress={openAIChat} onAddTask={openAddTask} onNavigate={navigateHomeTab} />
+          </View>
         )}
 
-        {isPrimaryHomeTab && navStyle === 'bottom' && (
-          <BottomTabBar activeTabIndex={activeNavTabIndex} onAddTask={addTaskFn} onNavigate={navigateHomeTab} />
+         {navStyle === 'bottom' && (
+          <View
+            style={[styles.navOverlay, { opacity: isPrimaryHomeTab ? 1 : 0 }]}
+            pointerEvents={isPrimaryHomeTab ? 'box-none' : 'none'}
+          >
+            <BottomTabBar activeTabIndex={activeNavTabIndex} onAddTask={openAddTask} onNavigate={navigateHomeTab} />
+          </View>
         )}
-      </View>
+
+         {isPrimaryHomeTab && (
+           <AIBlobToast
+             visible={showAiToast}
+             message={aiToast?.message || ''}
+             actionLabel={aiToast?.action}
+             onAction={() => {
+               setShowAiToast(false);
+               openAIChat();
+             }}
+             onClose={hideAiToastFn}
+           />
+         )}
+       </View>
     </HomeNavContext.Provider>
     </NotificationProvider>
   );
@@ -167,4 +270,7 @@ export default function HomeLayout() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  // Must fill the screen: SidebarNav's pill anchors itself with top:'50%', which
+  // resolves against this parent. A zero-height wrapper collapsed it to the bottom.
+  navOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 1 },
 });

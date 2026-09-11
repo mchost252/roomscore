@@ -52,16 +52,23 @@ self.addEventListener('notificationclick', (event) => {
   
   event.notification.close();
 
-  // Get the URL from the notification data
-  const urlToOpen = event.notification.data?.url || '/';
+  const data = event.notification.data || {};
+  const urlToOpen = data.url || (() => {
+    if (data.type === 'direct_message' && data.senderId) return `/messages/${data.senderId}`;
+    if (data.type === 'friend_request' || data.type === 'friend_request_accepted') return '/friends';
+    if (data.roomId) return `/rooms/${data.roomId}`;
+    return '/';
+  })();
   const fullUrl = new URL(urlToOpen, self.location.origin).href;
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true })
       .then((clientList) => {
-        // Check if there's already a window open
         for (const client of clientList) {
-          if (client.url === fullUrl && 'focus' in client) {
+          if ('focus' in client) {
+            if ('navigate' in client && client.url !== fullUrl) {
+              return client.navigate(fullUrl).then(() => client.focus());
+            }
             return client.focus();
           }
         }

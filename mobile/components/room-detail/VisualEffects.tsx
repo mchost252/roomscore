@@ -55,7 +55,7 @@ export const GhostTaskCard = ({ isDark }: { isDark: boolean }) => {
       </View>
       <View style={s.ghostOverlay}>
         <Ionicons name="radio-outline" size={24} color={textColor} />
-        <Text style={[s.ghostText, { color: textColor }]}>WAITING FOR COMMANDER BRIEFING...</Text>
+        <Text style={[s.ghostText, { color: textColor }]}>WAITING FOR SETUP...</Text>
       </View>
     </Animated.View>
   );

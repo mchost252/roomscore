@@ -1,27 +1,23 @@
-/**
+﻿/**
  * Messages Screen
- * Samsung-style collapsing header with liquid gradient glow
+ * Fixed compact header with a conversation-only scroll area
  * AddFriendModal bottom sheet for adding friends
- * Rich Krios styling — edge shine, gradients, glassmorphism
+ * Rich Krios styling Ã¢â‚¬â€ edge shine, gradients, glassmorphism
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, RefreshControl, Pressable, ScrollView,
+  StyleSheet, RefreshControl, Pressable,
   Dimensions, Platform, StatusBar, Modal, FlatList, Image,
-  KeyboardAvoidingView, Keyboard,
+  KeyboardAvoidingView, Keyboard, InteractionManager,
 } from 'react-native';
-import Animated, {
-  useSharedValue, useAnimatedStyle, useAnimatedScrollHandler,
-  interpolate, Extrapolation, FadeIn, FadeInDown,
-} from 'react-native-reanimated';
+import { FlashList } from '@shopify/flash-list';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
-import { Svg, Path, Defs, LinearGradient as SvgGrad, Stop } from 'react-native-svg';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { HomeNavContext } from '../../context/HomeNavContext';
@@ -30,15 +26,11 @@ import api from '../../services/api';
 import { LocalConversation } from '../../services/sqliteService';
 import ConversationCard from '../../components/messaging/ConversationCard';
 import ConfirmationModal from '../../components/ConfirmationModal';
-import { CircularKMenu } from '../../components/CircularKMenu';
-import SidebarNav from '../../components/SidebarNav';
-import { secureStorage } from '../../services/storage';
-const { width: W, height: H } = Dimensions.get('window');
-const COLLAPSE_AT = 80;
+const { height: H } = Dimensions.get('window');
 const primary   = '#6366f1';
 const accent    = '#8b5cf6';
 const cyan      = '#06b6d4';
-const AnimatedFlatList = Animated.createAnimatedComponent(FlatList);
+const AnimatedFlashList = Animated.createAnimatedComponent(FlashList) as any;
 
 export default function MessagesScreen() {
   const { isDark } = useTheme();
@@ -46,7 +38,7 @@ export default function MessagesScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
 
-  // ── Colors ──────────────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Colors Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const bg       = isDark ? '#080810' : '#f8f9ff';
   const text     = isDark ? '#ffffff' : '#0f172a';
   const textSub  = isDark ? 'rgba(255,255,255,0.55)' : 'rgba(15,23,42,0.55)';
@@ -54,12 +46,9 @@ export default function MessagesScreen() {
   const border   = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)';
   const surf     = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
   const inputBg  = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)';
-  const shelfBg  = isDark ? 'rgba(255,255,255,0.025)' : 'rgba(99,102,241,0.035)';
-  const headerBg = isDark ? 'rgba(8,8,16,0.94)' : 'rgba(248,249,255,0.94)';
 
-  // ── State ────────────────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ State Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const [conversations, setConversations] = useState<LocalConversation[]>([]);
-  const [onlineFriends, setOnlineFriends] = useState<LocalConversation[]>([]);
   const [search, setSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchResults, setSearchResults] = useState<LocalConversation[]>([]);
@@ -68,16 +57,11 @@ export default function MessagesScreen() {
   const [addFriendModalVisible, setAddFriendModalVisible] = useState(false);
   const [addFriendSearch, setAddFriendSearch] = useState('');
   const [addFriendResults, setAddFriendResults] = useState<LocalConversation[]>([]);
-  const [navStyle, setNavStyle] = useState<'bottom' | 'sidebar'>('bottom');
   const [removeModalVisible, setRemoveModalVisible] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<LocalConversation | null>(null);
+  const [conversationActionTarget, setConversationActionTarget] = useState<LocalConversation | null>(null);
+  const [preferenceSaving, setPreferenceSaving] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
-
-  useEffect(() => {
-    secureStorage.getItem('krios_nav_style').then(v => {
-      if (v === 'sidebar' || v === 'bottom') setNavStyle(v as 'bottom' | 'sidebar');
-    });
-  }, []);
 
   // Keyboard listeners for perfect modal input handling
   useEffect(() => {
@@ -104,44 +88,19 @@ export default function MessagesScreen() {
     setAddFriendResults([]);
   }, []);
   
-  // Register callbacks on mount
-  useEffect(() => {
-    setOpenAIChat(() => router.push('/(home)/ai-chat'));
-    setOpenAddTask(openAddFriend);
-  }, [openAddFriend, setOpenAIChat, setOpenAddTask]);
 
   // Also re-register when screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      setOpenAIChat(() => router.push('/(home)/ai-chat'));
-      setOpenAddTask(openAddFriend);
+      const handle = InteractionManager.runAfterInteractions(() => {
+        setOpenAIChat(() => router.push('/(home)/ai-chat'));
+        setOpenAddTask(openAddFriend);
+      });
+      return () => handle.cancel();
     }, [openAddFriend, setOpenAIChat, setOpenAddTask, router])
   );
 
-  // ── Samsung-style scroll (same as profile.tsx) ───────────
-  const scrollY = useSharedValue(0);
-  const onScroll = useAnimatedScrollHandler({
-    onScroll: e => { scrollY.value = e.contentOffset.y; },
-  });
-
-  // Large title fades + moves up
-  const largeTitleStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(scrollY.value, [0, COLLAPSE_AT * 0.55], [1, 0], Extrapolation.CLAMP),
-    transform: [{ translateY: interpolate(scrollY.value, [0, COLLAPSE_AT], [0, -8], Extrapolation.CLAMP) }],
-  }));
-
-  // Small title fades in from left
-  const smallTitleStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(scrollY.value, [COLLAPSE_AT * 0.5, COLLAPSE_AT], [0, 1], Extrapolation.CLAMP),
-    transform: [{ translateX: interpolate(scrollY.value, [COLLAPSE_AT * 0.5, COLLAPSE_AT], [-14, 0], Extrapolation.CLAMP) }],
-  }));
-
-  // Header bg fades in
-  const headerBgStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(scrollY.value, [0, COLLAPSE_AT * 0.65], [0, 1], Extrapolation.CLAMP),
-  }));
-
-  // ─── Load data ────────────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Load data Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const loadData = useCallback(async (silent = false) => {
     try {
       if (user?.id) {
@@ -150,7 +109,6 @@ export default function MessagesScreen() {
       const convs = await messageService.getConversations();
       console.log('[Messages] Loaded conversations:', convs.length);
       setConversations(convs);
-      setOnlineFriends(convs.filter(c => c.is_online === 1).slice(0, 12));
     } catch (e) {
       console.warn('[Messages] loadData error:', e);
     } finally {
@@ -161,13 +119,15 @@ export default function MessagesScreen() {
   // Initial load
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Refresh on screen focus — clears search, refreshes conversations + online snapshot
+  // Refresh on screen focus Ã¢â‚¬â€ clears search, refreshes conversations + online snapshot
   useFocusEffect(useCallback(() => {
     setSearch('');
     setSearchResults([]);
     setAddFriendSearch('');
     setAddFriendResults([]);
-    loadData(true);
+    InteractionManager.runAfterInteractions(() => {
+      loadData(true);
+    });
     
     // Defer non-critical API calls to prioritize UI rendering
     setTimeout(() => {
@@ -187,16 +147,19 @@ export default function MessagesScreen() {
     }, 500); // Delay secondary API calls by 500ms
   }, [loadData]));
 
-  // Real-time events
+  // Real-time events Ã¢â‚¬â€ debounce rapid conversation:list + message:new to avoid
+  // two back-to-back SQLite reads + setConversations calls within milliseconds.
   useEffect(() => {
-    const refresh = () => loadData(true);
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedRefresh = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => loadData(true), 80);
+    };
     const handleOnlineStatus = (data: { userId: string; isOnline: boolean }) => {
       setConversations(prev => {
         const next = prev.map(c =>
           c.friend_id === data.userId ? { ...c, is_online: data.isOnline ? 1 : 0 } : c
         );
-        // Keep shelf in sync with latest conversations
-        setOnlineFriends(next.filter(c => c.is_online === 1).slice(0, 12));
         return next;
       });
     };
@@ -205,14 +168,13 @@ export default function MessagesScreen() {
       setConversations(prev => {
         const setIds = new Set(userIds);
         const next = prev.map(c => ({ ...c, is_online: setIds.has(c.friend_id) ? 1 : 0 }));
-        setOnlineFriends(next.filter(c => c.is_online === 1).slice(0, 12));
         return next;
       });
     };
 
     const unsubs: (() => void)[] = [];
-    unsubs.push(messageService.on('conversation:list', refresh));
-    unsubs.push(messageService.on('message:new', refresh));
+    unsubs.push(messageService.on('conversation:list', debouncedRefresh));
+    unsubs.push(messageService.on('message:new', debouncedRefresh));
     unsubs.push(messageService.on('presence:changed', handleOnlineStatus));
     unsubs.push(messageService.on('presence:bulk', handleOnlineUsers));
     
@@ -229,6 +191,7 @@ export default function MessagesScreen() {
     }));
     
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       unsubs.forEach(u => u());
     };
   }, [loadData]);
@@ -239,7 +202,7 @@ export default function MessagesScreen() {
     setRefreshing(false);
   }, [loadData]);
 
-  // ── Search (local only - friends in conversations) ──────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Search (local only - friends in conversations) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const handleSearch = useCallback((q: string) => {
     setSearch(q);
     if (!q.trim()) { setSearchResults([]); return; }
@@ -249,7 +212,7 @@ export default function MessagesScreen() {
     setSearchResults(local);
   }, [conversations]);
 
-  // ── Search for AddFriendModal ────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Search for AddFriendModal Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const handleAddFriendSearch = useCallback((q: string) => {
@@ -292,7 +255,7 @@ export default function MessagesScreen() {
     }, 300);
   }, [conversations]);
 
-  // ── Navigate ─────────────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Navigate Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const goToChat = useCallback((conv: LocalConversation) => {
     router.push({
       pathname: '/(home)/chat',
@@ -305,15 +268,39 @@ export default function MessagesScreen() {
     });
   }, [router]);
 
-  // ── Delete with warning + actual API call ───────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Delete with warning + actual API call Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const handleDelete = useCallback((conv: LocalConversation) => {
     setRemoveTarget(conv);
     setRemoveModalVisible(true);
   }, [loadData]);
 
-  // ── Computed ─────────────────────────────────────────────
-  const filtered = search.trim() ? searchResults : conversations;
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Computed Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  const filtered = (search.trim() ? searchResults : conversations)
+
+  const pinnedConversations = conversations.filter(conversation => conversation.is_pinned === 1)
+  const recentConversations = conversations.filter(conversation => conversation.is_pinned !== 1)
+  const displayedConversations = search.trim() ? filtered : recentConversations;
   const totalUnread = conversations.reduce((s, c) => s + (c.unread_count || 0), 0);
+
+  const updateConversationPreference = useCallback(async (preference: 'pinned' | 'muted') => {
+    if (!conversationActionTarget || preferenceSaving) return;
+    const nextValue = preference === 'pinned'
+      ? conversationActionTarget.is_pinned !== 1
+      : conversationActionTarget.is_muted !== 1;
+
+    setPreferenceSaving(true);
+    try {
+      await messageService.updateConversationPreferences(conversationActionTarget.friend_id, { [preference]: nextValue });
+      // Close modal immediately after API succeeds Ã¢â‚¬â€ don't wait for loadData
+      setConversationActionTarget(null);
+      // Refresh in background
+      await loadData(true);
+    } catch (error) {
+      console.warn('[Messages] conversation preference update failed:', error);
+    } finally {
+      setPreferenceSaving(false);
+    }
+  }, [conversationActionTarget, loadData, preferenceSaving]);
 
   // Consistent avatar color per user
   const avatarPalette = ['#6366f1','#8b5cf6','#06b6d4','#f59e0b','#22c55e','#ec4899','#f97316'];
@@ -347,7 +334,6 @@ export default function MessagesScreen() {
           if (!target) return;
           // Optimistically remove from UI immediately
           setConversations(prev => prev.filter(c => c.friend_id !== target.friend_id));
-          setOnlineFriends(prev => prev.filter(c => c.friend_id !== target.friend_id));
           try {
             await messageService.deleteFriend(target.friend_id);
           } catch (err) {
@@ -357,56 +343,63 @@ export default function MessagesScreen() {
         }}
       />
 
-      {/* ── Background ── */}
-      <LinearGradient
-        colors={isDark ? ['#080810','#0d0d1e','#080810'] : ['#f8f9ff','#f0f0ff','#f8f9ff']}
-        locations={[0, 0.5, 1]} start={{ x: 0.3, y: 0 }} end={{ x: 0.7, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      <LinearGradient
-        colors={[`rgba(99,102,241,${isDark ? '0.12' : '0.05'})`, 'transparent']}
-        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      {/* Edge shine — left */}
-      <LinearGradient
-        colors={[`rgba(139,92,246,${isDark ? '0.2' : '0.08'})`, 'transparent']}
-        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-        style={[StyleSheet.absoluteFill, { width: 2 }]}
-      />
+      <Modal
+        transparent
+        animationType="fade"
+        visible={!!conversationActionTarget}
+        onRequestClose={() => setConversationActionTarget(null)}
+      >
+        <Pressable style={s.actionOverlay} onPress={() => setConversationActionTarget(null)}>
+          <Pressable style={[s.actionSheet, { backgroundColor: isDark ? '#161625' : '#ffffff', borderColor: border }]} onPress={() => {}}>
+            <Text style={[s.actionTitle, { color: text }]} numberOfLines={1}>{conversationActionTarget?.username}</Text>
+            <TouchableOpacity disabled={preferenceSaving} onPress={() => updateConversationPreference('pinned')} style={[s.actionRow, { borderBottomColor: border }]}>
+              <Ionicons name={conversationActionTarget?.is_pinned === 1 ? 'pin-outline' : 'pin'} size={20} color={primary} />
+              <Text style={[s.actionText, { color: text }]}>{conversationActionTarget?.is_pinned === 1 ? 'Unpin conversation' : 'Pin conversation'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity disabled={preferenceSaving} onPress={() => updateConversationPreference('muted')} style={[s.actionRow, { borderBottomColor: border }]}>
+              <Ionicons name={conversationActionTarget?.is_muted === 1 ? 'notifications-outline' : 'notifications-off-outline'} size={20} color={primary} />
+              <Text style={[s.actionText, { color: text }]}>{conversationActionTarget?.is_muted === 1 ? 'Unmute notifications' : 'Mute notifications'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setConversationActionTarget(null)} style={s.actionRow}>
+              <Text style={[s.actionCancel, { color: textSub }]}>Cancel</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
-      {/* ── Fixed header — only small title + search (fades in on scroll) ── */}
-      <View style={[s.header, { paddingTop: insets.top + 4, zIndex: 20, position: 'absolute', left: 0, right: 0, top: 0 }]}>
-        {/* Blur bg fades in as user scrolls */}
-        <Animated.View style={[StyleSheet.absoluteFill, headerBgStyle]}>
-          {Platform.OS === 'ios'
-            ? <BlurView intensity={75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-            : <View style={[StyleSheet.absoluteFill, { backgroundColor: headerBg }]} />
-          }
-        </Animated.View>
-        <Animated.View style={[s.headerBorder, { backgroundColor: border }, headerBgStyle]} />
+       {/* Ã¢â€â‚¬Ã¢â€â‚¬ Background (shared gradient for header + body) Ã¢â€â‚¬Ã¢â€â‚¬ */}
+       <LinearGradient
+         colors={isDark ? ['#080810','#0d0d1e','#080810'] : ['#f8f9ff','#f0f0ff','#f8f9ff']}
+         locations={[0, 0.5, 1]} start={{ x: 0.3, y: 0 }} end={{ x: 0.7, y: 1 }}
+         style={StyleSheet.absoluteFill}
+       />
+       <LinearGradient
+         colors={[`rgba(99,102,241,${isDark ? '0.12' : '0.05'})`, 'transparent']}
+         start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+         style={StyleSheet.absoluteFill}
+       />
+       {/* Edge shine Ã¢â‚¬â€ left */}
+       <LinearGradient
+         colors={[`rgba(139,92,246,${isDark ? '0.2' : '0.08'})`, 'transparent']}
+         start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+         style={[StyleSheet.absoluteFill, { width: 2 }]}
+       />
 
-        {/* Small title row — slides in from left when scrolled */}
-        <View style={s.smallTitleRow}>
-          <Animated.Text style={[s.titleSmall, { color: text }, smallTitleStyle]}>
-            Messages
-          </Animated.Text>
-          {totalUnread > 0 && (
-            <Animated.View style={[s.badge, { backgroundColor: primary }, smallTitleStyle]}>
-              <Text style={s.badgeTxt}>{totalUnread > 99 ? '99+' : totalUnread}</Text>
-            </Animated.View>
-          )}
-        </View>
+       {/* Ã¢â€â‚¬Ã¢â€â‚¬ Header (normal flow, not absolute) Ã¢â€â‚¬Ã¢â€â‚¬ */}
+       <View style={[s.header, { paddingTop: insets.top + 4, zIndex: 20 }]}>
+          <View style={s.fixedHeroRow}>
+            <Image source={require('../../assets/krios new logo with no background.png')} style={s.kriosLogo} resizeMode="contain" />
+            <Text style={[s.fixedTitle, { color: text }]}>Messages</Text>
+            <TouchableOpacity onPress={openAddFriend} style={[s.fixedAction, s.fixedCompose]}>
+              <Ionicons name="create-outline" size={18} color="#ffffff" />
+            </TouchableOpacity>
+          </View>
 
-        {/* Search — always visible */}
-        <View style={[s.searchBar, {
-          backgroundColor: inputBg,
-          borderColor: searchFocused ? primary : border,
-        }]}>
-          <Ionicons name="search-outline" size={15} color={textTert} />
+         <View style={[s.fixedSearch, { backgroundColor: inputBg, borderColor: searchFocused ? primary : border }]}>
+          <Ionicons name="search-outline" size={20} color={textTert} />
           <TextInput
             id="messages-search-input"
-            style={[s.searchInput, { color: text }]}
+            style={[s.fixedSearchInput, { color: text }]}
             value={search}
             onChangeText={handleSearch}
             onFocus={() => setSearchFocused(true)}
@@ -419,219 +412,150 @@ export default function MessagesScreen() {
           />
           {search.length > 0 && (
             <TouchableOpacity onPress={() => handleSearch('')}>
-              <Ionicons name="close-circle" size={15} color={textTert} />
+              <Ionicons name="close-circle" size={18} color={textTert} />
             </TouchableOpacity>
           )}
         </View>
       </View>
 
-      {/* ── Scrollable content (starts below absolute header) ── */}
-      <Animated.ScrollView
-        onScroll={onScroll}
-        scrollEventThrottle={16}
+      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Scrollable content (starts below absolute header) Ã¢â€â‚¬Ã¢â€â‚¬ */}
+      <AnimatedFlashList
+        data={loading ? [] : displayedConversations}
+        estimatedItemSize={76}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 140, paddingTop: insets.top + 110, minHeight: H + insets.top + 240 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing} onRefresh={onRefresh}
             tintColor={primary} colors={[primary]}
-            progressViewOffset={insets.top + 110}
           />
         }
-      >
-        {/* ── Large title inside scroll (Samsung style) ── */}
-        <View style={{ paddingHorizontal: 20, paddingBottom: 4 }}>
-          <Animated.Text style={[s.titleLarge, { color: text }, largeTitleStyle]}>
-            Messages
-          </Animated.Text>
-        </View>
-
-        {/* ── Online shelf with top curve (sticky, won't scroll into header) ── */}
-        {!search && (
-          <View style={[s.shelf, { 
-            backgroundColor: isDark ? 'rgba(25,25,40,0.95)' : 'rgba(252,252,255,0.95)', 
-            borderTopLeftRadius: 28, 
-            borderTopRightRadius: 28, 
-            overflow: 'hidden', 
-            marginTop: 8,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: isDark ? 0.3 : 0.08,
-            shadowRadius: 8,
-            elevation: 4,
-          }]}>
-            {/* Top curve SVG */}
-            <Svg width={W} height={28} viewBox={`0 0 ${W} 28`} style={{ position: 'absolute', top: 0, left: 0 }}>
-              <Path
-                d={`M0,10 Q${W/2},0 ${W},10 L${W},0 L0,0 Z`}
-                fill={isDark ? 'rgba(25,25,40,0.95)' : 'rgba(252,252,255,0.95)'}
-              />
-            </Svg>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.shelfRow}>
-              {/* Add friend button */}
-              <View style={s.shelfItem}>
-                <TouchableOpacity
-                  style={[s.addCircle, { borderColor: `${primary}55` }]}
-                  onPress={() => setAddFriendModalVisible(true)}
-                >
-                  <LinearGradient
-                    colors={['rgba(99,102,241,0.15)','rgba(139,92,246,0.1)']}
-                    style={[StyleSheet.absoluteFill, { borderRadius: 27 }]}
-                  />
-                  <Ionicons name="add" size={26} color={primary} />
-                </TouchableOpacity>
-                <Text style={[s.shelfName, { color: textTert }]}>Add</Text>
-              </View>
-
-              {/* Online friends */}
-              {onlineFriends.map((f, i) => (
-                <Animated.View key={f.friend_id} entering={FadeIn.delay(i * 50)} style={s.shelfItem}>
-                  <Pressable onPress={() => goToChat(f)}>
-                    <LinearGradient
-                      colors={[primary, accent]}
-                      start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                      style={s.onlineRing}
-                    >
-                      <View style={[s.avatarInner, { backgroundColor: avatarColor(f.friend_id), overflow: 'hidden' }]}>
-                        {f.avatar ? (
-                          <Image 
-                            source={{ uri: f.avatar }} 
-                            style={{ width: '100%', height: '100%' }} 
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <Text style={s.avatarTxt}>
-                            {(f.username || '?').slice(0, 1).toUpperCase()}
-                          </Text>
-                        )}
-                      </View>
-                    </LinearGradient>
-                    <View style={[s.onlineDot, { borderColor: isDark ? '#080810' : '#f8f9ff' }]} />
-                  </Pressable>
-                  <Text style={[s.shelfName, { color: textSub }]} numberOfLines={1}>
-                    {(f.username || '').split(' ')[0]}
-                  </Text>
-                </Animated.View>
-              ))}
-
-              {/* If no online friends show placeholder */}
-              {onlineFriends.length === 0 && (
-                <Text style={[{ color: textTert, fontSize: 13, paddingVertical: 8, fontStyle: 'italic' }]}>
-                  No one online right now
-                </Text>
-              )}
-            </ScrollView>
-          </View>
-        )}
-
-        {/* ── Free middle space (background shows through) ── */}
-        {!search && <View style={{ height: 24 }} />}
-
-        {/* ── Chat list container (its own curved surface with distinct color) ── */}
-        <View style={[s.chatContainer, { 
-          backgroundColor: isDark ? 'rgba(20,20,32,0.85)' : 'rgba(248,249,255,0.9)', 
-          borderTopLeftRadius: 28, 
-          borderTopRightRadius: 28, 
-          overflow: 'hidden',
-          borderWidth: 1,
-          borderColor: isDark ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.08)',
-        }]}
-        >
-          {!search && (
-            <Svg width={W} height={28} viewBox={`0 0 ${W} 28`} style={{ position: 'absolute', top: 0, left: 0 }}>
-              {/* Top curve only */}
-              <Path
-                d={`M0,10 Q${W/2},0 ${W},10 L${W},0 L0,0 Z`}
-                fill={isDark ? 'rgba(20,20,32,0.85)' : 'rgba(248,249,255,0.9)'}
-              />
-            </Svg>
-          )}
-
-          {/* ── Section label ── */}
-          <View style={s.sectionRow}>
-          <Text style={[s.sectionLabel, { color: textTert }]}>
-            {search ? (searchResults.length > 0 ? `${searchResults.length} found` : 'No results') : 'Recent'}
-          </Text>
-          {!search && conversations.length > 0 && (
-            <Text style={[s.sectionCount, { color: textTert }]}>{conversations.length}</Text>
-          )}
-        </View>
-
-          {/* ── Conversation list (Switched to map to fix VirtualizedList warning) ── */}
-          {loading ? (
-            [1, 2, 3, 4, 5].map(i => (
-              <View
-                key={i}
-                style={[
-                  s.skeleton,
-                  {
-                    backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
-                    opacity: 1 - i * 0.15,
-                  },
-                ]}
-              />
-            ))
-          ) : (
-            <View style={{ paddingBottom: 20 }}>
-              {filtered.length === 0 ? (
-                <View style={s.emptyWrap}>
-                  <LinearGradient
-                    colors={['rgba(99,102,241,0.12)', 'rgba(139,92,246,0.07)']}
-                    style={[s.emptyIcon, { borderColor: `${primary}33` }]}
-                  >
-                    <Ionicons name="chatbubbles-outline" size={34} color={primary} />
-                  </LinearGradient>
-                  <Text style={[s.emptyTitle, { color: text }]}>
-                    {search ? 'No conversations found' : 'No messages yet'}
-                  </Text>
-                  <Text style={[s.emptySub, { color: textSub }]}>
-                    {search ? 'Try a different name' : 'Add friends to start chatting'}
-                  </Text>
-                  {!search && (
+        ListHeaderComponent={
+          <View>
+            {!search && conversations.some(c => c.is_online === 1) ? (
+              <View style={s.onlineAvatarsRow}>
+                {conversations.filter(c => c.is_online === 1).slice(0, 5).map((c) => {
+                  const initials = (c.username || '?').slice(0, 1).toUpperCase();
+                  const bgColor = avatarColor(c.friend_id);
+                  return (
                     <TouchableOpacity
-                      style={{ borderRadius: 22, overflow: 'hidden', marginTop: 8 }}
-                      onPress={() => setAddFriendModalVisible(true)}
+                      key={`online-${c.friend_id}`}
+                      onPress={() => goToChat(c)}
+                      activeOpacity={0.8}
+                      style={[
+                        s.onlineAvatar,
+                        {
+                          backgroundColor: bgColor,
+                          borderColor: bg,
+                        },
+                      ]}
                     >
-                      <LinearGradient
-                        colors={[primary, accent]}
-                        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                        style={s.emptyBtn}
-                      >
-                        <Ionicons name="person-add-outline" size={16} color="#fff" />
-                        <Text style={s.emptyBtnTxt}>Find Friends</Text>
-                      </LinearGradient>
+                      {c.avatar ? (
+                        <Image source={{ uri: c.avatar }} style={s.onlineAvatarImg} />
+                      ) : (
+                        <Text style={[s.onlineAvatarText, { color: '#fff' }]}>{initials}</Text>
+                      )}
                     </TouchableOpacity>
-                  )}
+                  );
+                })}
+              </View>
+            ) : (
+              <TouchableOpacity onPress={openAddFriend} activeOpacity={0.85} style={[s.startConversationCard, { borderColor: border }]}>
+                <LinearGradient colors={['rgba(99,102,241,0.25)', 'rgba(139,92,246,0.08)']} style={s.startConversationIcon}>
+                  <Ionicons name="add" size={20} color="#a78bfa" />
+                </LinearGradient>
+                <View style={s.startConversationCopy}>
+                  <Text style={[s.startConversationTitle, { color: text }]}>Start a conversation</Text>
+                  <Text style={[s.startConversationSub, { color: textSub }]}>Message anyone on Krios</Text>
                 </View>
-              ) : (
-                filtered.map((item, index) => (
-                  <Animated.View
-                    key={`${item.friend_id}-${item.request_status || 'none'}`}
-                    entering={FadeInDown.delay(index * 40).springify().damping(18)}
-                  >
-                    <ConversationCard
-                      conversation={item}
-                      onPress={() => goToChat(item)}
-                      onDelete={() => handleDelete(item)}
-                      isDark={isDark}
-                    />
-                  </Animated.View>
-                ))
-              )}
-            </View>
-          )}
-        </View>
-      </Animated.ScrollView>
+                <Ionicons name="chevron-forward" size={18} color={textSub} />
+              </TouchableOpacity>
+            )}
 
-      {/* ── AddFriendModal Bottom Sheet ── */}
+            {!search && pinnedConversations.length > 0 && (
+              <View style={s.pinnedSection}>
+                <View style={s.referenceSectionRow}>
+                  <Text style={[s.referenceSectionLabel, { color: textSub }]}>PINNED</Text>
+                  <Text style={[s.referenceSectionLink, { color: primary }]}>{pinnedConversations.length} pinned</Text>
+                </View>
+                <View style={s.pinnedList}>
+                  {pinnedConversations.map(conversation => (
+                    <ConversationCard
+                      key={conversation.friend_id}
+                      conversation={conversation}
+                      isDark={isDark}
+                      onPress={() => goToChat(conversation)}
+                      onLongPress={() => setConversationActionTarget(conversation)}
+                      onDelete={() => handleDelete(conversation)}
+                    />
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* Recent conversations */}
+            <View style={s.chatContainer}>
+              <View style={s.sectionRow}>
+                <Text style={[s.sectionLabel, { color: textTert }]}>
+                  {search ? (searchResults.length > 0 ? `${searchResults.length} found` : 'No results') : 'Recent'}
+                </Text>
+                {!search && totalUnread > 0 && (
+                  <View style={[s.badge, { backgroundColor: primary }]}><Text style={s.badgeTxt}>{totalUnread}</Text></View>
+                )}
+              </View>
+            </View>
+          </View>
+        }
+        renderItem={({ item, index }: { item: any, index: number }) => (
+          <Animated.View>
+            <ConversationCard
+              conversation={item}
+              onPress={() => goToChat(item)}
+              onLongPress={() => setConversationActionTarget(item)}
+              onDelete={() => handleDelete(item)}
+              isDark={isDark}
+            />
+          </Animated.View>
+        )}
+        ListEmptyComponent={
+          <View style={s.emptyWrap}>
+            {loading ? (
+              [1, 2, 3, 4, 5].map(i => (
+                <View key={i} style={[s.skeleton, { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)', opacity: 1 - i * 0.15 }]} />
+              ))
+            ) : (
+              <>
+                <LinearGradient colors={['rgba(99,102,241,0.12)', 'rgba(139,92,246,0.07)']} style={[s.emptyIcon, { borderColor: `${primary}33` }]}>
+                  <Ionicons name="chatbubbles-outline" size={34} color={primary} />
+                </LinearGradient>
+                <Text style={[s.emptyTitle, { color: text }]}>{search ? 'No conversations found' : 'No messages yet'}</Text>
+                <Text style={[s.emptySub, { color: textSub }]}>{search ? 'Try a different name' : 'Add friends to start chatting'}</Text>
+                {!search && (
+                  <TouchableOpacity style={{ borderRadius: 22, overflow: 'hidden', marginTop: 8 }} onPress={() => setAddFriendModalVisible(true)}>
+                    <LinearGradient colors={[primary, accent]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.emptyBtn}>
+                      <Ionicons name="person-add-outline" size={16} color="#fff" />
+                      <Text style={s.emptyBtnTxt}>Find Friends</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
+          </View>
+        }
+        ListFooterComponent={
+          <View style={{ height: 20 }} />
+        }
+      />
+
+      {/* Ã¢â€â‚¬Ã¢â€â‚¬ AddFriendModal Bottom Sheet Ã¢â€â‚¬Ã¢â€â‚¬ */}
       <Modal
-        visible={addFriendModalVisible}
+        transparent
         animationType="slide"
-        transparent={true}
+        visible={!!addFriendModalVisible}
         onRequestClose={closeAddFriend}
       >
-        <View style={[s.modalOverlay, { backgroundColor: isDark ? 'rgba(8,8,16,0.6)' : 'rgba(0,0,0,0.4)', paddingBottom: keyboardHeight }]}>
-          <View style={[s.modalContent, { backgroundColor: bg }]}>
+         <Pressable style={[s.modalOverlay, { backgroundColor: isDark ? 'rgba(8,8,16,0.6)' : 'rgba(0,0,0,0.4)', paddingBottom: Math.max(insets.bottom, keyboardHeight) }]} onPress={closeAddFriend}>
+          <Pressable style={[s.modalContent, { backgroundColor: bg }]} onPress={() => {}}>
             {/* Header with close button */}
             <View style={[s.modalHeader, { borderBottomColor: border }]}>
               <Text style={[s.modalTitle, { color: text }]}>Message Friends</Text>
@@ -711,8 +635,8 @@ export default function MessagesScreen() {
                 </View>
               }
             />
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       {/* SidebarNav is now rendered globally in _layout.tsx */}
@@ -724,35 +648,36 @@ const s = StyleSheet.create({
   root: { flex: 1 },
   // Header
   header: {
-    paddingHorizontal: 20, paddingBottom: 10,
-    zIndex: 20, overflow: 'hidden',
+    paddingHorizontal: 20, paddingBottom: 12,
+    zIndex: 20,
   },
-  headerBorder: { position: 'absolute', bottom: 0, left: 0, right: 0, height: StyleSheet.hairlineWidth },
-  titleArea: { width: '100%', marginBottom: 12, minHeight: 44, justifyContent: 'center' },
-  titleLarge: { fontSize: 32, fontWeight: '800', letterSpacing: -0.8, textAlign: 'center' },
-  smallTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  titleSmall: { fontSize: 18, fontWeight: '700', letterSpacing: -0.3 },
+  fixedHeroRow: { alignItems: 'center', flexDirection: 'row', gap: 10, marginBottom: 11 },
+  kriosLogo: { height: 38, width: 38 },
+  fixedTitle: { flex: 1, fontSize: 27, fontWeight: '700', letterSpacing: -0.5 },
+  fixedAction: { alignItems: 'center', borderRadius: 16, borderWidth: 1, height: 34, justifyContent: 'center', width: 34 },
+  fixedCompose: { backgroundColor: primary, borderColor: '#a78bfa', shadowColor: primary, shadowOpacity: 0.35, shadowRadius: 8, elevation: 4 },
+  fixedSearch: { alignItems: 'center', borderRadius: 22, borderWidth: 1, flexDirection: 'row', gap: 10, height: 48, paddingHorizontal: 14 },
+  fixedSearchInput: { flex: 1, fontSize: 15, padding: 0 },
+   startConversationCard: { alignItems: 'center', borderRadius: 16, borderWidth: 1, flexDirection: 'row', marginHorizontal: 20, marginBottom: 24, paddingVertical: 10, paddingHorizontal: 14, minHeight: 44 },
+   startConversationIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginRight: 12, shadowColor: primary, shadowOpacity: 0.4, shadowRadius: 10 },
+   startConversationCopy: { flex: 1 },
+   startConversationTitle: { fontSize: 16, fontWeight: '700', marginBottom: 3 },
+   startConversationSub: { fontSize: 13 },
+  pinnedSection: { marginBottom: 18 },
+  referenceSectionRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 10 },
+  referenceSectionLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 1.1 },
+  referenceSectionLink: { fontSize: 13, fontWeight: '700' },
+  pinnedList: { marginHorizontal: 20 },
+  onlineAvatarsRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginHorizontal: 20, paddingVertical: 4 },
+  onlineAvatar: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderWidth: 1.5 },
+  onlineAvatarImg: { width: '100%', height: '100%', borderRadius: 14 },
+  onlineAvatarText: { fontSize: 12, fontWeight: '700' },
   badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 },
   badgeTxt: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  iconBtn: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth },
-  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 22, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 9 },
-  searchInput: { flex: 1, fontSize: 14, padding: 0 },
-  // Shelf
-  shelf: { paddingVertical: 16 },
-  shelfRow: { paddingHorizontal: 20, gap: 18 },
-  shelfItem: { alignItems: 'center', gap: 6, width: 60 },
-  addCircle: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderStyle: 'dashed', overflow: 'hidden' },
-  onlineRing: { width: 56, height: 56, borderRadius: 28, padding: 2.5, alignItems: 'center', justifyContent: 'center' },
-  avatarInner: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
-  avatarTxt: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  onlineDot: { width: 13, height: 13, borderRadius: 7, backgroundColor: '#22c55e', borderWidth: 2.5, position: 'absolute', bottom: 2, right: 2 },
-  shelfName: { fontSize: 11, fontWeight: '500', textAlign: 'center' },
-  // Chat container
-  chatContainer: { paddingTop: 12 },
+  chatContainer: { paddingTop: 8 },
   // Section
   sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6 },
   sectionLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
-  sectionCount: { fontSize: 11, fontWeight: '600' },
   // Skeleton
   skeleton: { height: 70, borderRadius: 18, marginHorizontal: 16, marginBottom: 10 },
   // Empty
@@ -778,4 +703,17 @@ const s = StyleSheet.create({
   modalOnlineBadge: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#22c55e' },
   modalEmptyWrap: { alignItems: 'center', paddingVertical: 40 },
   modalEmptyText: { fontSize: 13, fontStyle: 'italic' },
+  actionOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  actionSheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, borderWidth: 1, overflow: 'hidden', paddingTop: 8 },
+  actionTitle: { fontSize: 17, fontWeight: '700', paddingHorizontal: 20, paddingVertical: 16 },
+  actionRow: { alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: 13, minHeight: 56, paddingHorizontal: 20 },
+  actionText: { fontSize: 16, fontWeight: '600' },
+  actionCancel: { fontSize: 16, fontWeight: '700', textAlign: 'center', width: '100%' },
 });
+
+
+
+
+
+
+

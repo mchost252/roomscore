@@ -27,7 +27,7 @@ export function useTacticalCommander(roomId?: string, userId?: string, initialMe
     return 'personal-assistant';
   }, [roomId, taskId]);
 
-  const transport = useMemo(() => new DefaultChatTransport({
+  const transport: any = useMemo(() => new DefaultChatTransport({
     api: AI_AGENT_URL,
     body: {
       roomId,

@@ -5,6 +5,7 @@ import { Task, TaskCompletion } from '../types/room';
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 import realtimeEvents from './realtimeEvents';
+import { uploadImage as uploadToCloudinary } from './cloudinaryService';
 
 const PERSONAL_TASKS_CACHE_KEY = 'krios_personal_tasks_cache';
 
@@ -54,10 +55,12 @@ function mapTask(raw: any): Task {
     roomId: raw.roomId,
     title: raw.title,
     description: raw.description || '',
-    taskType: raw.taskType || 'daily',
+    taskType: raw.taskType === 'weekly' ? 'daily' : (raw.taskType || 'daily'),
     daysOfWeek: raw.daysOfWeek,
+    dueDate: raw.dueDate,
     points: raw.points ?? 10,
     isActive: raw.isActive !== false,
+    hasThread: raw.hasThread ?? false,
     isCompleted: !!raw.isCompleted,
     isJoined: !!raw.isJoined,
     status: raw.status,
@@ -251,6 +254,9 @@ class TaskService {
     // Persist patch to SQLite in background
     await this.ensureDb();
     await sqliteService.updatePersonalTask(taskId, patch);
+    // Notify listeners (home screen) immediately — previously this only
+    // refreshed when a server round-trip event arrived much later.
+    realtimeEvents.emit('tasks:changed', { source: 'local:update', taskId });
     return updated;
   }
 
@@ -263,6 +269,7 @@ class TaskService {
     // Remove from SQLite in background
     await this.ensureDb();
     await sqliteService.deletePersonalTask(taskId);
+    realtimeEvents.emit('tasks:changed', { source: 'local:delete', taskId });
   }
 
   async getTasks(roomId: string): Promise<Task[]> {
@@ -279,6 +286,7 @@ class TaskService {
       points?: number;
       taskType?: string;
       daysOfWeek?: number[];
+      hasThread?: boolean;
     }
   ): Promise<Task> {
     const res = await api.post(`/rooms/${roomId}/tasks`, taskData);
@@ -324,7 +332,7 @@ class TaskService {
     return res.data?.nodes || [];
   }
 
-  async addRoomTaskNode(roomId: string, taskId: string, data: { type: string; content?: string; mediaUrl?: string; status?: string; clientReferenceId?: string }): Promise<any> {
+  async addRoomTaskNode(roomId: string, taskId: string, data: { type: string; content?: string; mediaUrl?: string; status?: string; clientReferenceId?: string; replyToId?: string | null; replyToText?: string | null; replyToUsername?: string | null }): Promise<any> {
     const res = await api.post(`/rooms/${roomId}/tasks/${taskId}/nodes`, data);
     return res.data?.node;
   }
@@ -335,8 +343,8 @@ class TaskService {
   }
 
   /**
-   * Upload proof image via JSON payload.
-   * Converts local URI to Base64 to bypass multipart parsing issues.
+   * Upload proof image to Cloudinary, then create a task node with the returned URL.
+   * Throws if Cloudinary upload fails — never stores raw local file URIs or binary data.
    */
   async uploadProofWithImage(
     roomId: string,
@@ -346,43 +354,33 @@ class TaskService {
     clientReferenceId: string,
     type: string = 'PROOF'
   ): Promise<any> {
-    try {
-      let mediaUrl = imageUri;
+    let mediaUrl: string | null = null;
 
-      if (Platform.OS !== 'web' && !imageUri.startsWith('data:')) {
-        const base64Data = await FileSystem.readAsStringAsync(imageUri, {
-          encoding: 'base64',
-        });
-        const ext = imageUri.split('.').pop()?.toLowerCase() || 'jpg';
-        const mimeType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
-        mediaUrl = `data:${mimeType};base64,${base64Data}`;
-      } else if (Platform.OS === 'web' && imageUri.startsWith('blob:')) {
-        const response = await fetch(imageUri);
-        const blob = await response.blob();
-        mediaUrl = await new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(blob);
-        });
+    // Always ensure the image is on Cloudinary before sending to server
+    if (imageUri.startsWith('https://res.cloudinary.com')) {
+      // Already uploaded by ProofUploadModal — use directly
+      mediaUrl = imageUri;
+    } else {
+      // Upload to Cloudinary now
+      try {
+        mediaUrl = await uploadToCloudinary(imageUri, `krios/proofs/${roomId}/${taskId}`);
+      } catch (cloudinaryError: any) {
+        console.error('[taskService] Cloudinary upload failed:', cloudinaryError?.message);
+        throw new Error(`Image upload failed: ${cloudinaryError?.message || 'Could not upload to Cloudinary'}`);
       }
-
-      return await this.addRoomTaskNode(roomId, taskId, {
-        type,
-        status: 'PENDING',
-        mediaUrl,
-        content: type === 'PROOF' ? (content || 'Completed the mission.') : (content || ''),
-        clientReferenceId,
-      });
-    } catch (uploadError: any) {
-      console.warn('[taskService] Base64 upload failed, falling back to JSON:', uploadError?.message);
-      return this.addRoomTaskNode(roomId, taskId, {
-        type,
-        status: 'PENDING',
-        mediaUrl: imageUri,
-        content: type === 'PROOF' ? (content || 'Completed the mission.') : (content || ''),
-        clientReferenceId,
-      });
     }
+
+    if (!mediaUrl || !mediaUrl.startsWith('http')) {
+      throw new Error('Image upload failed: no valid URL returned from Cloudinary');
+    }
+
+    return await this.addRoomTaskNode(roomId, taskId, {
+      type,
+      status: 'PENDING',
+      mediaUrl,
+      content: type === 'PROOF' ? (content || 'Completed the mission.') : (content || ''),
+      clientReferenceId,
+    });
   }
 
   async getLocalTasks(): Promise<PersonalTask[]> {
@@ -426,4 +424,3 @@ class TaskService {
 
 export const taskService = new TaskService();
 export default taskService;
-

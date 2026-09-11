@@ -1,22 +1,35 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  Dimensions, 
-  Animated, 
+import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Dimensions,
   Image,
-  FlatList,
-  ViewToken,
+  TouchableOpacity,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { TouchableOpacity } from 'react-native';
-import theme from '../../src/constants/theme';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useAnimatedScrollHandler,
+  withTiming,
+  withSpring,
+  withDelay,
+  withRepeat,
+  withSequence,
+  interpolate,
+  Extrapolation,
+  Easing,
+  type SharedValue,
+} from 'react-native-reanimated';
+import { colors } from '../../src/constants/theme';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
 interface Slide {
   id: number;
@@ -31,451 +44,430 @@ const SLIDES: Slide[] = [
     id: 1,
     icon: 'planet',
     title: 'Your Personal Orbit',
-    description: 'Track habits, build streaks, and transform your daily routine into something extraordinary.',
-    color: '#6366f1',
+    description:
+      'Track habits, build streaks, and transform your daily routine into something extraordinary.',
+    color: colors.primary,
   },
   {
     id: 2,
     icon: 'people',
     title: 'Together We Rise',
-    description: 'Connect with friends in accountability circles. Motivate each other and celebrate progress.',
-    color: '#8b5cf6',
+    description:
+      'Connect with friends in accountability circles. Motivate each other and celebrate progress.',
+    color: colors.secondary,
   },
   {
     id: 3,
     icon: 'flame',
     title: 'Ignite Your Streak',
-    description: 'Never break the chain. Watch your streaks grow as consistency becomes second nature.',
-    color: '#f59e0b',
+    description:
+      'Never break the chain. Watch your streaks grow as consistency becomes second nature.',
+    color: colors.warning,
   },
   {
     id: 4,
     icon: 'notifications',
     title: 'Gentle Reminders',
-    description: 'Smart notifications that nudges you at the right moment. Never miss a habit again.',
-    color: '#ec4899',
+    description:
+      'Smart notifications that nudge you at the right moment. Never miss a habit again.',
+    color: colors.accent.pink,
   },
 ];
 
-export default function LandingScreen() {
-  const [currentSlide, setCurrentSlide] = useState(0);
-  const [userName, setUserName] = useState('');
-  const router = useRouter();
-  
-  const scrollX = useRef(new Animated.Value(0)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const buttonAnim = useRef(new Animated.Value(0)).current;
-  const scrollViewRef = useRef<any>(null);
-  const logoScale = useRef(new Animated.Value(1)).current;
-  const logoGlow = useRef(new Animated.Value(0)).current;
+// ─── Pagination Dot ──────────────────────────────────────────
+interface DotProps {
+  index: number;
+  scrollX: SharedValue<number>;
+}
 
+const Dot = memo(({ index, scrollX }: DotProps) => {
+  const inputRange = [(index - 1) * width, index * width, (index + 1) * width];
+
+  const dotStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      scrollX.value,
+      inputRange,
+      [0.25, 1, 0.25],
+      Extrapolation.CLAMP,
+    ),
+    transform: [
+      {
+        scaleX: interpolate(
+          scrollX.value,
+          inputRange,
+          [1, 2.8, 1],
+          Extrapolation.CLAMP,
+        ),
+      },
+    ],
+  }));
+
+  return <Animated.View style={[styles.dot, dotStyle]} />;
+});
+
+// ─── Slide Item (proper component — safe for hooks) ──────────
+interface SlideItemProps {
+  item: Slide;
+  index: number;
+  scrollX: SharedValue<number>;
+}
+
+const SlideItem = memo(({ item, index, scrollX }: SlideItemProps) => {
+  const inputRange = [(index - 1) * width, index * width, (index + 1) * width];
+  const iconAnim = useSharedValue(0);
+
+  // Icon-specific looping animation (runs on UI thread)
   useEffect(() => {
-    loadUserName();
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 1000,
-        useNativeDriver: true,
-      }),
-      Animated.delay(500),
-      Animated.spring(buttonAnim, {
-        toValue: 1,
-        tension: 50,
-        friction: 7,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    // Subtle logo pulse animation
-    Animated.loop(
-      Animated.sequence([
-        Animated.parallel([
-          Animated.timing(logoScale, {
-            toValue: 1.08,
-            duration: 2000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(logoGlow, {
-            toValue: 1,
-            duration: 2000,
-            useNativeDriver: false,
-          }),
-        ]),
-        Animated.parallel([
-          Animated.timing(logoScale, {
-            toValue: 1,
-            duration: 2000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(logoGlow, {
-            toValue: 0,
-            duration: 2000,
-            useNativeDriver: false,
-          }),
-        ]),
-      ])
-    ).start();
+    switch (item.icon) {
+      case 'planet':
+        iconAnim.value = withRepeat(
+          withTiming(1, { duration: 4000, easing: Easing.linear }),
+          -1,
+          false,
+        );
+        break;
+      case 'people':
+        iconAnim.value = withRepeat(
+          withSequence(
+            withTiming(1, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
+            withTiming(0, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
+          ),
+          -1,
+          false,
+        );
+        break;
+      case 'flame':
+        iconAnim.value = withRepeat(
+          withSequence(
+            withTiming(1, { duration: 150 }),
+            withTiming(0, { duration: 150 }),
+            withTiming(0.5, { duration: 100 }),
+            withTiming(0, { duration: 200 }),
+          ),
+          -1,
+          false,
+        );
+        break;
+      case 'notifications':
+        iconAnim.value = withRepeat(
+          withSequence(
+            withTiming(1, { duration: 300 }),
+            withTiming(-1, { duration: 600 }),
+            withTiming(0, { duration: 300 }),
+            withDelay(1000, withTiming(0, { duration: 1 })),
+          ),
+          -1,
+          false,
+        );
+        break;
+    }
   }, []);
 
-  const loadUserName = async () => {
-    const name = await AsyncStorage.getItem('userName');
-    setUserName(name || 'there');
-  };
+  // Scroll-driven slide fade + scale
+  const slideStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      scrollX.value,
+      inputRange,
+      [0.3, 1, 0.3],
+      Extrapolation.CLAMP,
+    ),
+    transform: [
+      {
+        scale: interpolate(
+          scrollX.value,
+          inputRange,
+          [0.85, 1, 0.85],
+          Extrapolation.CLAMP,
+        ),
+      },
+    ],
+  }));
 
-  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
-    if (viewableItems.length > 0) {
-      setCurrentSlide(viewableItems[0].index || 0);
+  const iconStyle = useAnimatedStyle(() => {
+    'worklet';
+    switch (item.icon) {
+      case 'planet':
+        return {
+          transform: [
+            {
+              rotate: `${interpolate(iconAnim.value, [0, 1], [0, 360])}deg`,
+            },
+          ],
+        };
+      case 'people':
+        return {
+          transform: [
+            { scale: interpolate(iconAnim.value, [0, 1], [1, 1.12]) },
+          ],
+        };
+      case 'flame':
+        return {
+          transform: [
+            { translateX: interpolate(iconAnim.value, [0, 1], [0, 2]) },
+            {
+              translateY: interpolate(
+                iconAnim.value,
+                [0, 0.5, 1],
+                [0, -3, 0],
+              ),
+            },
+          ],
+        };
+      case 'notifications':
+        return {
+          transform: [
+            {
+              rotate: `${interpolate(
+                iconAnim.value,
+                [-1, 0, 1],
+                [-15, 0, 15],
+              )}deg`,
+            },
+          ],
+        };
+      default:
+        return {};
     }
-  }).current;
+  });
 
-  const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 50,
-  }).current;
+  return (
+    <Animated.View style={[styles.slide, slideStyle]}>
+      {/* Icon with layered glow */}
+      <View style={styles.iconWrapper}>
+        <View
+          style={[
+            styles.glowLayer,
+            styles.glowOuter,
+            { backgroundColor: item.color + '15' },
+          ]}
+        />
+        <View
+          style={[
+            styles.glowLayer,
+            styles.glowMiddle,
+            { backgroundColor: item.color + '25' },
+          ]}
+        />
+        <View
+          style={[
+            styles.glowLayer,
+            styles.glowInner,
+            { backgroundColor: item.color + '35' },
+          ]}
+        />
 
-  const renderItem = ({ item, index }: { item: Slide; index: number }) => {
-    const inputRange = [(index - 1) * width, index * width, (index + 1) * width];
-    
-    const scale = scrollX.interpolate({
-      inputRange,
-      outputRange: [0.8, 1, 0.8],
-      extrapolate: 'clamp',
-    });
-
-    const opacity = scrollX.interpolate({
-      inputRange,
-      outputRange: [0.4, 1, 0.4],
-      extrapolate: 'clamp',
-    });
-
-    // Individual icon animations
-    const iconAnim = useRef(new Animated.Value(0)).current;
-    
-    useEffect(() => {
-      if (currentSlide === index) {
-        // Different animations for different icons
-        switch (item.icon) {
-          case 'flame': // Fire - flicker/shake
-            Animated.loop(
-              Animated.sequence([
-                Animated.timing(iconAnim, { toValue: 1, duration: 150, useNativeDriver: true }),
-                Animated.timing(iconAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
-                Animated.timing(iconAnim, { toValue: 0.5, duration: 100, useNativeDriver: true }),
-                Animated.timing(iconAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
-              ])
-            ).start();
-            break;
-          case 'notifications': // Bell - swing
-            Animated.loop(
-              Animated.sequence([
-                Animated.timing(iconAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
-                Animated.timing(iconAnim, { toValue: -1, duration: 600, useNativeDriver: true }),
-                Animated.timing(iconAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
-                Animated.delay(1000),
-              ])
-            ).start();
-            break;
-          case 'planet': // Planet - rotate
-            Animated.loop(
-              Animated.timing(iconAnim, { toValue: 1, duration: 3000, useNativeDriver: true })
-            ).start();
-            break;
-          case 'people': // People - pulse
-            Animated.loop(
-              Animated.sequence([
-                Animated.timing(iconAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-                Animated.timing(iconAnim, { toValue: 0, duration: 800, useNativeDriver: true }),
-              ])
-            ).start();
-            break;
-        }
-      }
-    }, [currentSlide, index]);
-
-    const getIconTransform = () => {
-      switch (item.icon) {
-        case 'flame':
-          return {
-            transform: [{
-              translateX: iconAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, 2],
-              })
-            }, {
-              translateY: iconAnim.interpolate({
-                inputRange: [0, 0.5, 1],
-                outputRange: [0, -3, 0],
-              })
-            }]
-          };
-        case 'notifications':
-          return {
-            transform: [{
-              rotate: iconAnim.interpolate({
-                inputRange: [-1, 0, 1],
-                outputRange: ['-15deg', '0deg', '15deg'],
-              })
-            }]
-          };
-        case 'planet':
-          return {
-            transform: [{
-              rotate: iconAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: ['0deg', '360deg'],
-              })
-            }]
-          };
-        case 'people':
-          return {
-            transform: [{
-              scale: iconAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [1, 1.1],
-              })
-            }]
-          };
-        default:
-          return {};
-      }
-    };
-
-    return (
-      <Animated.View 
-        style={[
-          styles.slide,
-          { 
-            opacity,
-          }
-        ]}
-      >
-        {/* Icon Circle with Glow */}
-        <View style={styles.iconWrapper}>
-          {/* Glow layers for Android */}
-          <View style={[styles.glowLayer, styles.glowOuter, { backgroundColor: item.color + '15' }]} />
-          <View style={[styles.glowLayer, styles.glowMiddle, { backgroundColor: item.color + '25' }]} />
-          <View style={[styles.glowLayer, styles.glowInner, { backgroundColor: item.color + '35' }]} />
-          
-          <View style={[
-            styles.iconContainer, 
-            { 
+        <View
+          style={[
+            styles.iconContainer,
+            {
               backgroundColor: item.color + '20',
               shadowColor: item.color,
               shadowOffset: { width: 0, height: 0 },
               shadowOpacity: 0.6,
               shadowRadius: 20,
-            }
-          ]}>
-            <LinearGradient
-              colors={[item.color, item.color + '80']}
-              style={styles.iconGradient}
-            >
-              <Animated.View style={getIconTransform()}>
-                <Ionicons name={item.icon as any} size={44} color="#fff" />
-              </Animated.View>
-            </LinearGradient>
-          </View>
+            },
+          ]}
+        >
+          <LinearGradient
+            colors={[item.color, item.color + '80']}
+            style={styles.iconGradient}
+          >
+            <Animated.View style={iconStyle}>
+              <Ionicons name={item.icon as any} size={44} color="#fff" />
+            </Animated.View>
+          </LinearGradient>
         </View>
+      </View>
 
-        {/* Title */}
-        <Text style={styles.title}>{item.title}</Text>
-        
-        {/* Description */}
-        <Text style={styles.description}>{item.description}</Text>
-      </Animated.View>
+      <Text style={styles.title}>{item.title}</Text>
+      <Text style={styles.description}>{item.description}</Text>
+    </Animated.View>
+  );
+});
+
+// ─── Main Screen ─────────────────────────────────────────────
+export default function LandingScreen() {
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const [userName, setUserName] = useState('');
+  const router = useRouter();
+  const scrollViewRef = useRef<any>(null);
+
+  // Shared values
+  const scrollX = useSharedValue(0);
+  const headerOpacity = useSharedValue(0);
+  const buttonSlide = useSharedValue(40);
+  const buttonOpacity = useSharedValue(0);
+  const logoScale = useSharedValue(1);
+
+  useEffect(() => {
+    AsyncStorage.getItem('userName').then((n) => setUserName(n || 'there'));
+
+    // Staggered entrance
+    headerOpacity.value = withTiming(1, { duration: 800 });
+    buttonOpacity.value = withDelay(400, withTiming(1, { duration: 600 }));
+    buttonSlide.value = withDelay(
+      400,
+      withSpring(0, { damping: 14, stiffness: 100 }),
     );
-  };
 
-  const handleNext = () => {
+    // Logo breathe
+    logoScale.value = withRepeat(
+      withSequence(
+        withTiming(1.08, {
+          duration: 2000,
+          easing: Easing.inOut(Easing.ease),
+        }),
+        withTiming(1, {
+          duration: 2000,
+          easing: Easing.inOut(Easing.ease),
+        }),
+      ),
+      -1,
+      false,
+    );
+  }, []);
+
+  // Scroll tracking (UI thread)
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollX.value = event.contentOffset.x;
+    },
+  });
+
+  // React-state update for button label / progress text
+  const handleMomentumEnd = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      setCurrentSlide(Math.round(e.nativeEvent.contentOffset.x / width));
+    },
+    [],
+  );
+
+  const handleNext = useCallback(() => {
     if (currentSlide < SLIDES.length - 1) {
-      // Scroll to next slide
-      scrollViewRef.current?.scrollTo({
-        x: (currentSlide + 1) * width,
-        animated: true,
-      });
-      setCurrentSlide(currentSlide + 1);
+      const next = currentSlide + 1;
+      scrollViewRef.current?.scrollTo({ x: next * width, animated: true });
+      setCurrentSlide(next);
     } else {
-      // Last slide - go to AI intro
       router.replace('/(onboarding)/ai-intro');
     }
-  };
+  }, [currentSlide, router]);
 
-  const handleSkip = () => {
+  const handleSkip = useCallback(() => {
     router.replace('/(onboarding)/ai-intro');
-  };
+  }, [router]);
 
   const isLastSlide = currentSlide === SLIDES.length - 1;
 
+  // --- Animated styles ---
+  const headerStyle = useAnimatedStyle(() => ({
+    opacity: headerOpacity.value,
+  }));
+
+  const logoStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: logoScale.value }],
+  }));
+
+  const bottomStyle = useAnimatedStyle(() => ({
+    opacity: buttonOpacity.value,
+    transform: [{ translateY: buttonSlide.value }],
+  }));
+
+  // Orb parallax driven by scroll
+  const orb1Style = useAnimatedStyle(() => ({
+    transform: [
+      {
+        translateX: interpolate(
+          scrollX.value,
+          SLIDES.map((_, i) => i * width),
+          [0, 50, 100, 50],
+          Extrapolation.CLAMP,
+        ),
+      },
+    ],
+  }));
+
+  const orb2Style = useAnimatedStyle(() => ({
+    transform: [
+      {
+        translateX: interpolate(
+          scrollX.value,
+          SLIDES.map((_, i) => i * width),
+          [0, -30, -60, -30],
+          Extrapolation.CLAMP,
+        ),
+      },
+    ],
+  }));
+
   return (
     <View style={styles.container}>
-      {/* Background */}
       <LinearGradient
-        colors={['#0a0a0f', '#12121a', '#0a0a0f']}
+        colors={[colors.background, colors.backgroundSecondary, colors.background]}
         style={StyleSheet.absoluteFill}
       />
 
-      {/* Animated background orbs */}
+      {/* Parallax orbs */}
       <View style={styles.orbContainer}>
-        <Animated.View 
-          style={[
-            styles.orb,
-            styles.orb1,
-            {
-              transform: [{
-                translateX: scrollX.interpolate({
-                  inputRange: SLIDES.map((_, i) => i * width),
-                  outputRange: [0, 50, 100, 50],
-                  extrapolate: 'clamp',
-                })
-              }]
-            }
-          ]} 
-        />
-        <Animated.View 
-          style={[
-            styles.orb,
-            styles.orb2,
-            {
-              transform: [{
-                translateX: scrollX.interpolate({
-                  inputRange: SLIDES.map((_, i) => i * width),
-                  outputRange: [0, -30, -60, -30],
-                  extrapolate: 'clamp',
-                })
-              }]
-            }
-          ]} 
-        />
+        <Animated.View style={[styles.orb, styles.orb1, orb1Style]} />
+        <Animated.View style={[styles.orb, styles.orb2, orb2Style]} />
       </View>
 
       {/* Header */}
-      <Animated.View style={[styles.header, { opacity: fadeAnim }]}>
-        <Animated.View 
-          style={[
-            {
-              shadowColor: '#5865F2',
-              shadowOffset: { width: 0, height: 0 },
-              shadowOpacity: logoGlow.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.3, 0.7],
-              }),
-              shadowRadius: logoGlow.interpolate({
-                inputRange: [0, 1],
-                outputRange: [8, 16],
-              }),
-            }
-          ]}
-        >
-          <Animated.View 
-            style={[
-              styles.logoContainer,
-              {
-                transform: [{ scale: logoScale }],
-              }
-            ]}
-          >
-            <Image
-              source={require('../../assets/krios-logo.png')}
-              style={styles.logo}
-              resizeMode="contain"
-            />
-          </Animated.View>
+      <Animated.View style={[styles.header, headerStyle]}>
+        <Animated.View style={[styles.logoContainer, logoStyle]}>
+          <Image
+            source={require('../../assets/krios-logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
         </Animated.View>
-        
         <TouchableOpacity onPress={handleSkip} style={styles.skipButton}>
           <Text style={styles.skipText}>Skip</Text>
         </TouchableOpacity>
       </Animated.View>
 
-      {/* Welcome Message & Progress */}
-      <Animated.View style={[styles.welcomeSection, { opacity: fadeAnim }]}>
+      {/* Welcome label */}
+      <Animated.View style={[styles.welcomeSection, headerStyle]}>
         <Text style={styles.welcomeText}>Welcome, {userName}</Text>
-        <View style={styles.stepIndicator}>
-          <Text style={styles.stepText}>Step {currentSlide + 1} of {SLIDES.length}</Text>
-        </View>
       </Animated.View>
 
-      {/* Slides */}
+      {/* Horizontal slide carousel */}
       <Animated.ScrollView
         ref={scrollViewRef}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-          { 
-            useNativeDriver: true,
-            listener: (event: any) => {
-              const slideIndex = Math.round(event.nativeEvent.contentOffset.x / width);
-              setCurrentSlide(slideIndex);
-            },
-          }
-        )}
+        onScroll={scrollHandler}
+        onMomentumScrollEnd={handleMomentumEnd}
         scrollEventThrottle={16}
         style={styles.scrollView}
       >
         {SLIDES.map((item) => (
           <View key={item.id} style={styles.slideContainer}>
-            {renderItem({ item, index: item.id - 1 })}
+            <SlideItem item={item} index={item.id - 1} scrollX={scrollX} />
           </View>
         ))}
       </Animated.ScrollView>
 
-      {/* Pagination */}
+      {/* Pagination dots */}
       <View style={styles.pagination}>
-        {SLIDES.map((_, index) => {
-          const inputRange = [(index - 1) * width, index * width, (index + 1) * width];
-          
-          const dotScale = scrollX.interpolate({
-            inputRange,
-            outputRange: [1, 3, 1],
-            extrapolate: 'clamp',
-          });
-
-          const dotOpacity = scrollX.interpolate({
-            inputRange,
-            outputRange: [0.3, 1, 0.3],
-            extrapolate: 'clamp',
-          });
-
-          return (
-            <Animated.View 
-              key={index} 
-              style={[
-                styles.dot,
-                { 
-                  opacity: dotOpacity,
-                  transform: [{ scaleX: dotScale }]
-                }
-              ]}
-            />
-          );
-        })}
+        {SLIDES.map((_, index) => (
+          <Dot key={index} index={index} scrollX={scrollX} />
+        ))}
       </View>
 
-      {/* Bottom Action */}
-      <Animated.View 
-        style={[
-          styles.bottomSection,
-          { 
-            opacity: buttonAnim,
-            transform: [{
-              translateY: buttonAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [30, 0],
-              })
-            }]
-          }
-        ]}
-      >
-        <TouchableOpacity 
+      {/* Bottom action */}
+      <Animated.View style={[styles.bottomSection, bottomStyle]}>
+        <TouchableOpacity
           onPress={handleNext}
           activeOpacity={0.8}
           style={styles.nextButton}
         >
           <LinearGradient
-            colors={isLastSlide 
-              ? ['#10b981', '#059669'] 
-              : ['#6366f1', '#8b5cf6']
+            colors={
+              isLastSlide
+                ? [colors.success, '#059669']
+                : [colors.primary, colors.secondary]
             }
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -484,15 +476,14 @@ export default function LandingScreen() {
             <Text style={styles.nextButtonText}>
               {isLastSlide ? 'Get Started' : 'Next'}
             </Text>
-            <Ionicons 
-              name={isLastSlide ? 'checkmark' : 'arrow-forward'} 
-              size={20} 
-              color="#fff" 
+            <Ionicons
+              name={isLastSlide ? 'checkmark' : 'arrow-forward'}
+              size={20}
+              color="#fff"
             />
           </LinearGradient>
         </TouchableOpacity>
 
-        {/* Progress text */}
         <Text style={styles.progressText}>
           {currentSlide + 1} of {SLIDES.length}
         </Text>
@@ -501,10 +492,11 @@ export default function LandingScreen() {
   );
 }
 
+// ─── Styles ──────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0a0a0f',
+    backgroundColor: colors.background,
   },
   orbContainer: {
     ...StyleSheet.absoluteFillObject,
@@ -518,14 +510,14 @@ const styles = StyleSheet.create({
   orb1: {
     width: 400,
     height: 400,
-    backgroundColor: '#6366f1',
+    backgroundColor: colors.primary,
     top: -150,
     right: -100,
   },
   orb2: {
     width: 300,
     height: 300,
-    backgroundColor: '#8b5cf6',
+    backgroundColor: colors.secondary,
     bottom: -100,
     left: -50,
   },
@@ -545,10 +537,11 @@ const styles = StyleSheet.create({
     height: 36,
   },
   skipButton: {
-    padding: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
   },
   skipText: {
-    color: 'rgba(255,255,255,0.4)',
+    color: colors.textMuted,
     fontSize: 14,
     fontWeight: '500',
   },
@@ -558,24 +551,9 @@ const styles = StyleSheet.create({
   },
   welcomeText: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.4)',
+    color: colors.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 2,
-  },
-  stepIndicator: {
-    marginTop: 8,
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.3)',
-  },
-  stepText: {
-    fontSize: 12,
-    color: '#6366f1',
-    fontWeight: '600',
   },
   scrollView: {
     flex: 1,
@@ -638,14 +616,14 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#ffffff',
+    color: colors.textPrimary,
     textAlign: 'center',
     marginBottom: 16,
     letterSpacing: -0.5,
   },
   description: {
     fontSize: 16,
-    color: 'rgba(255,255,255,0.5)',
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 26,
     paddingHorizontal: 20,
@@ -658,9 +636,10 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   dot: {
+    width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#6366f1',
+    backgroundColor: colors.primary,
   },
   bottomSection: {
     paddingHorizontal: 24,
@@ -669,7 +648,7 @@ const styles = StyleSheet.create({
   nextButton: {
     borderRadius: 16,
     overflow: 'hidden',
-    shadowColor: '#6366f1',
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.3,
     shadowRadius: 20,
@@ -685,11 +664,11 @@ const styles = StyleSheet.create({
   nextButtonText: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#ffffff',
+    color: colors.textPrimary,
   },
   progressText: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.3)',
+    color: colors.textHint,
     textAlign: 'center',
     marginTop: 16,
   },

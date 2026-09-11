@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,117 +8,103 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
-  Animated,
   Image,
-  Dimensions,
   ScrollView,
-  FlatList,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import theme from '../../src/constants/theme';
-
-const { width, height } = Dimensions.get('window');
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withSpring,
+  withDelay,
+  interpolateColor,
+  FadeIn,
+  Easing,
+} from 'react-native-reanimated';
+import { colors } from '../../src/constants/theme';
 
 export default function NameInputScreen() {
   const [name, setName] = useState('');
   const router = useRouter();
-  
-  // Animations
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(40)).current;
-  const logoAnim = useRef(new Animated.Value(0)).current;
-  const inputFocusAnim = useRef(new Animated.Value(0)).current;
+
+  // Entrance animations (UI thread)
+  const logoScale = useSharedValue(0.5);
+  const logoOpacity = useSharedValue(0);
+  const contentOpacity = useSharedValue(0);
+  const contentSlide = useSharedValue(30);
+  // Interactive — border glow reacts to name input
+  const inputGlow = useSharedValue(0);
 
   useEffect(() => {
-    // Staggered entrance animation
-    Animated.sequence([
-      Animated.delay(200),
-      Animated.parallel([
-        Animated.spring(logoAnim, {
-          toValue: 1,
-          tension: 45,
-          friction: 8,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 700,
-          useNativeDriver: true,
-        }),
-      ]),
-    ]).start();
+    // Staggered entrance: logo first, then content
+    logoOpacity.value = withDelay(200, withTiming(1, { duration: 600 }));
+    logoScale.value = withDelay(200, withSpring(1, { damping: 12, stiffness: 90 }));
+    contentOpacity.value = withDelay(500, withTiming(1, { duration: 700 }));
+    contentSlide.value = withDelay(
+      500,
+      withTiming(0, { duration: 600, easing: Easing.out(Easing.cubic) }),
+    );
   }, []);
 
   useEffect(() => {
-    // Animate input border on focus
-    Animated.timing(inputFocusAnim, {
-      toValue: name.trim() ? 1 : 0,
-      duration: 200,
-      useNativeDriver: false,
-    }).start();
+    inputGlow.value = withTiming(name.trim() ? 1 : 0, { duration: 250 });
   }, [name]);
 
-  const handleContinue = async () => {
+  const handleContinue = useCallback(async () => {
     if (name.trim()) {
       await AsyncStorage.setItem('userName', name.trim());
       Keyboard.dismiss();
       router.replace('/(onboarding)/landing');
     }
-  };
+  }, [name, router]);
 
-  const borderColor = inputFocusAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['rgba(255,255,255,0.1)', '#6366f1'],
-  });
+  // --- Animated styles (all on UI thread) ---
+  const logoStyle = useAnimatedStyle(() => ({
+    opacity: logoOpacity.value,
+    transform: [{ scale: logoScale.value }],
+  }));
+
+  const contentStyle = useAnimatedStyle(() => ({
+    opacity: contentOpacity.value,
+    transform: [{ translateY: contentSlide.value }],
+  }));
+
+  const inputBorderStyle = useAnimatedStyle(() => ({
+    borderColor: interpolateColor(
+      inputGlow.value,
+      [0, 1],
+      [colors.borderLight, colors.primary],
+    ),
+  }));
 
   return (
     <View style={styles.container}>
-      {/* Professional Dark Background */}
       <LinearGradient
-        colors={['#0a0a0f', '#12121a', '#0a0a0f']}
+        colors={[colors.background, colors.backgroundSecondary, colors.background]}
         style={StyleSheet.absoluteFill}
       />
-      
-      {/* Subtle gradient overlay */}
-      <View style={styles.gradientOverlay} />
-      
-      {/* Subtle mesh effect */}
-      <View style={styles.meshContainer}>
-        <View style={[styles.meshDot, styles.mesh1]} />
-        <View style={[styles.meshDot, styles.mesh2]} />
-        <View style={[styles.meshDot, styles.mesh3]} />
+
+      {/* Ambient glow orbs */}
+      <View style={styles.orbContainer}>
+        <View style={[styles.orb, styles.orb1]} />
+        <View style={[styles.orb, styles.orb2]} />
+        <View style={[styles.orb, styles.orb3]} />
       </View>
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
-        <ScrollView 
+        <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Logo Section */}
-          <Animated.View 
-            style={[
-              styles.logoSection,
-              {
-                opacity: fadeAnim,
-                transform: [
-                  { translateY: slideAnim },
-                  { scale: logoAnim }
-                ],
-              }
-            ]}
-          >
-            {/* Logo Container with subtle glow */}
+          {/* Logo */}
+          <Animated.View style={[styles.logoSection, logoStyle]}>
             <View style={styles.logoWrapper}>
               <View style={styles.logoGlow} />
               <Image
@@ -127,36 +113,23 @@ export default function NameInputScreen() {
                 resizeMode="contain"
               />
             </View>
-            
             <Text style={styles.appName}>Krios</Text>
             <Text style={styles.tagline}>Your Orbit Companion</Text>
           </Animated.View>
 
-          {/* Input Section */}
-          <Animated.View 
-            style={[
-              styles.inputSection,
-              { opacity: fadeAnim }
-            ]}
-          >
-            {/* Greeting */}
+          {/* Input section */}
+          <Animated.View style={[styles.inputSection, contentStyle]}>
             <Text style={styles.greeting}>Let's get acquainted</Text>
             <Text style={styles.subGreeting}>What should I call you?</Text>
 
-            {/* Custom Input */}
-            <Animated.View 
-              style={[
-                styles.inputWrapper,
-                { borderColor }
-              ]}
-            >
+            <Animated.View style={[styles.inputWrapper, inputBorderStyle]}>
               <TextInput
-                style={[styles.input, {
-                  outlineStyle: 'none',
-                  borderWidth: 0,
-                } as any]}
+                style={[
+                  styles.input,
+                  { outlineStyle: 'none', borderWidth: 0 } as any,
+                ]}
                 placeholder="your name"
-                placeholderTextColor="rgba(255,255,255,0.25)"
+                placeholderTextColor={colors.textHint}
                 value={name}
                 onChangeText={setName}
                 autoCapitalize="words"
@@ -165,26 +138,27 @@ export default function NameInputScreen() {
                 returnKeyType="done"
                 onSubmitEditing={handleContinue}
               />
-              {name.trim() && (
-                <TouchableOpacity 
+              {name.trim() ? (
+                <TouchableOpacity
                   onPress={() => setName('')}
                   style={styles.clearButton}
                 >
-                  <Ionicons name="close-circle" size={20} color="rgba(255,255,255,0.4)" />
+                  <Ionicons name="close-circle" size={20} color={colors.textMuted} />
                 </TouchableOpacity>
-              )}
+              ) : null}
             </Animated.View>
 
-            {/* Character hint */}
-            {name.trim() && (
-              <View style={styles.nameHint}>
+            {/* Live greeting */}
+            {name.trim() ? (
+              <Animated.View entering={FadeIn.duration(300)} style={styles.nameHint}>
                 <Text style={styles.nameHintText}>
-                  Nice to meet you, <Text style={styles.nameHighlight}>{name.trim()}</Text> ✨
+                  Nice to meet you,{' '}
+                  <Text style={styles.nameHighlight}>{name.trim()}</Text>
                 </Text>
-              </View>
-            )}
+              </Animated.View>
+            ) : null}
 
-            {/* Continue Button */}
+            {/* Continue */}
             <TouchableOpacity
               onPress={handleContinue}
               disabled={!name.trim()}
@@ -192,26 +166,29 @@ export default function NameInputScreen() {
               style={styles.continueButton}
             >
               <LinearGradient
-                colors={name.trim() 
-                  ? ['#6366f1', '#8b5cf6'] 
-                  : ['rgba(99,102,241,0.3)', 'rgba(139,92,246,0.3)']
+                colors={
+                  name.trim()
+                    ? [colors.primary, colors.secondary]
+                    : ['rgba(99,102,241,0.2)', 'rgba(139,92,246,0.2)']
                 }
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={[
                   styles.continueGradient,
-                  !name.trim() && styles.continueDisabled
+                  !name.trim() && styles.continueDisabled,
                 ]}
               >
-                <Text style={[
-                  styles.continueText,
-                  !name.trim() && styles.continueTextDisabled
-                ]}>
+                <Text
+                  style={[
+                    styles.continueText,
+                    !name.trim() && styles.continueTextDisabled,
+                  ]}
+                >
                   Continue
                 </Text>
-                {name.trim() && (
+                {name.trim() ? (
                   <Ionicons name="arrow-forward" size={18} color="#fff" />
-                )}
+                ) : null}
               </LinearGradient>
             </TouchableOpacity>
           </Animated.View>
@@ -231,37 +208,32 @@ export default function NameInputScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0a0a0f',
+    backgroundColor: colors.background,
   },
-  gradientOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'transparent',
-    opacity: 0.8,
-  },
-  meshContainer: {
+  orbContainer: {
     ...StyleSheet.absoluteFillObject,
     overflow: 'hidden',
   },
-  meshDot: {
+  orb: {
     position: 'absolute',
     borderRadius: 100,
     opacity: 0.15,
   },
-  mesh1: {
+  orb1: {
     width: 300,
     height: 300,
-    backgroundColor: '#6366f1',
+    backgroundColor: colors.primary,
     top: -100,
     right: -50,
   },
-  mesh2: {
+  orb2: {
     width: 200,
     height: 200,
-    backgroundColor: '#8b5cf6',
+    backgroundColor: colors.secondary,
     bottom: 100,
     left: -30,
   },
-  mesh3: {
+  orb3: {
     width: 150,
     height: 150,
     backgroundColor: '#a855f7',
@@ -293,8 +265,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(99, 102, 241, 0.2)',
     top: -10,
     left: -10,
-    right: -10,
-    bottom: -10,
   },
   logo: {
     width: 100,
@@ -303,12 +273,12 @@ const styles = StyleSheet.create({
   appName: {
     fontSize: 36,
     fontWeight: '700',
-    color: '#ffffff',
+    color: colors.textPrimary,
     letterSpacing: 1,
   },
   tagline: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.4)',
+    color: colors.textMuted,
     marginTop: 8,
     letterSpacing: 2,
     textTransform: 'uppercase',
@@ -319,19 +289,19 @@ const styles = StyleSheet.create({
   greeting: {
     fontSize: 24,
     fontWeight: '600',
-    color: '#ffffff',
+    color: colors.textPrimary,
     textAlign: 'center',
     marginBottom: 8,
   },
   subGreeting: {
     fontSize: 15,
-    color: 'rgba(255,255,255,0.5)',
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 32,
   },
   inputWrapper: {
     width: '100%',
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: colors.surface,
     borderRadius: 16,
     borderWidth: 1.5,
     paddingHorizontal: 20,
@@ -343,7 +313,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 18,
-    color: '#ffffff',
+    color: colors.textPrimary,
     paddingVertical: 16,
     letterSpacing: 1,
   },
@@ -355,10 +325,10 @@ const styles = StyleSheet.create({
   },
   nameHintText: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.5)',
+    color: colors.textSecondary,
   },
   nameHighlight: {
-    color: '#6366f1',
+    color: colors.primary,
     fontWeight: '600',
   },
   continueButton: {
@@ -380,10 +350,10 @@ const styles = StyleSheet.create({
   continueText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
+    color: colors.textPrimary,
   },
   continueTextDisabled: {
-    color: 'rgba(255,255,255,0.5)',
+    color: colors.textSecondary,
   },
   footer: {
     alignItems: 'center',
@@ -391,7 +361,7 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.25)',
+    color: colors.textHint,
     textAlign: 'center',
   },
 });

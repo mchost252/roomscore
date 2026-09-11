@@ -196,7 +196,7 @@ export function priorityEmoji(priority: string): string {
 export function taskTypeLabel(type: string): string {
   switch (type) {
     case 'daily':   return 'Daily';
-    case 'weekly':  return 'Weekly';
+    case 'weekly':  return 'Daily';
     default:        return 'One-time';
   }
 }

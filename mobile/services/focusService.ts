@@ -5,6 +5,7 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import sqliteService from './sqliteService';
+import api from './api';
 
 export interface FocusSession {
   id: string;
@@ -16,6 +17,8 @@ export interface FocusSession {
   completedAt?: string;
   soundUsed?: string;
   completed: boolean;
+  // optional reward returned from server (XP or points)
+  reward?: number;
 }
 
 export interface FocusStats {
@@ -67,6 +70,25 @@ class FocusService {
     };
     this.sessions.unshift(session);
     await this.persist();
+
+    // Best-effort: notify server about new session (does not block local-first flow)
+    (async () => {
+      try {
+        await api.post('/me/focus-sessions', {
+          clientId: session.id,
+          taskId: session.taskId,
+          taskTitle: session.taskTitle,
+          mode: session.mode,
+          durationMinutes: session.durationMinutes,
+          startedAt: session.startedAt,
+          soundUsed: session.soundUsed,
+        });
+      } catch (e) {
+        // ignore network errors — offline-first
+        console.debug('[focusService] remote startSession failed:', (e as any)?.message || e);
+      }
+    })();
+
     return session;
   }
 
@@ -74,12 +96,27 @@ class FocusService {
     await this.ensureLoaded();
     const idx = this.sessions.findIndex(s => s.id === sessionId);
     if (idx < 0) return null;
+    const completedAt = new Date().toISOString();
     this.sessions[idx] = {
       ...this.sessions[idx],
       completed: true,
-      completedAt: new Date().toISOString(),
+      completedAt,
     };
     await this.persist();
+
+    // Best-effort: notify server that session completed and capture any reward
+    try {
+      const res = await api.post(`/me/focus-sessions/${encodeURIComponent(sessionId)}/complete`, { completedAt });
+      const reward = res?.data?.reward ?? res?.data?.xp ?? res?.data?.points ?? null;
+      if (reward != null) {
+        const num = Number(reward) || 0;
+        this.sessions[idx].reward = num;
+        await this.persist();
+      }
+    } catch (e) {
+      console.debug('[focusService] remote completeSession failed:', (e as any)?.message || e);
+    }
+
     return this.sessions[idx];
   }
 
@@ -87,8 +124,18 @@ class FocusService {
     await this.ensureLoaded();
     const idx = this.sessions.findIndex(s => s.id === sessionId);
     if (idx >= 0) {
-      this.sessions[idx].completedAt = new Date().toISOString();
+      const abandonedAt = new Date().toISOString();
+      this.sessions[idx].completedAt = abandonedAt;
       await this.persist();
+
+      // Best-effort: notify server that session was abandoned
+      (async () => {
+        try {
+          await api.post(`/me/focus-sessions/${encodeURIComponent(sessionId)}/abandon`, { abandonedAt });
+        } catch (e) {
+          console.debug('[focusService] remote abandonSession failed:', (e as any)?.message || e);
+        }
+      })();
     }
   }
 
@@ -145,6 +192,24 @@ class FocusService {
     }
 
     return { totalSessions, totalMinutes, currentStreak, longestSession, weeklyData };
+  }
+
+  /** Fetch stats from server if available (best-effort) */
+  async fetchServerStats(): Promise<Partial<FocusStats> | null> {
+    try {
+      const res = await api.get('/me/focus-stats');
+      const data = res.data || {};
+      return {
+        totalSessions: data.totalSessions,
+        totalMinutes: data.totalMinutes,
+        currentStreak: data.currentStreak,
+        longestSession: data.longestSession,
+        weeklyData: data.weeklyData,
+      };
+    } catch (e) {
+      console.debug('[focusService] fetchServerStats failed:', (e as any)?.message || e);
+      return null;
+    }
   }
 
   async getSessionsForTask(taskId: string): Promise<FocusSession[]> {

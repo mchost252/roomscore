@@ -1,14 +1,16 @@
 import React, { useState, useCallback } from 'react';
 import { 
   View, Text, StyleSheet, Modal, ScrollView, TextInput, 
-  TouchableOpacity, Switch, ActivityIndicator, StatusBar 
+  TouchableOpacity, Switch, ActivityIndicator, StatusBar, Image, Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import api from '../../services/api';
+import { uploadImage } from '../../services/cloudinaryService';
 
 interface CreateRoomModalProps {
   visible: boolean;
@@ -48,18 +50,32 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ visible, onClo
   const [roomTasks, setRoomTasks] = useState<any[]>([]);
   const [showAddTask, setShowAddTask] = useState(false);
   const [taskTitle, setTaskTitle] = useState('');
-  const [taskType, setTaskType] = useState<'daily' | 'weekly' | 'custom'>('daily');
+  const [taskType, setTaskType] = useState<'daily' | 'one-time' | 'custom'>('daily');
   const [taskDays, setTaskDays] = useState<number[]>([]);
+  const [taskDueDate, setTaskDueDate] = useState('');
   const [taskPoints, setTaskPoints] = useState('5');
+  const [taskHasThread, setTaskHasThread] = useState(false);
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [coverImage, setCoverImage] = useState<string | null>(null);
+  const [roomDp, setRoomDp] = useState<string | null>(null);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
+  const [uploadingRoomDp, setUploadingRoomDp] = useState(false);
+
+  const BACKDROP_PRESETS = [
+    { id: null, label: 'Default', colors: ['#1a1a2e', '#16213e'] },
+    { id: 'nebula', label: 'Nebula', colors: ['#667eea', '#764ba2'] },
+    { id: 'ocean', label: 'Ocean', colors: ['#0f2027', '#2c5364'] },
+    { id: 'sunset', label: 'Sunset', colors: ['#fa709a', '#fee140'] },
+    { id: 'forest', label: 'Forest', colors: ['#134e5e', '#71b280'] },
+    { id: 'ember', label: 'Ember', colors: ['#f12711', '#f5af19'] },
+  ];
 
   const PRESETS = [
     { title: 'Morning Standup', type: 'daily', points: 5, icon: 'sunny-outline', color: '#fbbf24' },
     { title: 'Log Workout', type: 'daily', points: 10, icon: 'barbell-outline', color: '#06b6d4' },
     { title: 'Deep Work (2h)', type: 'daily', points: 15, icon: 'headset-outline', color: '#8b5cf6' },
-    { title: 'Weekly Sync', type: 'weekly', points: 10, icon: 'people-outline', color: '#6366f1' },
   ] as const;
 
   const handleAddPreset = (preset: typeof PRESETS[number]) => {
@@ -69,6 +85,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ visible, onClo
       type: preset.type,
       daysOfWeek: [],
       points: preset.points,
+      hasThread: false,
     };
     setRoomTasks([newTask, ...roomTasks]);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -76,16 +93,21 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ visible, onClo
 
   const handleAddTask = () => {
     if (!taskTitle.trim()) return;
+    if (taskType === 'custom' && taskDays.length === 0) return;
+    if (taskType === 'one-time' && !/^\d{4}-\d{2}-\d{2}$/.test(taskDueDate)) return;
     const newTask = {
       id: Math.random().toString(),
       title: taskTitle.trim(),
       type: taskType,
       daysOfWeek: taskType === 'custom' ? taskDays : [],
+      dueDate: taskType === 'one-time' ? taskDueDate : undefined,
       points: parseInt(taskPoints) || 5,
+      hasThread: taskHasThread,
     };
     setRoomTasks([newTask, ...roomTasks]);
     setTaskTitle('');
     setShowAddTask(false);
+    setTaskHasThread(false);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
@@ -102,7 +124,38 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ visible, onClo
     }
   };
 
-  const handleDeploy = async () => {
+  const handlePickImage = useCallback(async (type: 'banner' | 'dp') => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: type === 'banner' ? [16, 9] : [1, 1],
+        quality: 0.8,
+      });
+
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+
+      if (type === 'banner') {
+        setUploadingBanner(true);
+        const cloudinaryUrl = await uploadImage(result.assets[0].uri, 'roomscore/rooms');
+        setCoverImage(cloudinaryUrl);
+      } else {
+        setUploadingRoomDp(true);
+        const cloudinaryUrl = await uploadImage(result.assets[0].uri, 'roomscore/room-dp');
+        setRoomDp(cloudinaryUrl);
+      }
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      console.error('Image upload error:', error);
+      Alert.alert('Error', 'Failed to upload room image. Please try again.');
+    } finally {
+      setUploadingBanner(false);
+      setUploadingRoomDp(false);
+    }
+  }, []);
+
+  const handleCREATE = async () => {
     if (!name.trim()) {
       setError('Mission Title is required');
       return;
@@ -121,19 +174,23 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ visible, onClo
         maxMembers: parseInt(maxMembers) || 20,
         duration,
         chatRetentionDays: retention,
+        coverImage: coverImage || undefined,
+        roomDp: roomDp || undefined,
         tasks: roomTasks.map(t => ({
           title: t.title,
           description: t.description,
           taskType: t.type,
           daysOfWeek: t.daysOfWeek,
+          dueDate: t.dueDate,
           points: t.points,
+          hasThread: t.hasThread || false,
         })),
       });
 
       onSuccess(response.data.room);
       resetForm();
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to deploy mission');
+      setError(err.response?.data?.message || 'Failed to create room');
     } finally {
       setLoading(false);
     }
@@ -147,6 +204,16 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ visible, onClo
     setRequireApproval(false);
     setMaxMembers('20');
     setRoomTasks([]);
+    setTaskTitle('');
+    setTaskType('daily');
+    setTaskDays([]);
+    setTaskDueDate('');
+    setTaskPoints('5');
+    setTaskHasThread(false);
+    setCoverImage(null);
+    setRoomDp(null);
+    setUploadingBanner(false);
+    setUploadingRoomDp(false);
   };
 
   return (
@@ -170,8 +237,8 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ visible, onClo
             </TouchableOpacity>
             
             <View style={{ alignItems: 'center' }}>
-              <Text style={s.modalTacticalTitle}>{modalStep === 1 ? 'NEW MISSION' : 'ADD OBJECTIVES'}</Text>
-              <Text style={s.modalTacticalSubtitle}>{modalStep === 1 ? 'Step 1: Deployment Briefing' : 'Step 2: Operational Tasks'}</Text>
+              <Text style={s.modalStepTitle}>{modalStep === 1 ? 'NEW ROOM' : 'ADD DETAILS'}</Text>
+              <Text style={s.modalTacticalSubtitle}>{modalStep === 1 ? 'Step 1: CREATEment Briefing' : 'Step 2: Operational Tasks'}</Text>
             </View>
 
             {modalStep === 1 ? (
@@ -179,11 +246,11 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ visible, onClo
                 onPress={() => name.trim() && setModalStep(2)}
                 style={[s.modalTacticalCreate, { opacity: !name.trim() ? 0.6 : 1 }]}
               >
-                <Text style={s.modalTacticalCreateText}>NEXT</Text>
+                <Text style={s.modalCreateText}>NEXT</Text>
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity onPress={handleDeploy} disabled={loading} style={s.modalTacticalCreate}>
-                {loading ? <ActivityIndicator size="small" color={primary} /> : <Text style={s.modalTacticalCreateText}>DEPLOY</Text>}
+              <TouchableOpacity onPress={handleCREATE} disabled={loading} style={s.modalTacticalCreate}>
+                {loading ? <ActivityIndicator size="small" color={primary} /> : <Text style={s.modalCreateText}>CREATE</Text>}
               </TouchableOpacity>
             )}
           </View>
@@ -221,7 +288,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ visible, onClo
                   style={[s.formInput, s.formTextArea, { backgroundColor: inputBg, borderColor: border, color: text }]}
                   value={description}
                   onChangeText={setDescription}
-                  placeholder="High-level operational goals..."
+                  placeholder="Room description..."
                   placeholderTextColor={textTert}
                   multiline
                   numberOfLines={3}
@@ -232,7 +299,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ visible, onClo
             <View style={[s.formSection, { backgroundColor: surf }]}>
               <View style={s.sectionHeader}>
                 <Ionicons name="shield" size={16} color={accent} />
-                <Text style={[s.sectionTitle, { color: textSub }]}>VISIBILITY PROTOCOL</Text>
+                <Text style={[s.sectionTitle, { color: textSub }]}>VISIBILITY</Text>
               </View>
 
               <View style={s.visibilityToggleRow}>
@@ -265,7 +332,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ visible, onClo
               </View>
               
               <View style={s.formGroup}>
-                <Text style={[s.formLabel, { color: textTert }]}>DEPLOYMENT DURATION</Text>
+                <Text style={[s.formLabel, { color: textTert }]}>CREATEMENT DURATION</Text>
                 <View style={s.durationRow}>
                   {(['1_week', '2_weeks', '1_month'] as const).map((d) => (
                     <TouchableOpacity key={d} onPress={() => setDuration(d)} style={[s.durationChip, { backgroundColor: duration === d ? primary : inputBg }]}>
@@ -289,6 +356,81 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ visible, onClo
                   </View>
                 </View>
               </View>
+            </View>
+
+            <View style={[s.formSection, { backgroundColor: surf }]}>
+              <View style={s.sectionHeader}>
+                <Ionicons name="image" size={16} color={accent} />
+                <Text style={[s.sectionTitle, { color: textSub }]}>ROOM BACKDROP</Text>
+              </View>
+              <View style={s.backdropGrid}>
+                {BACKDROP_PRESETS.map((preset) => (
+                  <TouchableOpacity
+                    key={preset.label}
+                    onPress={() => { setCoverImage(preset.id); Haptics.selectionAsync(); }}
+                    style={[
+                      s.backdropOption,
+                      coverImage === preset.id && { borderColor: primary, borderWidth: 2 },
+                    ]}
+                  >
+                    <View style={[s.backdropPreview, { backgroundColor: preset.colors[0] }]}>
+                      <View style={[s.backdropPreviewInner, { backgroundColor: preset.colors[1] }]} />
+                    </View>
+                    <Text style={[s.backdropLabel, { color: textSub }]}>{preset.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TouchableOpacity
+                onPress={() => handlePickImage('banner')}
+                disabled={uploadingBanner}
+                style={[s.imageSelectButton, { backgroundColor: inputBg, borderColor: border }]}
+              >
+                {uploadingBanner ? (
+                  <ActivityIndicator size="small" color={primary} />
+                ) : (
+                  <>
+                    <Ionicons name="cloud-upload-outline" size={18} color={primary} />
+                    <Text style={[s.imageSelectText, { color: text }]}>
+                      {coverImage ? 'Change banner image' : 'Upload custom banner'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              {coverImage ? (
+                <View style={[s.previewWrap, { borderColor: border }]}>
+                  <Image source={{ uri: coverImage }} style={s.previewImage} resizeMode="cover" />
+                </View>
+              ) : null}
+            </View>
+
+            <View style={[s.formSection, { backgroundColor: surf }]}>
+              <View style={s.sectionHeader}>
+                <Ionicons name="person-circle" size={16} color={cyan} />
+                <Text style={[s.sectionTitle, { color: textSub }]}>ROOM DISPLAY PICTURE</Text>
+              </View>
+
+              <TouchableOpacity
+                onPress={() => handlePickImage('dp')}
+                disabled={uploadingRoomDp}
+                style={[s.imageSelectButton, { backgroundColor: inputBg, borderColor: border }]}
+              >
+                {uploadingRoomDp ? (
+                  <ActivityIndicator size="small" color={cyan} />
+                ) : (
+                  <>
+                    <Ionicons name="image-outline" size={18} color={cyan} />
+                    <Text style={[s.imageSelectText, { color: text }]}>
+                      {roomDp ? 'Change display picture' : 'Upload room DP'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {roomDp ? (
+                <View style={[s.dpPreviewWrap, { borderColor: border }]}>
+                  <Image source={{ uri: roomDp }} style={s.dpPreviewImage} resizeMode="cover" />
+                </View>
+              ) : null}
             </View>
             <View style={{ height: 60 }} />
           </ScrollView>
@@ -320,14 +462,14 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ visible, onClo
                 {roomTasks.length === 0 ? (
                   <View style={s.emptyTasksBox}>
                     <Ionicons name="list" size={40} color={textTert} />
-                    <Text style={[s.emptyTasksText, { color: textSub }]}>No mission objectives defined yet.</Text>
+                    <Text style={[s.emptyTasksText, { color: textSub }]}>No tasks defined yet.</Text>
                   </View>
                 ) : (
                   roomTasks.map((t) => (
                     <View key={t.id} style={[s.taskItem, { backgroundColor: surf, borderColor: border }]}>
                       <View style={{ flex: 1 }}>
                         <Text style={[s.taskItemTitle, { color: text }]}>{t.title}</Text>
-                        <Text style={[s.taskItemSub, { color: primary }]}>{t.type.toUpperCase()}  <Text style={{color: textTert}}>•  {t.points} PTS</Text></Text>
+                        <Text style={[s.taskItemSub, { color: primary }]}>{t.type.toUpperCase()}  <Text style={{color: textTert}}>•  {t.points} PTS</Text>{t.hasThread ? <Text style={{ color: cyan }}>  •  THREAD</Text> : null}</Text>
                       </View>
                       <TouchableOpacity onPress={() => removeTask(t.id)} style={s.taskDeleteBtn}>
                         <Ionicons name="trash-outline" size={20} color="#ef4444" />
@@ -346,7 +488,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ visible, onClo
                   
                   <Text style={[s.formLabel, { color: textTert }]}>FREQUENCY</Text>
                   <View style={s.durationRow}>
-                    {(['daily', 'weekly', 'custom'] as const).map((f) => (
+                    {(['daily', 'custom', 'one-time'] as const).map((f) => (
                       <TouchableOpacity key={f} onPress={() => setTaskType(f)} style={[s.durationChip, { backgroundColor: taskType === f ? primary : inputBg }]}>
                         <Text style={[s.durationChipText, { color: taskType === f ? '#fff' : textSub }]}>{f.toUpperCase()}</Text>
                       </TouchableOpacity>
@@ -359,6 +501,10 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ visible, onClo
                       ))}
                     </View>
                   )}
+                  {taskType === 'one-time' && (
+                    <TextInput style={[s.formInput, { backgroundColor: inputBg, color: text, marginTop: 8 }]}
+                      value={taskDueDate} onChangeText={setTaskDueDate} placeholder="Date (YYYY-MM-DD)" placeholderTextColor={textTert} />
+                  )}
                   
                   <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12, marginTop: 16 }}>
                     <View style={{ flex: 1 }}>
@@ -367,6 +513,24 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ visible, onClo
                     </View>
                     <TouchableOpacity onPress={handleAddTask} style={s.confirmTaskBtn}><Text style={s.confirmTaskBtnText}>ADD TASK</Text></TouchableOpacity>
                   </View>
+
+                  {/* Task Thread opt-in (default OFF) */}
+                  <TouchableOpacity
+                    style={[s.threadRow, { backgroundColor: inputBg, borderColor: taskHasThread ? primary : border }]}
+                    onPress={() => setTaskHasThread(v => !v)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[s.threadIconWrap, { backgroundColor: taskHasThread ? primary : 'transparent' }]}>
+                      <Ionicons name="chatbubbles-outline" size={18} color={taskHasThread ? '#fff' : textTert} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.threadTitle, { color: text }]}>Task Thread</Text>
+                      <Text style={[s.threadSub, { color: textTert, marginTop: 2 }]}>Members can discuss & post proof</Text>
+                    </View>
+                    <View style={[s.switchTrack, { backgroundColor: taskHasThread ? primary : 'rgba(0,0,0,0.12)' }]}>
+                      <View style={[s.switchThumb, { transform: [{ translateX: taskHasThread ? 18 : 0 }] }]} />
+                    </View>
+                  </TouchableOpacity>
                 </Animated.View>
               ) : (
                 <TouchableOpacity onPress={() => setShowAddTask(true)} style={s.addTaskBtn}>
@@ -376,8 +540,8 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ visible, onClo
               )}
             </ScrollView>
             
-            <TouchableOpacity onPress={handleDeploy} style={[s.deployBottomBtn, { marginBottom: insets.bottom + 20 }]}>
-              <LinearGradient colors={[primary, accent]} style={s.deployBottomGradient}><Text style={s.deployBottomText}>DEPLOY MISSION NOW</Text></LinearGradient>
+            <TouchableOpacity onPress={handleCREATE} style={[s.CREATEBottomBtn, { marginBottom: insets.bottom + 20 }]}>
+              <LinearGradient colors={[primary, accent]} style={s.CREATEBottomGradient}><Text style={s.CREATEBottomText}>CREATE ROOM</Text></LinearGradient>
             </TouchableOpacity>
           </View>
         )}
@@ -391,10 +555,10 @@ const s = StyleSheet.create({
   modalTacticalHeader: { paddingTop: 20, paddingBottom: 16, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
   modalHeaderContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 },
   modalTacticalClose: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  modalTacticalTitle: { color: '#FFF', fontSize: 16, fontWeight: '900', letterSpacing: 1 },
+  modalStepTitle: { color: '#FFF', fontSize: 16, fontWeight: '900', letterSpacing: 1 },
   modalTacticalSubtitle: { color: 'rgba(255,255,255,0.7)', fontSize: 10, fontWeight: '700' },
   modalTacticalCreate: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.15)' },
-  modalTacticalCreateText: { color: '#FFF', fontSize: 13, fontWeight: '900' },
+  modalCreateText: { color: '#FFF', fontSize: 13, fontWeight: '900' },
   errorBadge: { backgroundColor: 'rgba(239,68,68,0.2)', padding: 12, marginHorizontal: 20, marginTop: 20, borderRadius: 12 },
   errorText: { color: '#ef4444', fontSize: 13, fontWeight: '700', textAlign: 'center' },
   modalContent: { flex: 1 },
@@ -432,11 +596,62 @@ const s = StyleSheet.create({
   dayBtnText: { fontSize: 12, fontWeight: '800', color: 'rgba(255,255,255,0.4)' },
   confirmTaskBtn: { backgroundColor: primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12, justifyContent: 'center' },
   confirmTaskBtnText: { color: '#fff', fontSize: 13, fontWeight: '900' },
-  deployBottomBtn: { marginHorizontal: 20, marginTop: 10 },
-  deployBottomGradient: { paddingVertical: 18, borderRadius: 16, alignItems: 'center', shadowColor: primary, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 16 },
-  deployBottomText: { color: '#fff', fontSize: 15, fontWeight: '900', letterSpacing: 1 },
+  threadRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 12, padding: 12, marginTop: 16, gap: 10 },
+  threadIconWrap: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  threadTitle: { fontSize: 14, fontWeight: '700' },
+  threadSub: { fontSize: 11 },
+  switchTrack: { width: 40, height: 22, borderRadius: 11, padding: 2, justifyContent: 'center' },
+  switchThumb: { width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff' },
+  CREATEBottomBtn: { marginHorizontal: 20, marginTop: 10 },
+  CREATEBottomGradient: { paddingVertical: 18, borderRadius: 16, alignItems: 'center', shadowColor: primary, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 16 },
+  CREATEBottomText: { color: '#fff', fontSize: 15, fontWeight: '900', letterSpacing: 1 },
   presetCard: { padding: 14, borderRadius: 16, borderWidth: 1, width: 140 },
   presetIconWrap: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
   presetTitle: { fontSize: 13, fontWeight: '800', marginBottom: 4 },
   presetSub: { fontSize: 11, fontWeight: '700' },
+  backdropGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  backdropOption: {
+    width: '30%', alignItems: 'center', gap: 6,
+    borderRadius: 12, borderWidth: 1.5, borderColor: 'transparent',
+    paddingVertical: 8,
+  },
+  backdropPreview: {
+    width: '100%', height: 48, borderRadius: 10, overflow: 'hidden',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+  },
+  backdropPreviewInner: { flex: 1 },
+  backdropLabel: { fontSize: 10, fontWeight: '700' },
+  imageSelectButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 12,
+  },
+  imageSelectText: { fontSize: 12, fontWeight: '700' },
+  previewWrap: {
+    marginTop: 12,
+    overflow: 'hidden',
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  previewImage: {
+    width: '100%',
+    height: 120,
+  },
+  dpPreviewWrap: {
+    marginTop: 12,
+    alignSelf: 'center',
+    overflow: 'hidden',
+    borderRadius: 18,
+    borderWidth: 1,
+  },
+  dpPreviewImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 18,
+  },
 });

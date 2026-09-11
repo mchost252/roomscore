@@ -13,6 +13,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeIn, FadeInRight, ZoomIn } from 'react-native-reanimated';
 import FastProofImage from './FastProofImage';
+import SwipeableRow from '../messaging/SwipeableRow';
 import { RoomTaskNode } from '../../types/room';
 import { useTheme } from '../../context/ThemeContext';
 
@@ -98,7 +99,7 @@ export const HeroBriefNode: React.FC<{
       <View style={styles.heroRow}>
         <View style={styles.heroLeft}>
           <Text style={[styles.heroTitle, { color: isDark ? '#fff' : '#0f172a' }]} numberOfLines={1}>{title}</Text>
-          <Text style={[styles.heroDesc, { color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(15,23,42,0.6)' }]} numberOfLines={1}>{description || 'Impact goal & mission spec'}</Text>
+          <Text style={[styles.heroDesc, { color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(15,23,42,0.6)' }]} numberOfLines={1}>{description || 'Impact goal & description'}</Text>
         </View>
 
         <View style={styles.heroRight}>
@@ -148,7 +149,7 @@ export const PinWallNode: React.FC<{
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pinWallScroll}>
         {proofs.map((proof, i) => (
-          <Animated.View key={proof.id} entering={ZoomIn.delay(i * 100).springify()}>
+          <Animated.View key={proof.id} entering={ZoomIn.delay(i * 100).duration(250)}>
             <View style={styles.pinFrame}>
               <FastProofImage 
                 mediaUrl={proof.mediaUrl!} 
@@ -298,13 +299,15 @@ export const ChatNode: React.FC<{
   node: RoomTaskNode & { isGroupStart?: boolean };
   isLast?: boolean;
   currentUserId?: string;
-}> = ({ node, isLast, currentUserId }) => {
+  onReply?: (node: RoomTaskNode) => void;
+}> = ({ node, isLast, currentUserId, onReply }) => {
   const { isDark } = useTheme();
   const isMyMessage = node.userId === currentUserId || node.user?.id === currentUserId;
   const showHeader = node.isGroupStart !== false;
-  
+
   return (
     <SubwayTrack isLast={isLast} dotColor={isDark ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.15)"} isDark={isDark} alignRight={isMyMessage}>
+      <SwipeableRow onReply={() => onReply?.(node)} enabled={!!onReply}>
       <Animated.View entering={FadeIn.duration(300)} style={[styles.chatCard, {
         backgroundColor: isMyMessage 
           ? (isDark ? 'rgba(139,92,246,0.15)' : 'rgba(139,92,246,0.1)')
@@ -334,6 +337,17 @@ export const ChatNode: React.FC<{
           </View>
         )}
 
+        {!!node.replyToText && (
+          <View style={{ borderLeftWidth: 2, borderLeftColor: '#8b5cf6', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, marginBottom: 6, backgroundColor: isDark ? 'rgba(139,92,246,0.1)' : 'rgba(139,92,246,0.06)' }}>
+            <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#c4b5fd' : '#6366f1' }} numberOfLines={1}>
+              {node.replyToUsername || 'message'}
+            </Text>
+            <Text style={{ fontSize: 12, color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)' }} numberOfLines={1}>
+              {node.replyToText}
+            </Text>
+          </View>
+        )}
+
         {node.mediaUrl && (
           <View style={{ marginTop: showHeader ? 2 : 0, marginBottom: node.content || node.caption ? 8 : 0 }}>
             <FastProofImage mediaUrl={node.mediaUrl} blurHash={node.blurHash} height={180} width={220} borderRadius={8} />
@@ -344,6 +358,7 @@ export const ChatNode: React.FC<{
           <Text style={[styles.chatText, { color: isDark ? 'rgba(255,255,255,0.85)' : 'rgba(15,23,42,0.85)' }]}>{node.caption || node.content}</Text>
         ) : null}
       </Animated.View>
+      </SwipeableRow>
     </SubwayTrack>
   );
 };

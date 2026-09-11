@@ -34,6 +34,8 @@ export interface LocalConversation {
   /** 'none' = already friends, 'pending_sent' = I sent request, 'pending_received' = they sent, 'accepted' */
   request_status: string;
   request_id: string | null;
+  is_pinned: number;
+  is_muted: number;
 }
 
 export interface LocalFriend {
@@ -45,16 +47,36 @@ export interface LocalFriend {
   created_at: number;
 }
 
+export interface LocalBlockedUser {
+  user_id: string;
+  username: string;
+  avatar: string | null;
+  created_at: number;
+}
+
 class SQLiteService {
   private db: any = null;
   private initialized = false;
+  private initializationPromise: Promise<void> | null = null;
   
   // In-memory storage for web platform when SQLite is unavailable
   private webConversations: LocalConversation[] = [];
   private webMessages: LocalDirectMessage[] = [];
+  private webReactions = new Map<string, Array<{ emoji: string; userId: string }>>();
+  private webBlockedUsers: LocalBlockedUser[] = [];
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
+    if (this.initializationPromise) return this.initializationPromise;
+    this.initializationPromise = this.initializeInternal();
+    try {
+      await this.initializationPromise;
+    } finally {
+      this.initializationPromise = null;
+    }
+  }
+
+  private async initializeInternal(): Promise<void> {
     if (isWeb) {
       console.log('ℹ️ SQLite skipped on web — using in-memory cache');
       this.initialized = true;
@@ -67,6 +89,7 @@ class SQLiteService {
       console.log('✅ SQLite initialized');
     } catch (error) {
       console.error('❌ SQLite initialization failed:', error);
+      this.db = null;
       // Fall back to in-memory storage on mobile if SQLite fails
       console.log('⚠️ Falling back to in-memory storage');
       this.initialized = true;
@@ -165,8 +188,30 @@ class SQLiteService {
         is_online INTEGER DEFAULT 0,
         updated_at INTEGER,
         request_status TEXT DEFAULT 'none',
-        request_id TEXT
+        request_id TEXT,
+        is_pinned INTEGER DEFAULT 0,
+        is_muted INTEGER DEFAULT 0
       );
+      CREATE INDEX IF NOT EXISTS idx_conversations_last_message_at ON conversations(last_message_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at DESC);
+    `);
+
+    // Add preference columns for databases created before pinning and muting existed.
+    try { await this.db.execAsync('ALTER TABLE conversations ADD COLUMN is_pinned INTEGER DEFAULT 0'); } catch {}
+    try { await this.db.execAsync('ALTER TABLE conversations ADD COLUMN is_muted INTEGER DEFAULT 0'); } catch {}
+
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS message_reactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_id TEXT NOT NULL,
+        emoji TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        count INTEGER DEFAULT 1,
+        created_at INTEGER DEFAULT (strftime('%s', 'now')),
+        UNIQUE(message_id, emoji, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_reactions_message ON message_reactions(message_id);
+      CREATE INDEX IF NOT EXISTS idx_reactions_user ON message_reactions(user_id);
     `);
 
     await this.db.execAsync(`
@@ -180,6 +225,32 @@ class SQLiteService {
       );
       CREATE INDEX IF NOT EXISTS idx_friends_user_id ON friends(user_id);
     `);
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS blocked_users (
+        user_id TEXT PRIMARY KEY NOT NULL,
+        username TEXT NOT NULL DEFAULT '',
+        avatar TEXT,
+        created_at INTEGER NOT NULL
+      );
+    `);
+  }
+
+  async saveBlockedUser(user: LocalBlockedUser): Promise<void> {
+    if (!this.db) {
+      this.webBlockedUsers = [...this.webBlockedUsers.filter(u => u.user_id !== user.user_id), user];
+      return;
+    }
+    await this.db.runAsync('INSERT OR REPLACE INTO blocked_users (user_id, username, avatar, created_at) VALUES (?, ?, ?, ?)', [user.user_id, user.username, user.avatar, user.created_at]);
+  }
+
+  async removeBlockedUser(userId: string): Promise<void> {
+    if (!this.db) { this.webBlockedUsers = this.webBlockedUsers.filter(u => u.user_id !== userId); return; }
+    await this.db.runAsync('DELETE FROM blocked_users WHERE user_id = ?', [userId]);
+  }
+
+  async getBlockedUsers(): Promise<LocalBlockedUser[]> {
+    if (!this.db) return [...this.webBlockedUsers];
+    return await this.db.getAllAsync('SELECT * FROM blocked_users ORDER BY created_at DESC') as LocalBlockedUser[];
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -222,17 +293,32 @@ class SQLiteService {
   async saveDirectMessage(msg: LocalDirectMessage): Promise<void> {
     if (!this.db) {
       // In-memory storage for web
-      this.webMessages.push(msg);
+      const duplicate = this.webMessages.findIndex(existing =>
+        existing.id === msg.id ||
+        (!!msg.local_id && existing.local_id === msg.local_id) ||
+        (existing.from_user_id === msg.from_user_id &&
+          existing.to_user_id === msg.to_user_id &&
+          existing.content === msg.content &&
+          Math.abs(existing.created_at - msg.created_at) < 5000)
+      );
+      if (duplicate >= 0) this.webMessages[duplicate] = { ...this.webMessages[duplicate], ...msg };
+      else this.webMessages.push(msg);
       console.log('[SQLite] Saved message to in-memory:', msg.id || msg.local_id);
       return;
     }
-    await this.db.runAsync(
-      `INSERT OR REPLACE INTO direct_messages
-       (id, local_id, from_user_id, to_user_id, content, status, reply_to_id, reply_to_text, created_at, synced)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [msg.id, msg.local_id, msg.from_user_id, msg.to_user_id, msg.content,
-       msg.status, msg.reply_to_id, msg.reply_to_text, msg.created_at, msg.synced]
-    );
+    try {
+      await this.db.runAsync(
+        `INSERT OR REPLACE INTO direct_messages
+         (id, local_id, from_user_id, to_user_id, content, status, reply_to_id, reply_to_text, created_at, synced)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [msg.id, msg.local_id, msg.from_user_id, msg.to_user_id, msg.content,
+         msg.status, msg.reply_to_id, msg.reply_to_text, msg.created_at, msg.synced]
+      );
+    } catch (error) {
+      this.db = null;
+      this.webMessages.push(msg);
+      console.warn('[SQLite] Message write failed; using in-memory fallback:', error);
+    }
   }
 
   async getDirectMessages(userId: string, friendId: string, limit = 50, before?: number): Promise<LocalDirectMessage[]> {
@@ -257,9 +343,39 @@ class SQLiteService {
     const params = before
       ? [userId, friendId, friendId, userId, before, limit]
       : [userId, friendId, friendId, userId, limit];
-    const rows = await this.db.getAllAsync(query, params) as any[];
+    let rows: any[];
+    try {
+      rows = await this.db.getAllAsync(query, params) as any[];
+    } catch (error) {
+      this.db = null;
+      console.warn('[SQLite] Message read failed; using in-memory fallback:', error);
+      return this.webMessages
+        .filter(m => (m.from_user_id === userId && m.to_user_id === friendId) ||
+          (m.from_user_id === friendId && m.to_user_id === userId))
+        .sort((a, b) => a.created_at - b.created_at)
+        .slice(0, limit);
+    }
     // Reverse to get ASCENDING order (oldest first, newest last)
     return rows.reverse();
+  }
+
+  async getDirectMessagePeer(messageId: string, userId: string): Promise<string | null> {
+    if (!this.db) {
+      const message = this.webMessages.find(
+        item => (item.id === messageId || item.local_id === messageId) &&
+          (item.from_user_id === userId || item.to_user_id === userId)
+      );
+      if (!message) return null;
+      return message.from_user_id === userId ? message.to_user_id : message.from_user_id;
+    }
+
+    const row = await this.db.getFirstAsync(
+      `SELECT from_user_id, to_user_id FROM direct_messages
+       WHERE id = ? OR local_id = ? LIMIT 1`,
+      [messageId, messageId]
+    ) as { from_user_id: string; to_user_id: string } | null;
+    if (!row) return null;
+    return row.from_user_id === userId ? row.to_user_id : row.from_user_id;
   }
 
   async getUnsyncedMessages(): Promise<LocalDirectMessage[]> {
@@ -285,7 +401,15 @@ class SQLiteService {
   }
 
   async updateMessageId(localId: string, serverId: string): Promise<void> {
-    if (!this.db) return;
+    if (!this.db) {
+      const local = this.webMessages.find(m => m.local_id === localId || m.id === localId);
+      if (!local) return;
+      const existing = this.webMessages.find(m => m.id === serverId && m !== local);
+      if (existing) this.webMessages = this.webMessages.filter(m => m !== local);
+      else Object.assign(local, { id: serverId, synced: 1, status: 'sent' });
+      return;
+    }
+    await this.db.runAsync('DELETE FROM direct_messages WHERE id = ? AND local_id != ?', [serverId, localId]);
     await this.db.runAsync(
       'UPDATE direct_messages SET id = ?, synced = 1, status = ? WHERE local_id = ?',
       [serverId, 'sent', localId]
@@ -395,14 +519,22 @@ class SQLiteService {
       console.log('[SQLite] Saved conversation to in-memory:', conv.friend_id);
       return;
     }
-    await this.db.runAsync(
-      `INSERT OR REPLACE INTO conversations
-       (friend_id, username, avatar, last_message, last_message_at, unread_count, is_online, updated_at, request_status, request_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [conv.friend_id, conv.username, conv.avatar, conv.last_message,
-       conv.last_message_at, conv.unread_count, conv.is_online, conv.updated_at,
-       conv.request_status || 'none', conv.request_id || null]
-    );
+    try {
+      await this.db.runAsync(
+        `INSERT OR REPLACE INTO conversations
+         (friend_id, username, avatar, last_message, last_message_at, unread_count, is_online, updated_at, request_status, request_id, is_pinned, is_muted)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [conv.friend_id, conv.username, conv.avatar, conv.last_message,
+         conv.last_message_at, conv.unread_count, conv.is_online, conv.updated_at,
+         conv.request_status || 'none', conv.request_id || null, conv.is_pinned || 0, conv.is_muted || 0]
+      );
+    } catch (error) {
+      this.db = null;
+      const index = this.webConversations.findIndex(c => c.friend_id === conv.friend_id);
+      if (index >= 0) this.webConversations[index] = conv;
+      else this.webConversations.push(conv);
+      console.warn('[SQLite] Conversation write failed; using in-memory fallback:', error);
+    }
   }
 
   async getConversations(): Promise<LocalConversation[]> {
@@ -410,9 +542,48 @@ class SQLiteService {
       console.log('[SQLite] Using in-memory conversations:', this.webConversations.length);
       return [...this.webConversations].sort((a, b) => (b.last_message_at || 0) - (a.last_message_at || 0));
     }
-    return this.db.getAllAsync(
-      'SELECT * FROM conversations ORDER BY last_message_at DESC'
-    ) as Promise<LocalConversation[]>;
+    try {
+      return await this.db.getAllAsync(
+        'SELECT * FROM conversations ORDER BY is_pinned DESC, last_message_at DESC'
+      ) as LocalConversation[];
+    } catch (error) {
+      this.db = null;
+      console.warn('[SQLite] Conversation read failed; using in-memory fallback:', error);
+      return [...this.webConversations].sort((a, b) => (b.last_message_at || 0) - (a.last_message_at || 0));
+    }
+  }
+
+  /**
+   * Total unread badge count, aggregated in SQL.
+   *
+   * The tab bar refreshes this on every conversation:list event, and doing it by
+   * loading every conversation row and reducing in JS meant deserialising the
+   * whole table just to produce one integer.
+   */
+  async getUnreadTotal(): Promise<number> {
+    if (!this.db) {
+      return this.webConversations.reduce(
+        (sum, c) => sum + (c.unread_count || 0) + (c.request_status === 'pending_received' ? 1 : 0),
+        0,
+      );
+    }
+    const row = await this.db.getFirstAsync(
+      `SELECT COALESCE(SUM(unread_count), 0)
+              + COALESCE(SUM(CASE WHEN request_status = 'pending_received' THEN 1 ELSE 0 END), 0) AS total
+       FROM conversations`,
+    ) as { total: number } | null;
+    return row?.total ?? 0;
+  }
+
+  async getConversationByFriendId(friendId: string): Promise<LocalConversation | null> {
+    if (!this.db) {
+      return this.webConversations.find(c => c.friend_id === friendId) ?? null;
+    }
+    const row = await this.db.getFirstAsync(
+      'SELECT * FROM conversations WHERE friend_id = ?',
+      [friendId]
+    ) as LocalConversation | null;
+    return row ?? null;
   }
 
   async updateConversationOnline(friendId: string, isOnline: boolean): Promise<void> {
@@ -468,6 +639,20 @@ class SQLiteService {
       'UPDATE conversations SET request_status = ?, request_id = ? WHERE friend_id = ?',
       [status, requestId || null, friendId]
     );
+  }
+
+  async updateConversationPreferences(friendId: string, preferences: { isPinned?: boolean; isMuted?: boolean }): Promise<void> {
+    const conversation = await this.getConversationByFriendId(friendId);
+    if (!conversation) return;
+
+    const updated = {
+      ...conversation,
+      is_pinned: preferences.isPinned === undefined ? conversation.is_pinned : preferences.isPinned ? 1 : 0,
+      is_muted: preferences.isMuted === undefined ? conversation.is_muted : preferences.isMuted ? 1 : 0,
+      updated_at: Date.now(),
+    };
+
+    await this.saveConversation(updated);
   }
 
   async getTotalUnreadCount(): Promise<number> {
@@ -587,6 +772,72 @@ class SQLiteService {
   }
 
   // ═══════════════════════════════════════════════════════════
+  // MESSAGE REACTIONS
+  // ═══════════════════════════════════════════════════════════
+  async addReaction(messageId: string, emoji: string, userId: string): Promise<void> {
+    if (!this.db) {
+      const current = this.webReactions.get(messageId) || [];
+      if (!current.some(reaction => reaction.emoji === emoji && reaction.userId === userId)) {
+        this.webReactions.set(messageId, [...current, { emoji, userId }]);
+      }
+      return;
+    }
+    // Use INSERT OR IGNORE to avoid race-created duplicates and rely on UNIQUE constraint
+    await this.db.runAsync(
+      `INSERT OR IGNORE INTO message_reactions (message_id, emoji, user_id, count) VALUES (?, ?, ?, 1)`,
+      [messageId, emoji, userId]
+    );
+  }
+
+  async removeReaction(messageId: string, emoji: string, userId: string): Promise<void> {
+    if (!this.db) {
+      this.webReactions.set(
+        messageId,
+        (this.webReactions.get(messageId) || []).filter(
+          reaction => !(reaction.emoji === emoji && reaction.userId === userId)
+        )
+      );
+      return;
+    }
+    await this.db.runAsync(
+      `DELETE FROM message_reactions WHERE message_id = ? AND emoji = ? AND user_id = ?`,
+      [messageId, emoji, userId]
+    );
+  }
+
+  async getReactions(messageId: string, currentUserId?: string): Promise<{ emoji: string; count: number; userReacted: boolean }[]> {
+    if (!this.db) {
+      const grouped = new Map<string, { count: number; userReacted: boolean }>();
+      for (const reaction of this.webReactions.get(messageId) || []) {
+        const current = grouped.get(reaction.emoji) || { count: 0, userReacted: false };
+        grouped.set(reaction.emoji, {
+          count: current.count + 1,
+          userReacted: current.userReacted || reaction.userId === currentUserId,
+        });
+      }
+      return [...grouped.entries()].map(([emoji, value]) => ({ emoji, ...value }));
+    }
+    const uid = currentUserId || '';
+    const rows = await this.db.getAllAsync(
+      `SELECT emoji, COUNT(*) as count, SUM(CASE WHEN user_id = ? THEN 1 ELSE 0 END) as user_reacted
+       FROM message_reactions WHERE message_id = ? GROUP BY emoji`,
+      [uid, messageId]
+    ) as any[];
+    return rows.map(r => ({ emoji: r.emoji, count: r.count || 0, userReacted: (r.user_reacted || 0) > 0 }));
+  }
+
+  async replaceReactions(messageId: string, reactions: Array<{ emoji: string; userId: string }>): Promise<void> {
+    if (!this.db) {
+      this.webReactions.set(messageId, reactions);
+      return;
+    }
+    await this.db.runAsync('DELETE FROM message_reactions WHERE message_id = ?', [messageId]);
+    for (const reaction of reactions) {
+      await this.addReaction(messageId, reaction.emoji, reaction.userId);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
   // MIGRATION & UTILITY
   // ═══════════════════════════════════════════════════════════
   async migrateFromAsyncStorage(threads: { taskId: number; messages: ThreadMessage[] }[]): Promise<void> {
@@ -609,18 +860,21 @@ class SQLiteService {
       DELETE FROM direct_messages;
       DELETE FROM conversations;
       DELETE FROM friends;
+      DELETE FROM message_reactions;
+      DELETE FROM blocked_users;
     `);
     console.log('🗑️ All data cleared');
   }
 
   async getStats(): Promise<any> {
-    if (!this.db) return { messages: 0, tasks: 0, syncQueue: 0, dms: 0, conversations: 0 };
-    const [messages, tasks, queue, dms, convs] = await Promise.all([
+    if (!this.db) return { messages: 0, tasks: 0, syncQueue: 0, dms: 0, conversations: 0, reactions: 0 };
+    const [messages, tasks, queue, dms, convs, reactions] = await Promise.all([
       this.db.getFirstAsync('SELECT COUNT(*) as count FROM thread_messages') as Promise<{count: number} | null>,
       this.db.getFirstAsync('SELECT COUNT(*) as count FROM tasks') as Promise<{count: number} | null>,
       this.db.getFirstAsync('SELECT COUNT(*) as count FROM sync_queue') as Promise<{count: number} | null>,
       this.db.getFirstAsync('SELECT COUNT(*) as count FROM direct_messages') as Promise<{count: number} | null>,
       this.db.getFirstAsync('SELECT COUNT(*) as count FROM conversations') as Promise<{count: number} | null>,
+      this.db.getFirstAsync('SELECT COUNT(*) as count FROM message_reactions') as Promise<{count: number} | null>,
     ]);
     return {
       messages: messages?.count || 0,
@@ -628,6 +882,7 @@ class SQLiteService {
       syncQueue: queue?.count || 0,
       dms: dms?.count || 0,
       conversations: convs?.count || 0,
+      reactions: reactions?.count || 0,
     };
   }
 }

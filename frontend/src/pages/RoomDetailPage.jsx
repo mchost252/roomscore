@@ -135,6 +135,7 @@ const RoomDetailPage = () => {
     points: 10,
     frequency: 'daily',
     daysOfWeek: [],
+    dueDate: '',
     category: 'other'
   });
   const [addingTask, setAddingTask] = useState(false);
@@ -1987,7 +1988,9 @@ const RoomDetailPage = () => {
 
               {(() => {
                 // Filter tasks to show only those scheduled for today
-                const today = new Date().getDay(); // 0 = Sunday, 1 = Monday, etc.
+                const now = new Date();
+                const today = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+                const todayStr = now.toISOString().slice(0, 10);
                 const todaysTasks = (room.tasks || []).filter(t => {
                   if (!t.isActive) return false;
                   
@@ -1997,8 +2000,9 @@ const RoomDetailPage = () => {
                   // 1. Daily tasks: Always visible
                   if (type === 'daily') return true;
 
-                  // 2. Weekly tasks: Currently hardcoded to Monday (1) in backend, so sync frontend
-                  if (type === 'weekly') return today === 1;
+                  // Legacy weekly tasks are normalized to daily by the API.
+                  if (type === 'weekly') return true;
+                  if (type === 'one-time') return !!t.dueDate && new Date(t.dueDate).toISOString().slice(0, 10) === todayStr;
 
                   // 3. Custom tasks: Robust parsing for String or Array
                   if (type === 'custom') {
@@ -3283,6 +3287,7 @@ const RoomDetailPage = () => {
               >
                 <option value="daily">Daily</option>
                 <option value="custom">Custom Days</option>
+                <option value="one-time">One-time</option>
               </TextField>
             </Box>
             {/* Custom Days Selector */}
@@ -3321,6 +3326,11 @@ const RoomDetailPage = () => {
                     Please select at least one day
                   </Typography>
                 )}
+                {newTask.frequency === 'one-time' && (
+                  <TextField type="date" label="Date" value={newTask.dueDate}
+                    onChange={(e) => setNewTask({ ...newTask, dueDate: e.target.value })}
+                    InputLabelProps={{ shrink: true }} fullWidth sx={{ mt: 2 }} />
+                )}
               </Box>
             )}
             <Button
@@ -3341,17 +3351,23 @@ const RoomDetailPage = () => {
                   setTimeout(() => setError(null), 5000);
                   return;
                 }
+                if (newTask.frequency === 'one-time' && !newTask.dueDate) {
+                  setError('Please select a date for one-time tasks');
+                  setTimeout(() => setError(null), 5000);
+                  return;
+                }
                 try {
                   setAddingTask(true);
                   const taskData = {
                     ...newTask,
                     taskType: newTask.frequency,
-                    daysOfWeek: newTask.frequency === 'custom' ? newTask.daysOfWeek : null
+                    daysOfWeek: newTask.frequency === 'custom' ? newTask.daysOfWeek : null,
+                    dueDate: newTask.frequency === 'one-time' ? newTask.dueDate : null
                   };
                   const response = await api.post(`/rooms/${roomId}/tasks`, taskData);
                   setSuccess('Task added successfully!');
                   setTimeout(() => setSuccess(null), 3000);
-                  setNewTask({ title: '', description: '', points: 10, frequency: 'daily', daysOfWeek: [], category: 'other' });
+                  setNewTask({ title: '', description: '', points: 10, frequency: 'daily', daysOfWeek: [], dueDate: '', category: 'other' });
                   
                   // Don't add to local state here - socket event will handle it
                   // This prevents duplicate tasks

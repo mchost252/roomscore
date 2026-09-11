@@ -18,10 +18,12 @@ model User {
   username              String    @unique
   googleId              String?   @unique
   avatar                String?
+  coverImage            String?
   bio                   String?
   timezone              String    @default("UTC")
   onboardingCompleted   Boolean   @default(false)
   pushSubscription      String?   // SQLite: stored as JSON string
+  notificationPreferences String? // JSON string for delivery preferences
   aiProfile             String?   // JSON string — learned AI preferences
   lastActive            DateTime  @default(now())
   streak                Int       @default(0)
@@ -42,18 +44,59 @@ model User {
   sentFriendRequests    Friend[]            @relation("FriendRequestFrom")
   receivedFriendRequests Friend[]           @relation("FriendRequestTo")
   notifications         Notification[]
+  pushDevices           PushDevice[]
   sentDirectMessages    DirectMessage[]     @relation("DirectMessageFrom")
   receivedDirectMessages DirectMessage[]    @relation("DirectMessageTo")
   personalTasks         PersonalTask[]
   userRoomProgress      UserRoomProgress[]
   mvpAwards             RoomMVP[]
   taskNodes             RoomTaskNode[]
+  focusSessions         FocusSession[]
   taskAssignments       RoomTaskAssignment[]
   assignedTasks         RoomTaskAssignment[]   @relation("UserAssignments")
+conversationPreferences ConversationPreference[]
+  userTrophies           UserTrophy[]
+  blocksInitiated        UserBlock[] @relation("BlocksInitiated")
+  blocksReceived          UserBlock[] @relation("BlocksReceived")
 
   @@index([email])
   @@index([username])
   @@index([googleId])
+}
+
+// ==================== USER TROPHY ====================
+// Records that a user has unlocked a given trophy. The catalog of possible
+// trophies lives in code (backend/catalog/trophies.js); this table only stores
+// unlock state and incremental progress so it survives across devices.
+model UserTrophy {
+  id          String    @id @default(cuid())
+  userId      String
+  trophyId    String    // matches a trophy id from the catalog
+  unlockedAt  DateTime?
+  progress    Int       @default(0)   // 0..100 for incremental trophies
+  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime  @default(now())
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, trophyId])
+  @@index([userId, unlockedAt])
+}
+
+// ==================== CONVERSATION PREFERENCE ====================
+model ConversationPreference {
+  id        String   @id @default(cuid())
+  userId    String
+  friendId  String
+  pinned    Boolean  @default(false)
+  muted     Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, friendId])
+  @@index([userId, pinned])
 }
 
 // ==================== ROOM ====================
@@ -77,6 +120,9 @@ model Room {
   startDate        DateTime  @default(now())
   endDate          DateTime?
   isActive         Boolean   @default(true)
+  coverImage       String?   // Room banner image URL (Cloudinary)
+  roomDp           String?   // Room display picture / avatar image URL (Cloudinary)
+  showJoinCode     Boolean   @default(false) // Owner opt-in: reveal join code to all members
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -123,10 +169,12 @@ model RoomTask {
   roomId      String
   title       String
   description String?
-  taskType    String   @default("daily") // daily, weekly, custom
+  taskType    String   @default("daily") // daily, custom, one-time (weekly is legacy and normalized)
   daysOfWeek  String?  // SQLite: stored as comma-separated (e.g., "1,2,3")
+  dueDate     DateTime? // Required for one-time tasks
   points      Int      @default(10)
   isActive    Boolean  @default(true)
+  hasThread   Boolean  @default(false) // Owner opt-in: social thread (nodes) enabled
   status      String   @default("upcoming") // upcoming, running, completed, rejected
   createdAt   DateTime @default(now())
 
@@ -188,6 +236,7 @@ model ChatMessage {
   type        String   @default("user") // user, system
   replyToId   String?  // ID of message being replied to
   replyToText String?  // Cached text of replied message (for display even if original deleted)
+  reactions   String?
   createdAt   DateTime @default(now())
 
   room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
@@ -250,22 +299,63 @@ model Friend {
   @@index([status])
 }
 
+// ==================== USER BLOCK ====================
+model UserBlock {
+  id        String   @id @default(cuid())
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+
+  blocker User @relation("BlocksInitiated", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("BlocksReceived", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
+}
+
 // ==================== NOTIFICATION ====================
 model Notification {
   id        String   @id @default(cuid())
   userId    String
-  type      String   // friend_request, room_invite, nudge, appreciation, system
+  type      String
   title     String
   message   String
   data      String?   // SQLite: stored as JSON string
   read      Boolean  @default(false)
+  readAt    DateTime?
+  seenAt    DateTime?
+  dedupeKey String?
+  category  String   @default("system")
+  priority  String   @default("normal")
+  expiresAt DateTime?
   createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId])
-  @@index([read])
+  @@unique([userId, dedupeKey])
+  @@index([userId, read, createdAt])
+  @@index([userId, category, read])
   @@index([createdAt])
+}
+
+model PushDevice {
+  id           String   @id @default(cuid())
+  userId       String
+  platform     String
+  token        String   @unique
+  subscription String?
+  appVersion   String?
+  enabled      Boolean  @default(true)
+  lastSeenAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, enabled])
+  @@index([lastSeenAt])
 }
 
 // ==================== DIRECT MESSAGE ====================
@@ -278,6 +368,7 @@ model DirectMessage {
   deletedFor   String?  // SQLite: stored as comma-separated userIds
   replyToId    String?  // ID of message being replied to
   replyToText  String?  // Cached text of replied message (for display even if original deleted)
+  reactions    String?
   createdAt    DateTime @default(now())
 
   fromUser   User     @relation("DirectMessageFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
@@ -367,6 +458,9 @@ model RoomTaskNode {
   mediaUrl    String?
   blurHash    String?
   heatLevel   Int      @default(0)
+  replyToId       String?  // ID of node being replied to
+  replyToText     String?  // Cached text of replied node
+  replyToUsername String?  // Cached username of replied node author
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -377,4 +471,27 @@ model RoomTaskNode {
   @@index([roomId])
   @@index([taskId])
   @@index([updatedAt])
+}
+
+// ==================== FOCUS SESSION ====================
+model FocusSession {
+  id              String   @id
+  userId          String
+  taskId          String?
+  taskTitle       String?
+  mode            String   @default("deep") // deep, sprint, flow, custom
+  durationMinutes Int      @default(25)
+  soundUsed       String?
+  status          String   @default("ACTIVE") // ACTIVE, COMPLETED, ABANDONED
+  reward          Int?
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  abandonedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
 }

@@ -16,7 +16,7 @@ type AccentColor = 'indigo' | 'purple' | 'cyan' | 'rose';
 // ─── Inline design tokens (kept here to avoid circular imports) ───────────────
 // theme.ts re-exports useTheme from here, so we cannot import from theme.ts.
 
-const DarkColors = {
+export const DarkColors = {
   // New flat API
   bg: '#080810',
   surface: 'rgba(255,255,255,0.06)',
@@ -88,7 +88,7 @@ const DarkColors = {
   },
 } as const;
 
-const LightColors = {
+export const LightColors = {
   // New flat API
   bg: '#f8f9ff',
   surface: 'rgba(0,0,0,0.04)',

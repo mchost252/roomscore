@@ -1,5 +1,14 @@
 const Joi = require('joi');
 
+// Images stored by the API must be hosted by Cloudinary.  In particular, do
+// not allow data URIs, which can make database rows and socket payloads huge.
+const cloudinaryUrl = Joi.string().custom((value, helpers) => {
+  if (/^https:\/\/res\.cloudinary\.com\/[^/]+\/.+/i.test(value)) return value;
+  return helpers.error('string.cloudinaryUrl');
+}).messages({
+  'string.cloudinaryUrl': '{{#label}} must be a secure Cloudinary URL'
+});
+
 // Validate request body against schema
 const validate = (schema) => {
   return (req, res, next) => {
@@ -42,8 +51,8 @@ exports.loginSchema = Joi.object({
 
 exports.updateProfileSchema = Joi.object({
   username: Joi.string().min(3).max(30),
-  avatar: Joi.string().uri().allow(null, ''),
-  coverImage: Joi.string().uri().allow(null, ''),
+  avatar: cloudinaryUrl.allow(null, ''),
+  coverImage: cloudinaryUrl.allow(null, ''),
   bio: Joi.string().max(500).allow(''),
   notificationSettings: Joi.object({
     taskReminders: Joi.boolean(),
@@ -61,15 +70,16 @@ exports.createRoomSchema = Joi.object({
   duration: Joi.string().valid('1_week', '2_weeks', '1_month'),
   requireApproval: Joi.boolean(),
   chatRetentionDays: Joi.number().min(1).max(5), // How long to keep chat messages
-  coverImage: Joi.string().uri().allow(null, ''),
-  roomDp: Joi.string().uri().allow(null, ''),
+  coverImage: cloudinaryUrl.allow(null, ''),
+  roomDp: cloudinaryUrl.allow(null, ''),
   tasks: Joi.array().items(Joi.object({
     title: Joi.string().min(1).max(100).required(),
     description: Joi.string().max(500).allow('', null),
     points: Joi.number().min(1).max(10), // Points limited to 1-10
-    taskType: Joi.string().valid('daily', 'weekly', 'custom'),
-    frequency: Joi.string().valid('daily', 'weekly', 'custom'),
+    taskType: Joi.string().valid('daily', 'custom', 'one-time', 'weekly'),
+    frequency: Joi.string().valid('daily', 'custom', 'one-time', 'weekly'),
     daysOfWeek: Joi.array().items(Joi.number().min(0).max(6)), // For custom frequency
+    dueDate: Joi.date().iso().allow('', null),
     hasThread: Joi.boolean() // Owner opt-in: social thread enabled
   })),
   settings: Joi.object({
@@ -85,8 +95,8 @@ exports.updateRoomSchema = Joi.object({
   description: Joi.string().max(500).allow(''),
   isPublic: Joi.boolean(),
   maxMembers: Joi.number().min(2).max(100),
-  coverImage: Joi.string().uri().allow(null, ''),
-  roomDp: Joi.string().uri().allow(null, ''),
+  coverImage: cloudinaryUrl.allow(null, ''),
+  roomDp: cloudinaryUrl.allow(null, ''),
   settings: Joi.object({
     timezone: Joi.string(),
     allowMemberTaskCreation: Joi.boolean(),
@@ -96,7 +106,7 @@ exports.updateRoomSchema = Joi.object({
 });
 
 exports.updateRoomDpSchema = Joi.object({
-  roomDp: Joi.string().uri().allow(null, '').required()
+  roomDp: cloudinaryUrl.allow(null, '').required()
 });
 
 exports.updateMemberRoleSchema = Joi.object({
@@ -114,9 +124,10 @@ exports.createTaskSchema = Joi.object({
   description: Joi.string().max(500).allow('', null),
   points: Joi.number().min(1).max(10).required(), // Points limited to 1-10
   category: Joi.string().valid('health', 'productivity', 'learning', 'social', 'finance', 'other').allow('', null),
-  frequency: Joi.string().valid('daily', 'weekly', 'custom').allow('', null),
-  taskType: Joi.string().valid('daily', 'weekly', 'custom').allow('', null),
+  frequency: Joi.string().valid('daily', 'custom', 'one-time', 'weekly').allow('', null),
+  taskType: Joi.string().valid('daily', 'custom', 'one-time', 'weekly').allow('', null),
   daysOfWeek: Joi.array().items(Joi.number().min(0).max(6)).allow(null), // For custom frequency
+  dueDate: Joi.date().iso().allow('', null),
   deadline: Joi.date().iso().allow('', null),
   hasThread: Joi.boolean() // Owner opt-in: social thread enabled
 }).or('frequency', 'taskType'); // At least one of frequency or taskType must be present
@@ -126,9 +137,10 @@ exports.updateTaskSchema = Joi.object({
   description: Joi.string().max(500).allow('', null),
   points: Joi.number().min(1).max(10), // Points limited to 1-10
   category: Joi.string().valid('health', 'productivity', 'learning', 'social', 'finance', 'other').allow('', null),
-  frequency: Joi.string().valid('daily', 'weekly', 'custom').allow('', null),
-  taskType: Joi.string().valid('daily', 'weekly', 'custom').allow('', null),
+  frequency: Joi.string().valid('daily', 'custom', 'one-time', 'weekly').allow('', null),
+  taskType: Joi.string().valid('daily', 'custom', 'one-time', 'weekly').allow('', null),
   daysOfWeek: Joi.array().items(Joi.number().min(0).max(6)).allow(null), // For custom frequency
+  dueDate: Joi.date().iso().allow('', null),
   deadline: Joi.date().iso().allow('', null),
   isActive: Joi.boolean(),
   hasThread: Joi.boolean() // Owner opt-in: social thread enabled

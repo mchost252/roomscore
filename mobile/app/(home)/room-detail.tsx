@@ -3,7 +3,7 @@
  *
  * Architecture:
  *   RoomHeader (swipeable: identity front / metadata back)
- *   RoomCalendar (3-level: collapsed strip → expanded week → full month)
+ *   RoomCalendar (two-level: weekly strip → full month)
  *   RoomPulse (live activity feed, one notification at a time)
  *   Task Sections (Active [open], Pending [collapsed], Spectating [collapsed])
  *     └─ TaskCard (clean card: title, deadline, avatars, progress bar)
@@ -24,6 +24,7 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   Platform,
+  ScrollView,
 } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -133,13 +134,32 @@ const RoomDetailScreen: React.FC = () => {
   // ── Derived data (PRESERVED) ──────────────────────────────────────────────
   const filteredTasks = useMemo(() => {
     if (!selectedDate) return tasks;
-    
-    // Check if tasks match the selected day (or are daily)
+
+    const selectedDay = selectedDate.getDay();
+    const selectedDateKey = [
+      selectedDate.getFullYear(),
+      String(selectedDate.getMonth() + 1).padStart(2, '0'),
+      String(selectedDate.getDate()).padStart(2, '0'),
+    ].join('-');
+
     return tasks.filter(t => {
       if (!t.createdAt) return true;
       const created = new Date(t.createdAt);
-      // Simplify: show tasks created on or before the selected date
-      return created.getTime() <= selectedDate.getTime() + (24 * 60 * 60 * 1000);
+      if (created.getTime() > selectedDate.getTime() + (24 * 60 * 60 * 1000)) return false;
+
+      const taskType = t.taskType === 'weekly' ? 'daily' : (t.taskType || 'daily');
+      if (taskType === 'daily') return true;
+      if (taskType === 'one-time') {
+        if (!t.dueDate) return false;
+        return new Date(t.dueDate).toISOString().slice(0, 10) === selectedDateKey;
+      }
+      if (taskType === 'custom') {
+        const days = Array.isArray(t.daysOfWeek)
+          ? t.daysOfWeek
+          : String(t.daysOfWeek || '').split(',').map(Number).filter(Number.isInteger);
+        return days.includes(selectedDay);
+      }
+      return true;
     });
   }, [tasks, selectedDate]);
 
@@ -286,13 +306,14 @@ const RoomDetailScreen: React.FC = () => {
     points?: number;
     taskType?: string;
     daysOfWeek?: number[];
+    hasThread?: boolean;
   }) => {
     setShowTaskModal(false);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     if (taskData.id) {
-      const patchData = { ...taskData, daysOfWeek: taskData.daysOfWeek?.join(',') };
-      updateTask(taskData.id, patchData as any); 
+      const patchData = { ...taskData };
+      updateTask(taskData.id, patchData as any);
       try {
         const updatedTask = await taskService.updateTask(roomId, taskData.id, patchData as any);
         updateTask(taskData.id, updatedTask);
@@ -315,6 +336,14 @@ const RoomDetailScreen: React.FC = () => {
 
   const handleTaskPress = useCallback((task: Task) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    // Normal task (no thread): open the completion flow instead of navigating
+    if (!task.hasThread) {
+      setSelectedTask(task);
+      setShowCompletionModal(true);
+      return;
+    }
+
     router.push({
       pathname: '/(home)/room-task-thread',
       params: {
@@ -330,6 +359,15 @@ const RoomDetailScreen: React.FC = () => {
       },
     });
   }, [roomId, room?.name, isOwner]);
+
+  const handleTaskCheckboxPress = useCallback((task: Task) => {
+    if (task.isCompleted) {
+      handleTaskUncomplete(task);
+      return;
+    }
+    setSelectedTask(task);
+    setShowCompletionModal(true);
+  }, [handleTaskUncomplete]);
 
   const handleTaskJoin = useCallback(async (task: Task) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -562,6 +600,17 @@ const RoomDetailScreen: React.FC = () => {
                       <Text style={[styles.tabBadgeText, isActive && { color: '#fff' }]}>{count}</Text>
                     </View>
                   )}
+                  {isActive && (
+                    <View
+                      style={[
+                        styles.tabIndicator,
+                        {
+                          width: tab === 'active' ? 82 : tab === 'spectating' ? 78 : 58,
+                          backgroundColor: '#6366f1',
+                        },
+                      ]}
+                    />
+                  )}
                 </TouchableOpacity>
               );
             })}
@@ -570,7 +619,13 @@ const RoomDetailScreen: React.FC = () => {
           {/* Active Tab Content */}
           <View style={styles.tabContent}>
             {activeTab === 'active' && (
-              <>
+              <ScrollView
+                nestedScrollEnabled
+                scrollEnabled={activeTaskList.length > 5}
+                showsVerticalScrollIndicator={activeTaskList.length > 5}
+                style={activeTaskList.length > 5 ? styles.taskListScroller : undefined}
+                contentContainerStyle={styles.taskListContent}
+              >
                 {activeTaskList.length === 0 ? (
                   <GhostTaskCard isDark={isDark} />
                 ) : (
@@ -583,15 +638,22 @@ const RoomDetailScreen: React.FC = () => {
                       accentColor="#6366f1"
                       onPress={() => handleTaskPress(task)}
                       onMenuPress={handleTaskMenuPress}
+                      onComplete={handleTaskCheckboxPress}
                     />
                   ))
                 )}
-              </>
+              </ScrollView>
             )}
 
             {activeTab === 'pending' && (
-              <>
-                {pendingTaskList.map((task, i) => (
+              <ScrollView
+                nestedScrollEnabled
+                scrollEnabled={pendingTaskList.length > 5}
+                showsVerticalScrollIndicator={pendingTaskList.length > 5}
+                style={pendingTaskList.length > 5 ? styles.taskListScroller : undefined}
+                contentContainerStyle={styles.taskListContent}
+              >
+                {                pendingTaskList.map((task, i) => (
                   <TaskCard
                     key={task.id}
                     task={task}
@@ -600,14 +662,21 @@ const RoomDetailScreen: React.FC = () => {
                     accentColor="#22c55e"
                     onPress={() => handleTaskPress(task)}
                     onMenuPress={handleTaskMenuPress}
+                    onComplete={handleTaskCheckboxPress}
                   />
                 ))}
-              </>
+              </ScrollView>
             )}
 
             {activeTab === 'spectating' && (
-              <>
-                {spectatingTaskList.map((task, i) => (
+              <ScrollView
+                nestedScrollEnabled
+                scrollEnabled={spectatingTaskList.length > 5}
+                showsVerticalScrollIndicator={spectatingTaskList.length > 5}
+                style={spectatingTaskList.length > 5 ? styles.taskListScroller : undefined}
+                contentContainerStyle={styles.taskListContent}
+              >
+                {                spectatingTaskList.map((task, i) => (
                   <TaskCard
                     key={task.id}
                     task={task}
@@ -621,7 +690,7 @@ const RoomDetailScreen: React.FC = () => {
                     onMenuPress={handleTaskMenuPress}
                   />
                 ))}
-              </>
+              </ScrollView>
             )}
           </View>
         </View>
@@ -799,13 +868,15 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   taskSections: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     marginTop: 6,
   },
   tabBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    justifyContent: 'space-between',
+    marginBottom: 14,
+    paddingHorizontal: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(150,150,150,0.2)',
   },
@@ -813,13 +884,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
+    paddingHorizontal: 10,
     gap: 6,
+    flex: 1,
+    justifyContent: 'center',
+    position: 'relative',
   },
   tabBtnActive: {
-    borderBottomColor: '#6366f1',
   },
   tabLabel: {
     fontSize: 15,
@@ -827,6 +898,13 @@ const styles = StyleSheet.create({
   },
   tabLabelActive: {
     fontWeight: '800',
+  },
+  tabIndicator: {
+    position: 'absolute',
+    bottom: -1,
+    height: 2,
+    width: 46,
+    borderRadius: 1,
   },
   tabBadge: {
     backgroundColor: 'rgba(150,150,150,0.2)',
@@ -840,7 +918,13 @@ const styles = StyleSheet.create({
     color: 'rgba(150,150,150,0.6)',
   },
   tabContent: {
-    minHeight: 200,
+    minHeight: 180,
+  },
+  taskListScroller: {
+    maxHeight: 520,
+  },
+  taskListContent: {
+    paddingBottom: 2,
   },
   emptySection: {
     alignItems: 'center',

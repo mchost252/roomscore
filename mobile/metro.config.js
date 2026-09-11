@@ -1,4 +1,6 @@
 const { getDefaultConfig } = require('expo/metro-config');
+const path = require('path');
+const fs = require('fs');
 
 const config = getDefaultConfig(__dirname);
 
@@ -9,6 +11,21 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     return {
       type: 'empty',
     };
+  }
+
+  // Fix for zustand v5 ESM using import.meta.env on web
+  // The ESM files (esm/middleware.mjs) contain `import.meta.env` (Vite-specific),
+  // which crashes when loaded as a classic script in the browser.
+  // Force CJS resolution (.js files) on web to avoid this.
+  if (platform === 'web' && moduleName.startsWith('zustand')) {
+    const cjsPath = path.join(__dirname, 'node_modules', `${moduleName}.js`);
+    if (fs.existsSync(cjsPath)) {
+      return { type: 'sourceFile', filePath: cjsPath };
+    }
+    const indexPath = path.join(__dirname, 'node_modules', moduleName, 'index.js');
+    if (fs.existsSync(indexPath)) {
+      return { type: 'sourceFile', filePath: indexPath };
+    }
   }
 
   // Redirect Node.js-specific WebSocket imports to standard ones

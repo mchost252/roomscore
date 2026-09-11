@@ -11,6 +11,7 @@ export default function useNotifications() {
   const [error, setError] = useState(null);
   const lastFetchRef = useRef(0);
   const isFetchingRef = useRef(false);
+  const seenNotificationIdsRef = useRef(new Set());
 
   // Throttled fetch - minimum 30 seconds between API calls
   const fetchUnread = useCallback(async (force = false) => {
@@ -33,8 +34,8 @@ export default function useNotifications() {
     setLoading(true);
     
     try {
-      const res = await api.get('/notifications/unread-count');
-      setUnreadCount(res.data.unreadCount || 0);
+      const res = await api.get('/notifications/unread-summary');
+      setUnreadCount(typeof res.data?.counts?.total === 'number' ? res.data.counts.total : 0);
       setError(null);
       lastFetchRef.current = Date.now();
     } catch (e) {
@@ -76,7 +77,10 @@ export default function useNotifications() {
     if (!user) return;
 
     const handleCount = (payload) => {
-      if (typeof payload?.unreadCount === 'number') {
+      if (typeof payload?.total === 'number') {
+        setUnreadCount(payload.total);
+        lastFetchRef.current = Date.now();
+      } else if (typeof payload?.unreadCount === 'number') {
         setUnreadCount(payload.unreadCount);
         // Update lastFetch since we got fresh data via socket
         lastFetchRef.current = Date.now();
@@ -84,16 +88,21 @@ export default function useNotifications() {
     };
 
     on('notification:unreadCount', handleCount);
+    on('notification:counts', handleCount);
 
     // When new notification arrives, just increment locally instead of refetching
     const handleNew = (payload) => {
-      // Increment count locally - socket gives us real-time updates
+      const notification = payload?.notification;
+      const id = notification?._id || notification?.id;
+      if (id && seenNotificationIdsRef.current.has(id)) return;
+      if (id) seenNotificationIdsRef.current.add(id);
       setUnreadCount(prev => prev + 1);
     };
     on('notification:new', handleNew);
 
     return () => {
       off('notification:unreadCount', handleCount);
+      off('notification:counts', handleCount);
       off('notification:new', handleNew);
     };
   }, [user, on, off]);

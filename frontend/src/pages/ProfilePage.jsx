@@ -205,30 +205,56 @@ const ProfilePage = () => {
     }
   };
 
-  const handleAvatarChange = (e) => {
+  const handleAvatarChange = async (e) => {
     const file = e.target.files[0];
-    if (file) {
-      // Check file size (max 5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        setError('File size must be less than 5MB');
-        return;
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      setError('File size must be less than 5MB');
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please select an image file');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'dbdevaaxz';
+      const uploadPreset = 'krios_unsigned';
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', uploadPreset);
+      formData.append('folder', `krios/avatars/${user?.id || 'guest'}`);
+      formData.append('quality', 'auto');
+      formData.append('fetch_format', 'auto');
+
+      const res = await fetch(
+        `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+        {
+          method: 'POST',
+          body: formData,
+        }
+      );
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Upload failed: ${res.status} ${errText}`);
       }
 
-      // Check file type
-      if (!file.type.startsWith('image/')) {
-        setError('Please select an image file');
-        return;
-      }
+      const data = await res.json();
+      const cloudinaryUrl = data.secure_url;
 
       setAvatarFile(file);
-      
-      // Create preview
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setAvatarPreview(reader.result);
-        setEditData(prev => ({ ...prev, avatar: reader.result }));
-      };
-      reader.readAsDataURL(file);
+      setAvatarPreview(cloudinaryUrl);
+      setEditData((prev) => ({ ...prev, avatar: cloudinaryUrl }));
+    } catch (err) {
+      console.error('Avatar upload error:', err);
+      setError(err.message || 'Failed to upload avatar');
+    } finally {
+      setLoading(false);
     }
   };
 

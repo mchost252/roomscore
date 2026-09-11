@@ -497,6 +497,7 @@ const DashboardPage = () => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true); // Start with loading true
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showMobilePromo, setShowMobilePromo] = useState(false);
   const [showRebrandPromo, setShowRebrandPromo] = useState(false);
@@ -870,6 +871,11 @@ const DashboardPage = () => {
       {error && (
         <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
           {error}
+        </Alert>
+      )}
+      {success && (
+        <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>
+          {success}
         </Alert>
       )}
 

@@ -28,6 +28,9 @@ if (Platform.OS !== 'web') {
     console.error('Failed to load expo-sqlite', e);
   }
 }
+let roomDbPromise: Promise<any> | null = null;
+let roomDbInitialized = false;
+let roomDbInitPromise: Promise<void> | null = null;
 
 // In-Memory Mock DB for Web Development
 const webMemoryStore: Record<string, any[]> = {
@@ -82,13 +85,38 @@ export const getRoomDb = async (): Promise<any> => {
   if (Platform.OS === 'web') {
     return mockWebDb;
   }
-  return await openDatabaseAsync(dbName);
+  if (!openDatabaseAsync) {
+    throw new Error('[RoomDb] expo-sqlite is unavailable on this platform');
+  }
+  if (!roomDbPromise) {
+    roomDbPromise = openDatabaseAsync(dbName);
+  }
+  const db = await roomDbPromise;
+  if (!db || typeof db.execAsync !== 'function') {
+    throw new Error('[RoomDb] database handle is unavailable or not ready');
+  }
+  if (!roomDbInitialized) await initRoomDb();
+  return db;
 };
 
 export const initRoomDb = async () => {
   if (Platform.OS === 'web') return; 
+  if (roomDbInitialized) return;
+  if (roomDbInitPromise) return roomDbInitPromise;
+  roomDbInitPromise = initializeRoomDb();
   try {
-    const db = await getRoomDb();
+    await roomDbInitPromise;
+  } finally {
+    roomDbInitPromise = null;
+  }
+};
+
+async function initializeRoomDb(): Promise<void> {
+  try {
+    if (!openDatabaseAsync) throw new Error('expo-sqlite is unavailable');
+    if (!roomDbPromise) roomDbPromise = openDatabaseAsync(dbName);
+    const db = await roomDbPromise;
+    if (!db) throw new Error('database handle is unavailable');
     
     // Enable WAL mode for better concurrency and enforce foreign keys
     await db.execAsync('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
@@ -150,6 +178,9 @@ export const initRoomDb = async () => {
         mediaUrl TEXT,
         blurHash TEXT,
         heatLevel INTEGER DEFAULT 0,
+        replyToId TEXT,
+        replyToText TEXT,
+        replyToUsername TEXT,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL,
         userJson TEXT,
@@ -169,13 +200,25 @@ export const initRoomDb = async () => {
     try {
       await db.execAsync('ALTER TABLE room_task_nodes ADD COLUMN isPinned INTEGER DEFAULT 0;');
     } catch {}
+    try {
+      await db.execAsync('ALTER TABLE room_task_nodes ADD COLUMN replyToId TEXT;');
+    } catch {}
+    try {
+      await db.execAsync('ALTER TABLE room_task_nodes ADD COLUMN replyToText TEXT;');
+    } catch {}
+    try {
+      await db.execAsync('ALTER TABLE room_task_nodes ADD COLUMN replyToUsername TEXT;');
+    } catch {}
 
     console.log('Room DB Initialized with WAL and Indexes');
+    roomDbInitialized = true;
 
   } catch (error) {
     console.error('Error initializing Room DB:', error);
+    roomDbPromise = null;
+    throw error;
   }
-};
+}
 
 // ==================== JANITOR ====================
 export const runDataJanitor = async () => {

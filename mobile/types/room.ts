@@ -61,7 +61,7 @@ export interface RoomTask {
   roomId: string;
   title: string;
   description?: string;
-  taskType: string;
+  taskType: 'daily' | 'custom' | 'one-time' | string;
   daysOfWeek?: string;
   points: number;
   isActive: boolean;
@@ -110,6 +110,9 @@ export interface RoomTaskNode {
     username: string;
     avatar?: string;
   };
+  replyToId?: string | null;
+  replyToText?: string | null;
+  replyToUsername?: string | null;
 }
 
 export interface RoomUserAura {

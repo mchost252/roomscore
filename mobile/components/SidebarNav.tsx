@@ -8,6 +8,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, usePathname } from 'expo-router';
 import { useTheme } from '../context/ThemeContext';
 import messageService from '../services/messageService';
+import { MORE_ROUTE, MORE_TAB_INDEX } from '../constants/homeTabs';
+import notificationService, { NotificationCounts } from '../services/notificationService';
+import syncEngine from '../services/syncEngine';
 
 const { height: SH } = Dimensions.get('window');
 const ITEM_H  = 48;
@@ -18,12 +21,14 @@ const NAV_ITEMS = [
   { icon: 'home',                label: 'Home',     route: '/(home)',          active: ['/', '/(home)', '/(home)/index', '/index'] },
   { icon: 'briefcase-outline',   label: 'Rooms',    route: '/(home)/rooms',    active: ['/(home)/rooms', '/rooms'] },
   { icon: 'chatbubbles-outline', label: 'Messages', route: '/(home)/messages', active: ['/(home)/messages', '/messages'] },
-  { icon: 'person-outline',      label: 'Profile',  route: '/(home)/profile',  active: ['/(home)/profile', '/profile'] },
+  // More replaces the old Profile entry, matching the bottom tab bar so the two
+  // navigation styles stay interchangeable.
+  { icon: 'ellipsis-horizontal', label: 'More',     route: '/(home)/more',     active: ['/(home)/more', '/more'] },
   { icon: 'settings-outline',    label: 'Settings', route: '/(home)/settings', active: ['/(home)/settings', '/settings'] },
   { icon: 'add-circle-outline',  label: 'Add Task', route: 'add',              active: [] },
 ] as const;
 
-const FADE_ROUTES = ['/profile', '/settings', '/rooms', '/chat', '/(home)/profile', '/(home)/settings', '/(home)/rooms', '/(home)/chat'];
+const FADE_ROUTES = ['/profile', '/settings', '/appearance', '/more', '/rooms', '/chat', '/(home)/profile', '/(home)/settings', '/(home)/appearance', '/(home)/more', '/(home)/rooms', '/(home)/chat'];
 
 const N = NAV_ITEMS.length; // nav items count
 const OPEN_H  = K_SIZE + N * ITEM_H + 8;
@@ -35,7 +40,7 @@ interface Props {
   onNavigate?: (route: string) => void;
 }
 
-export default function SidebarNav({ activeTabIndex, onAIPress, onAddTask, onNavigate }: Props) {
+export default React.memo(function SidebarNav({ activeTabIndex, onAIPress, onAddTask, onNavigate }: Props) {
   const { colors, isDark } = useTheme();
   const router   = useRouter();
   const pathname = usePathname();
@@ -47,6 +52,7 @@ export default function SidebarNav({ activeTabIndex, onAIPress, onAddTask, onNav
   const [open, setOpen] = useState(false);
   const [labeled, setLabeled] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [notificationCounts, setNotificationCounts] = useState<NotificationCounts>(notificationService.getUnreadCounts());
 
   // Sync refs and state
   const setOpenWithRef = useCallback((value: boolean) => {
@@ -67,11 +73,18 @@ export default function SidebarNav({ activeTabIndex, onAIPress, onAddTask, onNav
   }, []);
 
   React.useEffect(() => {
+    notificationService.syncUnreadBadge().then((counts) => {
+      if (counts) setNotificationCounts(counts);
+    });
+    const unsubscribeCounts = syncEngine.on('notification:counts', (counts) => {
+      setNotificationCounts(counts as NotificationCounts);
+    });
     refreshUnread();
     const unsub = (messageService as any).on?.('conversation:list', refreshUnread);
     return () => {
       (messageService as any).off?.('conversation:list', refreshUnread);
       if (typeof unsub === 'function') unsub();
+      unsubscribeCounts();
     };
   }, [refreshUnread]);
 
@@ -149,7 +162,15 @@ export default function SidebarNav({ activeTabIndex, onAIPress, onAddTask, onNav
     setTimeout(() => {
       if      (route === 'ai')  { onAIPress(); }
       else if (route === 'add') { onAddTask(); }
-      else if (onNavigate && route.startsWith('/(home)') && route !== '/(home)/settings') { onNavigate(route); }
+      // Settings and More must be pushed: onNavigate uses router.replace for tab
+      // switches, which would destroy the back stack these screens rely on
+      // (More is a modal, Settings is a pushed detail).
+      else if (
+        onNavigate
+        && route.startsWith('/(home)')
+        && route !== '/(home)/settings'
+        && route !== MORE_ROUTE
+      ) { onNavigate(route); }
       else                      { router.push(route as any); }
     }, 16);
   }, [onAIPress, onAddTask, onNavigate, router, doClose]);
@@ -208,7 +229,7 @@ export default function SidebarNav({ activeTabIndex, onAIPress, onAddTask, onNav
               item.route === '/(home)' ? 0 :
               item.route === '/(home)/rooms' ? 1 :
               item.route === '/(home)/messages' ? 2 :
-              item.route === '/(home)/profile' ? 3 :
+              item.route === MORE_ROUTE ? MORE_TAB_INDEX :
               undefined;
             const routeActive = item.active.some((a: string) => {
               if (a === '/' || a === '/(home)' || a === '/(home)/index' || a === '/index') {
@@ -241,9 +262,14 @@ export default function SidebarNav({ activeTabIndex, onAIPress, onAddTask, onNav
                 ]}>
                   <View>
                     <Ionicons name={item.icon as any} size={19} color={iColor} />
-                    {item.label === 'Messages' && unreadCount > 0 && (
+                    {item.label === 'Messages' && Math.max(unreadCount, notificationCounts.messages) > 0 && (
                       <View style={styles.unreadBadge}>
-                        <Text style={styles.unreadText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+                        <Text style={styles.unreadText}>{Math.max(unreadCount, notificationCounts.messages) > 99 ? '99+' : Math.max(unreadCount, notificationCounts.messages)}</Text>
+                      </View>
+                    )}
+                    {item.label === 'More' && notificationCounts.friendRequests > 0 && (
+                      <View style={styles.unreadBadge}>
+                        <Text style={styles.unreadText}>{notificationCounts.friendRequests > 99 ? '99+' : notificationCounts.friendRequests}</Text>
                       </View>
                     )}
                   </View>
@@ -258,7 +284,7 @@ export default function SidebarNav({ activeTabIndex, onAIPress, onAddTask, onNav
       </Animated.View>
     </>
   );
-}
+});
 
 const styles = StyleSheet.create({
   backdrop: {

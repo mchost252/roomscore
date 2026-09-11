@@ -2,6 +2,15 @@ const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth');
 const { prisma } = require('../config/database');
+const { evaluateAndUnlock } = require('../services/trophyService');
+const logger = require('../utils/logger');
+
+function fireTrophyCheck(userId) {
+  if (!userId) return;
+  evaluateAndUnlock(userId).catch((err) =>
+    logger.error(`Trophy evaluation failed for ${userId}:`, err.message),
+  );
+}
 
 // @route   GET /api/personal-tasks
 // @desc    Get user's personal tasks
@@ -162,6 +171,8 @@ router.post('/:taskId/complete', protect, async (req, res, next) => {
 
     const io = req.app.get('io');
     io?.to(`user:${req.user.id}`).emit('personal_task:updated', { task: updatedTask });
+
+    fireTrophyCheck(req.user.id);
 
     res.json({ success: true, task: updatedTask });
   } catch (error) {

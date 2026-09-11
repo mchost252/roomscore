@@ -36,20 +36,20 @@ export default function MissionBriefModal({ visible, task, onClose, onAcceptMiss
 
         <Animated.View
           style={[styles.sheet, { backgroundColor: sheetBg }]}
-          entering={SlideInDown.springify().damping(18)}
+          entering={SlideInDown.duration(250)}
           exiting={SlideOutDown}
         >
           {/* Header */}
           <View style={styles.header}>
             <View style={[styles.iconBox, { backgroundColor: iconBoxBg }]}>
-              <Ionicons name="document-text" size={24} color={colors.primary} />
+              <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
             </View>
             <View style={styles.headerTextContainer}>
               <Text style={[styles.title, { color: colors.text }]} numberOfLines={2}>
                 {task.title}
               </Text>
               <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-                Mission Brief  ·  {task.points} PTS
+                Task details  ·  {task.points} pts
               </Text>
             </View>
             <TouchableOpacity onPress={onClose} style={[styles.closeBtn, { backgroundColor: closeBtnBg }]}>
@@ -62,7 +62,7 @@ export default function MissionBriefModal({ visible, task, onClose, onAcceptMiss
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: colors.textTertiary }]}>DESCRIPTION</Text>
               <Text style={[styles.bodyText, { color: colors.text }]}>
-                {task.description || 'No specific mission details provided. Prepare for the unknown.'}
+                {task.description || 'No specific details provided.'}
               </Text>
             </View>
 
@@ -70,7 +70,7 @@ export default function MissionBriefModal({ visible, task, onClose, onAcceptMiss
 
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: colors.textTertiary }]}>
-                OPERATIVES ({task.participants?.length || 0})
+                MEMBERS ({task.participants?.length || 0})
               </Text>
               {task.participants && task.participants.length > 0 ? (
                 <View style={styles.participantsRow}>
@@ -95,7 +95,7 @@ export default function MissionBriefModal({ visible, task, onClose, onAcceptMiss
                 </View>
               ) : (
                 <Text style={[styles.bodyText, { color: colors.textTertiary, fontStyle: 'italic' }]}>
-                  No operatives have joined this mission yet. Be the first.
+                  No members have joined this task yet. Be the first.
                 </Text>
               )}
             </View>
@@ -108,8 +108,8 @@ export default function MissionBriefModal({ visible, task, onClose, onAcceptMiss
               onPress={() => onAcceptMission(task)}
               activeOpacity={0.8}
             >
-              <Ionicons name="shield-checkmark" size={18} color="#fff" />
-              <Text style={styles.acceptBtnText}>Accept Mission</Text>
+              <Ionicons name="play" size={16} color="#fff" />
+              <Text style={styles.acceptBtnText}>Join Task</Text>
             </TouchableOpacity>
           </View>
         </Animated.View>

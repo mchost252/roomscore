@@ -1,8 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, FlatList,
+  View, Text, TouchableOpacity, FlatList,
   StyleSheet, Platform, KeyboardAvoidingView, Image,
-  Animated, ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,6 +12,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useTacticalCommander, getMessageText } from '../../hooks/ai/useTacticalCommander';
 import { UIMessage } from '@ai-sdk/react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import MessageInput from '../../components/messaging/MessageInput';
+import TypingIndicator from '../../components/messaging/TypingIndicator';
 
 const HISTORY_KEY = '@krios:chatHistory_v2'; // New key for Groq history
 
@@ -41,30 +42,6 @@ function useT() {
     grad:    gradients.background.colors as readonly [string, string, ...string[]],
     success: colors.status.success,
   };
-}
-
-// ── Typing dots ───────────────────────────────────────────────────────────────
-function TypingDots({ color }: { color: string }) {
-  const dots = [useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current];
-  useEffect(() => {
-    const anims = dots.map((d, i) =>
-      Animated.loop(Animated.sequence([
-        Animated.delay(i * 150),
-        Animated.timing(d, { toValue: -5, duration: 250, useNativeDriver: true }),
-        Animated.timing(d, { toValue: 0, duration: 250, useNativeDriver: true }),
-        Animated.delay(500),
-      ]))
-    );
-    anims.forEach(a => a.start());
-    return () => anims.forEach(a => a.stop());
-  }, []);
-  return (
-    <View style={{ flexDirection: 'row', gap: 5, alignItems: 'center', paddingVertical: 6 }}>
-      {dots.map((d, i) => (
-        <Animated.View key={i} style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: color, opacity: 0.75, transform: [{ translateY: d }] }} />
-      ))}
-    </View>
-  );
 }
 
 // ── Quick replies ─────────────────────────────────────────────────────────────
@@ -238,14 +215,7 @@ export default function AIChatScreen() {
         maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
         onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         ListFooterComponent={isCommanderWaiting ? (
-          <View style={[styles.row, styles.rowLeft]}>
-            <View style={[styles.avatarSmall, { backgroundColor: t.primary }]}>
-              <Image source={require('../../assets/krios-logo.png')} style={{ width: 14, height: 14 }} resizeMode="contain" />
-            </View>
-            <View style={[styles.bubble, { backgroundColor: t.isDark ? '#2A2A35' : '#F0F0F5', borderColor: 'transparent', borderBottomLeftRadius: 4 }]}>
-              <TypingDots color={t.textSub} />
-            </View>
-          </View>
+          <TypingIndicator isDark={t.isDark} visible={true} username="Krios" />
         ) : null}
       />
 
@@ -274,34 +244,14 @@ export default function AIChatScreen() {
         borderTopColor: t.border,
         paddingBottom: Math.max(insets.bottom, 12),
       }]}>
-          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
-            <TextInput
-              style={[styles.input, {
-                backgroundColor: `rgba(${t.surfRgb},0.6)`,
-                borderColor: t.border,
-                color: t.text,
-                flex: 1,
-              }]}
-              value={commanderInput}
-              onChangeText={updateCommanderInput}
-              placeholder="Message Krios..."
-              placeholderTextColor={t.textSub}
-              autoCapitalize="none"
-              multiline
-              maxLength={600}
-            />
-            <TouchableOpacity
-              onPress={() => sendCommanderCommand()}
-              disabled={isCommanderLoading || !commanderInput.trim()}
-              style={[styles.sendBtn, { backgroundColor: commanderInput.trim() && !isCommanderLoading ? t.primary : t.border }]}
-            >
-              {isCommanderLoading
-                ? <ActivityIndicator size={14} color={t.textSub} />
-                : <Ionicons name="send" size={15} color={commanderInput.trim() ? '#fff' : t.textSub} />
-              }
-            </TouchableOpacity>
-          </View>
-        </View>
+        <MessageInput
+          value={commanderInput}
+          onChangeText={updateCommanderInput}
+          onSend={() => sendCommanderCommand()}
+          placeholder="Message Krios..."
+          disabled={isCommanderLoading}
+        />
+      </View>
 
       {commanderError && (
         <View style={styles.errorBanner}>
@@ -330,8 +280,6 @@ const styles = StyleSheet.create({
   quickRow:      { paddingHorizontal: 16, paddingVertical: 8, gap: 8, height: 50 },
   chip:          { borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, paddingVertical: 7, height: 34 },
   inputBar:      { borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16, paddingTop: 12 },
-  input:         { borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16, paddingVertical: 10, fontSize: 14, maxHeight: 100 },
-  sendBtn:       { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
   toolBadge: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -247,7 +247,8 @@ class AITaskParser {
       taskType = 'daily';
       title = title.replace(/\s*(every day|daily)\s*/gi, '').trim();
     } else if (/every week|weekly/i.test(title)) {
-      taskType = 'weekly';
+      // Weekly is legacy; preserve the task while using the supported daily mode.
+      taskType = 'daily';
       title = title.replace(/\s*(every week|weekly)\s*/gi, '').trim();
     }
 
