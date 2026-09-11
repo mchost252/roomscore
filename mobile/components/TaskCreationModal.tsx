@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import type { Task } from '../types/room';
+import KriosDatePicker from './KriosDatePicker';
 
 interface TaskCreationModalProps {
   visible: boolean;
@@ -45,6 +46,7 @@ export function TaskCreationModal({
   const [taskType, setTaskType] = useState<'daily' | 'one-time' | 'custom'>('daily');
   const [taskDays, setTaskDays] = useState<number[]>([]);
   const [dueDate, setDueDate] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [hasThread, setHasThread] = useState(false);
   const [errorText, setErrorText] = useState('');
 
@@ -55,8 +57,11 @@ export function TaskCreationModal({
       setPoints(String(taskData.points ?? 10));
       setTaskType(taskData.taskType === 'weekly' ? 'daily' : ((taskData.taskType as any) || 'daily'));
       setDueDate(taskData.dueDate ? String(taskData.dueDate).slice(0, 10) : '');
+      setShowDatePicker(false);
       setHasThread(taskData.hasThread ?? false);
       setErrorText('');
+      setDueDate('');
+      setShowDatePicker(false);
       
       // Parse days of week if stored as comma separated string
       if (taskData.daysOfWeek) {
@@ -110,7 +115,7 @@ export function TaskCreationModal({
       return;
     }
     if (taskType === 'one-time' && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
-      setErrorText('Enter a date as YYYY-MM-DD for a one-time task.');
+      setErrorText('Choose a date for this one-time task.');
       return;
     }
 
@@ -250,9 +255,22 @@ export function TaskCreationModal({
             )}
             {taskType === 'one-time' && (
               <>
-                <Text style={[styles.label, { color: colors.textSecondary }]}>Date (YYYY-MM-DD)</Text>
-                <TextInput value={dueDate} onChangeText={setDueDate} placeholder="2026-09-02" placeholderTextColor={colors.placeholder}
-                  style={[styles.input, { color: colors.text, borderColor: colors.borderColor, backgroundColor: colors.inputBg }]} />
+                <Text style={[styles.label, { color: colors.textSecondary }]}>Due date</Text>
+                <TouchableOpacity
+                  style={[styles.dateButton, { borderColor: colors.borderColor, backgroundColor: colors.inputBg }]}
+                  onPress={() => setShowDatePicker(true)}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="calendar-outline" size={20} color={colors.primary} />
+                  <Text style={[styles.dateButtonText, { color: dueDate ? colors.text : colors.placeholder }]}>
+                    {dueDate
+                      ? new Date(`${dueDate}T12:00:00`).toLocaleDateString(undefined, {
+                        weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+                      })
+                      : 'Choose the day'}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                </TouchableOpacity>
               </>
             )}
 
@@ -329,6 +347,21 @@ export function TaskCreationModal({
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
+      <KriosDatePicker
+        visible={showDatePicker}
+        initialDate={dueDate ? new Date(`${dueDate}T12:00:00`) : new Date()}
+        showDate
+        timeDisabled
+        onCancel={() => setShowDatePicker(false)}
+        onConfirm={(date) => {
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          setDueDate(`${year}-${month}-${day}`);
+          setShowDatePicker(false);
+          setErrorText('');
+        }}
+      />
     </Modal>
   );
 }
@@ -378,6 +411,16 @@ const styles = StyleSheet.create({
   durationRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   durationChip: { flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   durationChipText: { fontSize: 12, fontWeight: '800' },
+  dateButton: {
+    minHeight: 52,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  dateButtonText: { flex: 1, fontSize: 16 },
   daysRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
   dayBtn: { width: 38, height: 38, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   dayBtnText: { fontSize: 14, fontWeight: '800' },

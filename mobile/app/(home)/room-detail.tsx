@@ -754,7 +754,13 @@ const RoomDetailScreen: React.FC = () => {
         taskData={selectedTask}
       />
 
-      <RoomOnboardingModal visible={showOnboarding} tasks={tasks} onComplete={handleOnboardingComplete} />
+      <RoomOnboardingModal
+        visible={showOnboarding}
+        room={room}
+        members={members}
+        tasks={tasks}
+        onComplete={handleOnboardingComplete}
+      />
 
       <RoomSettingsModal
         visible={showSettingsModal}
