@@ -35,6 +35,7 @@ exports.protect = async (req, res, next) => {
           streak: true,
           longestStreak: true,
           totalTasksCompleted: true,
+          xp: true,
           lastActive: true,
           createdAt: true,
           updatedAt: true

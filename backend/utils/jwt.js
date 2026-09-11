@@ -40,6 +40,7 @@ const toPublicProfile = (user) => ({
   streak: user.streak,
   longestStreak: user.longestStreak,
   totalTasksCompleted: user.totalTasksCompleted,
+  xp: user.xp || 0,
   createdAt: user.createdAt
 });
 

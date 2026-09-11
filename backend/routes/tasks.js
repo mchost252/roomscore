@@ -6,6 +6,7 @@ const PushNotificationService = require('../services/pushNotificationService');
 const { protect, isRoomMember, isRoomAdmin } = require('../middleware/auth');
 const { validate, createTaskSchema, updateTaskSchema } = require('../middleware/validation');
 const logger = require('../utils/logger');
+const { calculateTaskXp } = require('../utils/xp');
 const cloudinaryService = require('../services/cloudinaryService');
 const { evaluateAndUnlock } = require('../services/trophyService');
 
@@ -399,6 +400,7 @@ router.post('/:roomId/tasks/:taskId/complete', protect, isRoomMember, async (req
       where: { id: req.user.id },
       data: {
         totalTasksCompleted: { increment: 1 },
+        xp: { increment: calculateTaskXp(task.points, task.priority) },
         lastActive: new Date()
       }
     });

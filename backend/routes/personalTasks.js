@@ -4,6 +4,7 @@ const { protect } = require('../middleware/auth');
 const { prisma } = require('../config/database');
 const { evaluateAndUnlock } = require('../services/trophyService');
 const logger = require('../utils/logger');
+const { calculateTaskXp } = require('../utils/xp');
 
 function fireTrophyCheck(userId) {
   if (!userId) return;
@@ -167,9 +168,8 @@ router.post('/:taskId/complete', protect, async (req, res, next) => {
     await prisma.user.update({
       where: { id: req.user.id },
       data: {
-        totalTasksCompleted: {
-          increment: 1
-        }
+        totalTasksCompleted: { increment: 1 },
+        xp: { increment: calculateTaskXp(task.points, task.priority) }
       }
     });
 

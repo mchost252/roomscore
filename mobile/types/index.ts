@@ -53,6 +53,7 @@ export interface UserProfile {
   createdAt?: string;
   timezone?: string;
   totalTasksCompleted?: number;
+  xp?: number;
   streak?: number;
   longestStreak?: number;
   /** In-memory only — sockets may read when attached by auth layer */
@@ -336,4 +337,3 @@ export interface TaskProof {
   status: 'pending' | 'approved' | 'rejected';
   challengeExpiresAt: number;
 }
-

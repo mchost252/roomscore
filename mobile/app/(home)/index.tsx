@@ -174,6 +174,7 @@ export default function HomeScreen() {
     return { pendingCount: pending, ongoingCount: ongoing, upcomingCount: upcoming, dueCount: due, done: completed };
   }, [tasks]);
   const earnedXp = useMemo(() => {
+    if (typeof user?.xp === 'number') return user.xp;
     const priorityMultiplier: Record<string, number> = { low: 1, medium: 1.25, high: 1.5, urgent: 2 };
     const taskXp = done.reduce((total, task) => {
       const base = task.points || 10;
@@ -250,7 +251,7 @@ export default function HomeScreen() {
   const [statsExpanded, setStatsExpanded] = useState(false);
   const [showHomeGuide, setShowHomeGuide] = useState(false);
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
-  const [recentNotifications, setRecentNotifications] = useState<Array<{ id: string; title?: string; body?: string; createdAt?: string }>>([]);
+  const [recentNotifications, setRecentNotifications] = useState<Array<{ id: string; type?: string; title?: string; message?: string; body?: string; data?: Record<string, unknown>; createdAt?: string }>>([]);
   const notificationPanelAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -279,6 +280,31 @@ export default function HomeScreen() {
       }
     }
   }, [notificationPanelAnim, notificationPanelOpen]);
+
+  const openNotification = useCallback(async (item: { id: string; type?: string; data?: Record<string, unknown> }) => {
+    setNotificationPanelOpen(false);
+    notificationPanelAnim.setValue(0);
+    await api.put(`/notifications/${item.id}/read`).catch(error => {
+      console.warn('[HomeScreen] Could not mark notification read:', error);
+    });
+    const data = item.data || {};
+    if (item.type === 'task_reminder' || item.type === 'task_completed' || item.type === 'task_approved') {
+      const taskId = typeof data.taskId === 'string' ? data.taskId : undefined;
+      if (taskId) {
+        router.push({ pathname: '/(home)/task-thread', params: { taskId } });
+        return;
+      }
+    }
+    if (item.type?.startsWith('room_') && typeof data.roomId === 'string') {
+      router.push({ pathname: '/(home)/room-detail', params: { roomId: data.roomId } });
+      return;
+    }
+    if (item.type === 'direct_message' && typeof data.conversationId === 'string') {
+      router.push({ pathname: '/(home)/chat', params: { conversationId: data.conversationId } });
+      return;
+    }
+    router.push('/(home)/notifications');
+  }, [notificationPanelAnim, router]);
   const [newTaskDue, setNewTaskDue]         = useState<Date>(today);
   const [newTaskTime, setNewTaskTime]       = useState<string>('09:00');
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -1062,13 +1088,13 @@ export default function HomeScreen() {
           <TouchableOpacity onPress={() => toggleNotificationPanel()}><Ionicons name="close" size={18} color={t.textSub}/></TouchableOpacity>
         </View>
         {recentNotifications.length === 0 ? <Text style={{ color: t.textSub, fontSize: 13, paddingVertical: 16 }}>You’re all caught up.</Text> : recentNotifications.map(item => (
-          <View key={item.id} style={s.notificationRow}>
+          <TouchableOpacity key={item.id} onPress={() => openNotification(item)} style={s.notificationRow}>
             <Ionicons name="notifications-outline" size={17} color={t.primary}/>
             <View style={{ flex: 1 }}>
               <Text style={{ color: t.text, fontSize: 13, fontWeight: '700' }} numberOfLines={1}>{item.title || 'Notification'}</Text>
-              <Text style={{ color: t.textSub, fontSize: 12, marginTop: 2 }} numberOfLines={1}>{item.body || 'You have a new update.'}</Text>
+              <Text style={{ color: t.textSub, fontSize: 12, marginTop: 2 }} numberOfLines={1}>{item.message || item.body || 'You have a new update.'}</Text>
             </View>
-          </View>
+          </TouchableOpacity>
         ))}
         <TouchableOpacity onPress={() => router.push('/(home)/notifications')} style={[s.viewAllButton, { borderTopColor: t.border }]}>
           <Text style={{ color: t.primary, fontSize: 13, fontWeight: '800' }}>View all</Text>

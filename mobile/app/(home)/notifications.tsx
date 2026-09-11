@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { useTheme } from '../../context/ThemeContext';
 import api from '../../services/api';
 
-type NotificationItem = { id: string; title?: string; body?: string; createdAt?: string; read?: boolean };
+type NotificationItem = { id: string; type?: string; title?: string; message?: string; body?: string; data?: Record<string, unknown>; createdAt?: string; read?: boolean };
 
 export default function NotificationsScreen() {
   const router = useRouter();
@@ -16,6 +16,18 @@ export default function NotificationsScreen() {
     const response = await api.get('/notifications?limit=50');
     setItems(response.data?.notifications || []);
   }, []);
+
+  const openNotification = useCallback(async (item: NotificationItem) => {
+    await api.put(`/notifications/${item.id}/read`).catch(error => console.warn('[NotificationsScreen] Read update failed:', error));
+    const data = item.data || {};
+    if ((item.type === 'task_reminder' || item.type === 'task_completed' || item.type === 'task_approved') && typeof data.taskId === 'string') {
+      router.push({ pathname: '/(home)/task-thread', params: { taskId: data.taskId } });
+    } else if (item.type?.startsWith('room_') && typeof data.roomId === 'string') {
+      router.push({ pathname: '/(home)/room-detail', params: { roomId: data.roomId } });
+    } else if (item.type === 'direct_message' && typeof data.conversationId === 'string') {
+      router.push({ pathname: '/(home)/chat', params: { conversationId: data.conversationId } });
+    }
+  }, [router]);
 
   useEffect(() => { load().catch(error => console.warn('[NotificationsScreen] Load failed:', error)); }, [load]);
 
@@ -31,13 +43,13 @@ export default function NotificationsScreen() {
         keyExtractor={item => item.id}
         contentContainerStyle={items.length === 0 ? styles.empty : styles.list}
         renderItem={({ item }) => (
-          <View style={[styles.row, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#fff', borderColor: colors.border.primary }]}>
+          <TouchableOpacity onPress={() => openNotification(item)} style={[styles.row, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#fff', borderColor: colors.border.primary }]}>
             <View style={[styles.icon, { backgroundColor: 'rgba(99,102,241,0.12)' }]}><Ionicons name="notifications-outline" size={18} color={colors.primary} /></View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.itemTitle, { color: colors.text }]}>{item.title || 'Notification'}</Text>
-              <Text style={[styles.body, { color: colors.textSecondary }]}>{item.body || 'You have a new update.'}</Text>
+              <Text style={[styles.body, { color: colors.textSecondary }]}>{item.message || item.body || 'You have a new update.'}</Text>
             </View>
-          </View>
+          </TouchableOpacity>
         )}
         ListEmptyComponent={<Text style={[styles.emptyText, { color: colors.textSecondary }]}>You’re all caught up.</Text>}
       />
