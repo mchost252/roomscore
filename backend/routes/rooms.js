@@ -251,6 +251,12 @@ router.get('/', protect, async (req, res, next) => {
     // Add isCompleted status to each task in each room
     const roomsWithTaskStatus = rooms.map(room => {
       const formatted = formatRoomResponse(room);
+      const membership = room.members.find(member => member.userId === req.user.id);
+      formatted.userRole = room.ownerId === req.user.id
+        ? 'owner'
+        : membership?.status === 'pending'
+          ? 'pending'
+          : membership?.role || 'member';
       formatted.tasks = formatted.tasks.map(task => ({
         ...task,
         isCompleted: completedTaskIds.has(task.id)

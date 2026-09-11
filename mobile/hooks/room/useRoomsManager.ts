@@ -99,7 +99,7 @@ export function useRoomsManager() {
       if (response.data.pending) {
         setSuccess(response.data.message || 'Request sent! Waiting for owner approval.');
         setTimeout(() => setSuccess(null), 4000);
-        markRoomJoined(room);
+        markRoomJoined({ ...room, userRole: 'pending' });
         hookRefresh();
         return;
       }

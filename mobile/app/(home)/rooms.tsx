@@ -185,6 +185,10 @@ export default function RoomsScreen() {
       manager.handleJoinPublicRoom(room);
       return;
     }
+    if (room.userRole === 'pending') {
+      manager.setSuccess("Your request is waiting for the room owner's approval.");
+      return;
+    }
     router.push({ pathname: '/(home)/room-detail', params: { roomId: room.id } });
   }, [manager, router]);
 
