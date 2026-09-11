@@ -1051,7 +1051,7 @@ export default function HomeScreen() {
             <Ionicons name="flame" size={16} color="#f59e0b"/>
             <Text style={{fontSize:13,fontWeight:'800',color:t.text}}>{user?.streak ?? 0}</Text>
           </View>
-          <TouchableOpacity onPress={()=>router.push('/(home)/settings')} style={[s.iconBtn,{backgroundColor:`rgba(${t.surfRgb},0.7)`,borderColor:t.border,marginLeft:8}]}>
+          <TouchableOpacity onPress={toggleNotificationPanel} style={[s.iconBtn,{backgroundColor:`rgba(${t.surfRgb},0.7)`,borderColor:t.border,marginLeft:8}]}>
             <Ionicons name="notifications-outline" size={18} color={t.textSub}/>
           </TouchableOpacity>
         </View>
