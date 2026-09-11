@@ -12,14 +12,15 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import type { RoomDetail, RoomMember, Task } from '../../types/room';
-import ConfettiCelebration from '../ConfettiCelebration';
 
 interface RoomOnboardingModalProps {
   visible: boolean;
   room?: RoomDetail | null;
   members: RoomMember[];
   tasks: Task[];
+  currentUserId?: string;
   onComplete: (selectedTaskIds: string[]) => void;
+  onSkip?: () => void;
 }
 
 const STEPS = [
@@ -35,15 +36,20 @@ export default function RoomOnboardingModal({
   room,
   members,
   tasks,
+  currentUserId,
   onComplete,
+  onSkip,
 }: RoomOnboardingModalProps) {
   const { colors, isDark } = useTheme();
   const [step, setStep] = useState(0);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [celebrating, setCelebrating] = useState(false);
   const [roomImageFailed, setRoomImageFailed] = useState(false);
 
   const activeMembers = useMemo(() => members.filter(member => member.isOnline).length, [members]);
+  const visibleMembers = useMemo(
+    () => members.filter(member => member.userId !== currentUserId).slice(0, 4),
+    [members, currentUserId],
+  );
   const selectedCount = selectedIds.size;
   const cardBg = isDark ? '#11111f' : '#ffffff';
   const panelBg = isDark ? 'rgba(255,255,255,0.055)' : 'rgba(99,102,241,0.055)';
@@ -63,12 +69,17 @@ export default function RoomOnboardingModal({
     onComplete(Array.from(selectedIds));
     setStep(0);
     setSelectedIds(new Set());
-    setCelebrating(false);
+  };
+
+  const skip = () => {
+    onSkip?.();
+    setStep(0);
+    setSelectedIds(new Set());
   };
 
   const next = () => {
     if (step === STEPS.length - 1) {
-      setCelebrating(true);
+      finish();
       return;
     }
     setStep(current => current + 1);
@@ -79,13 +90,13 @@ export default function RoomOnboardingModal({
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={finish}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={skip}>
       <View style={[styles.overlay, { backgroundColor: colors.overlay }]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={finish} />
+        <Pressable style={StyleSheet.absoluteFill} onPress={skip} />
         <View style={[styles.card, { backgroundColor: cardBg, borderColor: border }]}>
           <View style={styles.topRow}>
             <Text style={[styles.stepCount, { color: muted }]}>Step {step + 1} of {STEPS.length}</Text>
-            <TouchableOpacity onPress={finish} hitSlop={12} accessibilityLabel="Skip room introduction">
+            <TouchableOpacity onPress={skip} hitSlop={12} accessibilityLabel="Skip room introduction">
               <Ionicons name="close" size={22} color={muted} />
             </TouchableOpacity>
           </View>
@@ -153,7 +164,7 @@ export default function RoomOnboardingModal({
                   See who is active, celebrate their progress, and contribute at your own pace.
                 </Text>
                 <View style={styles.memberList}>
-                  {members.slice(0, 4).map(member => (
+                  {visibleMembers.map(member => (
                     <View key={member.id} style={[styles.memberRow, { backgroundColor: panelBg, borderColor: border }]}>
                       <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
                         <Text style={styles.avatarText}>{member.username.slice(0, 1).toUpperCase()}</Text>
@@ -165,7 +176,11 @@ export default function RoomOnboardingModal({
                       <Ionicons name={member.isOnline ? 'radio-button-on' : 'radio-button-off'} size={16} color={member.isOnline ? '#22c55e' : muted} />
                     </View>
                   ))}
-                  {members.length > 4 && <Text style={[styles.moreText, { color: muted }]}>+ {members.length - 4} more members</Text>}
+                  {members.length > visibleMembers.length + (currentUserId ? 1 : 0) && (
+                    <Text style={[styles.moreText, { color: muted }]}>
+                      + {members.length - visibleMembers.length - (currentUserId ? 1 : 0)} more members
+                    </Text>
+                  )}
                 </View>
               </View>
             )}
@@ -254,11 +269,6 @@ export default function RoomOnboardingModal({
           </View>
           <Text style={[styles.footerHint, { color: muted }]}>You can revisit your mission choices anytime.</Text>
         </View>
-        <ConfettiCelebration
-          show={celebrating}
-          priority="medium"
-          onComplete={finish}
-        />
       </View>
     </Modal>
   );

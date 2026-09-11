@@ -61,6 +61,7 @@ import RoomOnboardingModal from '../../components/room-detail/RoomOnboardingModa
 import TaskCompletionModal from '../../components/TaskCompletionModal';
 import TaskCreationModal from '../../components/TaskCreationModal';
 import RoomSettingsModal from '../../components/RoomSettingsModal';
+import ConfettiCelebration from '../../components/ConfettiCelebration';
 
 import Animated, { 
   useSharedValue, 
@@ -127,6 +128,7 @@ const RoomDetailScreen: React.FC = () => {
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [leaveTask, setLeaveTask] = useState<Task | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showOnboardingConfetti, setShowOnboardingConfetti] = useState(false);
   const [showMemberHUD, setShowMemberHUD] = useState(false);
   const [showScout, setShowScout] = useState(false);
   const [activeTab, setActiveTab] = useState<'active' | 'pending' | 'spectating'>('active');
@@ -227,6 +229,7 @@ const RoomDetailScreen: React.FC = () => {
   const handleOnboardingComplete = useCallback(async (selectedTaskIds: string[]) => {
     roomStorage.set(`onboarded_${roomId}`, true);
     setShowOnboarding(false);
+    setShowOnboardingConfetti(true);
 
     if (selectedTaskIds.length === 0) return;
 
@@ -759,7 +762,17 @@ const RoomDetailScreen: React.FC = () => {
         room={room}
         members={members}
         tasks={tasks}
+        currentUserId={user?.id}
         onComplete={handleOnboardingComplete}
+        onSkip={() => {
+          roomStorage.set(`onboarded_${roomId}`, true);
+          setShowOnboarding(false);
+        }}
+      />
+      <ConfettiCelebration
+        show={showOnboardingConfetti}
+        priority="medium"
+        onComplete={() => setShowOnboardingConfetti(false)}
       />
 
       <RoomSettingsModal
