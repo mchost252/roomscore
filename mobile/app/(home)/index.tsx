@@ -27,6 +27,7 @@ import ConfettiCelebration from '../../components/ConfettiCelebration';
 import AIClarificationSheet from '../../components/AIClarificationSheet';
 import AIBlobToast from '../../components/ai/AIBlobToast';
 import { checkVagueness, ClarificationQuestion, fetchAINote } from '../../services/aiNoteService';
+import { useRoomsInstant } from '../../hooks/room/useRoomsInstant';
 
 import { secureStorage } from '../../services/storage';
 import { TOKEN_KEY } from '../../constants/config';
@@ -85,7 +86,8 @@ interface ThreadEntry {
 export default function HomeScreen() {
   const t = useT();
   const { user } = useAuth();
-  const { setTheme, isDark, theme: themeMode } = useTheme();
+  const { isDark } = useTheme();
+  const { myRooms } = useRoomsInstant();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { setOpenAIChat, setOpenAddTask } = React.useContext(HomeNavContext);
@@ -130,6 +132,10 @@ export default function HomeScreen() {
   const taskDates = useMemo(
     () => tasks.filter(t => t.dueDate).map(t => new Date(t.dueDate!)),
     [tasks]
+  );
+  const activeRoomCount = useMemo(
+    () => myRooms.filter(room => room.isActive !== false).length,
+    [myRooms],
   );
   const tasksForDate = useMemo(() => {
     if (searchQuery.trim()) {
@@ -302,7 +308,7 @@ export default function HomeScreen() {
       priority: newTaskPriority,
       taskType: newTaskType,
       daysOfWeek: newTaskType === 'custom' ? newTaskDays : undefined,
-      allDay: newTaskAllDay,
+      allDay: newTaskType === 'one-time' && newTaskAllDay,
       dueDate: due.toISOString(),
     });
     setTasks(prev=>[task,...prev]);
@@ -497,20 +503,6 @@ export default function HomeScreen() {
     return 'Good evening';
   })();
 
-  const cycleTheme = useCallback(()=>{
-    const themes: Array<'light'|'dark'|'system'> = ['light','dark','system'];
-    const idx = themes.indexOf(themeMode as any);
-    const next = themes[(idx + 1) % 3];
-    setTheme(next);
-  },[themeMode, setTheme]);
-
-  // Icon: currently dark → show sun (to switch to light), currently light → show moon (to switch to dark)
-  const themeIcon = themeMode === 'system'
-    ? 'phone-portrait-outline'
-    : isDark ? 'moon-outline' : 'sunny-outline';
-  const themeColor = themeMode === 'system'
-    ? '#64748b'
-    : isDark ? '#f59e0b' : '#6366f1';
   // ─── RENDER ────────────────────────────────────────────────────────────────
   return (
     <View style={[s.root,{backgroundColor:t.bg}]}>
@@ -696,7 +688,7 @@ export default function HomeScreen() {
         {!statsExpanded&&<View style={{flexDirection:'row',justifyContent:'space-between',paddingHorizontal:8,marginBottom:16}}>
           <Text style={{fontSize:12,color:t.textSub}}>🔥 {user?.streak ?? 0} day streak</Text>
           <Text style={{fontSize:12,color:t.textSub}}>✓ {todayCompleted} done</Text>
-          <Text style={{fontSize:12,color:t.textSub}}>✦ {user?.weekly_points ?? 0} XP this week</Text>
+          <Text style={{fontSize:12,color:t.textSub}}>✦ {user?.totalTasksCompleted ?? 0} tasks done</Text>
         </View>}
         {statsExpanded&&<View style={{flexDirection:'row',gap:10,marginBottom:14}}>
           <View style={{flex:1,padding:14,borderRadius:18,backgroundColor:`rgba(${t.surfRgb},0.72)`,borderWidth:1,borderColor:t.border}}>
@@ -712,7 +704,7 @@ export default function HomeScreen() {
           <TouchableOpacity onPress={()=>router.push('/(home)/rooms')} style={{flex:1,padding:14,borderRadius:18,backgroundColor:`rgba(${t.surfRgb},0.72)`,borderWidth:1,borderColor:t.border}}>
             <Ionicons name="people-outline" size={18} color={t.primary}/>
             <Text style={{fontSize:13,fontWeight:'800',color:t.text,marginTop:7}}>Rooms</Text>
-            <Text style={{fontSize:11,color:t.textHint,marginTop:2}}>Open hub</Text>
+            <Text style={{fontSize:11,color:t.textHint,marginTop:2}}>{activeRoomCount} active {activeRoomCount === 1 ? 'room' : 'rooms'}</Text>
           </TouchableOpacity>
         </View>}
 
@@ -1029,8 +1021,12 @@ export default function HomeScreen() {
             <Text style={[s.greeting,{color:t.textSub,fontSize:11}]}>{greeting} 👋</Text>
             <Text style={[s.userName,{color:t.text}]}>{user?.username||'Friend'}</Text>
           </View>
-          <TouchableOpacity onPress={cycleTheme} style={[s.iconBtn,{backgroundColor:`rgba(${t.surfRgb},0.7)`,borderColor:t.border}]}>
-            <Ionicons name={themeIcon as any} size={18} color={themeColor}/>
+          <View style={[s.streakHeaderBadge,{backgroundColor:`rgba(245,158,11,0.14)`,borderColor:'rgba(245,158,11,0.35)'}]}>
+            <Ionicons name="flame" size={16} color="#f59e0b"/>
+            <Text style={{fontSize:13,fontWeight:'800',color:t.text}}>{user?.streak ?? 0}</Text>
+          </View>
+          <TouchableOpacity onPress={()=>router.push('/(home)/settings')} style={[s.iconBtn,{backgroundColor:`rgba(${t.surfRgb},0.7)`,borderColor:t.border,marginLeft:8}]}>
+            <Ionicons name="notifications-outline" size={18} color={t.textSub}/>
           </TouchableOpacity>
           <TouchableOpacity onPress={()=>router.push('/(home)/settings')} style={[s.iconBtn,{backgroundColor:`rgba(${t.surfRgb},0.7)`,borderColor:t.border,marginLeft:8}]}>
             <Ionicons name="settings-outline" size={18} color={t.textSub}/>
@@ -1139,8 +1135,8 @@ export default function HomeScreen() {
               <KriosDatePicker
                 visible={showDatePicker}
                 initialDate={newTaskDue}
-                showDate={newTaskType !== 'daily'}
-                timeDisabled={newTaskAllDay}
+                showDate={newTaskType === 'one-time'}
+                timeDisabled={newTaskType === 'one-time' && newTaskAllDay}
                 onConfirm={(date)=>{
                   setNewTaskDue(date);
                   setNewTaskTime(`${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`);
@@ -1181,16 +1177,17 @@ export default function HomeScreen() {
                     })}
                   </View>
                 </View>}
-                {newTaskType !== 'daily' && <Text style={[s.addTaskLabel,{color:t.textSub}]}>DATE & TIME</Text>}
+                {newTaskType === 'one-time' && <Text style={[s.addTaskLabel,{color:t.textSub}]}>DATE & TIME</Text>}
+                {newTaskType !== 'one-time' && <Text style={[s.addTaskLabel,{color:t.textSub}]}>TIME</Text>}
                 <TouchableOpacity
                   onPress={()=>setShowDatePicker(true)}
                   style={[s.chip,{borderColor:t.primary,backgroundColor:`rgba(99,102,241,0.12)`,paddingHorizontal:14,paddingVertical:8,flexDirection:'row',alignItems:'center',gap:6}]}>
                   <Ionicons name={newTaskType === 'daily' ? 'alarm-outline' : 'calendar-outline'} size={16} color={t.primary}/>
                   <Text style={{color:t.primary,fontSize:13,fontWeight:'600'}}>
-                    {newTaskType === 'daily' ? `Every day · ${newTaskTime}` : `${newTaskDue.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})} · ${newTaskAllDay ? 'All day' : newTaskTime}`}
+                    {newTaskType === 'daily' ? `Every day · ${newTaskTime}` : newTaskType === 'custom' ? `Custom days · ${newTaskTime}` : `${newTaskDue.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})} · ${newTaskAllDay ? 'All day' : newTaskTime}`}
                   </Text>
                 </TouchableOpacity>
-                {newTaskType !== 'daily' && <TouchableOpacity onPress={()=>setNewTaskAllDay(value=>!value)} style={{flexDirection:'row',alignItems:'center',gap:10}}>
+                {newTaskType === 'one-time' && <TouchableOpacity onPress={()=>setNewTaskAllDay(value=>!value)} style={{flexDirection:'row',alignItems:'center',gap:10}}>
                   <View style={{width:22,height:22,borderRadius:7,borderWidth:1.5,borderColor:newTaskAllDay?t.primary:t.border,backgroundColor:newTaskAllDay?t.primary:'transparent',alignItems:'center',justifyContent:'center'}}>
                     {newTaskAllDay&&<Ionicons name="checkmark" size={15} color="#fff"/>}
                   </View>
@@ -1362,6 +1359,7 @@ const s = StyleSheet.create({
   avatarCircle:      { width:44, height:44, borderRadius:22, alignItems:'center', justifyContent:'center' },
   avatarInitial:     { fontSize:18, fontWeight:'800', color:'#fff' },
   iconBtn:           { width:36, height:36, borderRadius:18, alignItems:'center', justifyContent:'center', borderWidth:StyleSheet.hairlineWidth },
+  streakHeaderBadge: { height:36, minWidth:48, paddingHorizontal:10, borderRadius:18, borderWidth:1, flexDirection:'row', alignItems:'center', justifyContent:'center', gap:5 },
   calChevronRow:     { alignItems:'center', paddingVertical:8 },
   fabGrad:           { flex:1, alignItems:'center', justifyContent:'center', borderRadius:29 },
 
