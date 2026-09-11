@@ -18,11 +18,20 @@ exports.protect = async (req, res, next) => {
       });
     }
 
+    let decoded;
     try {
-      // Verify token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      
-      // Get user from token (exclude password)
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({
+        success: false,
+        message: 'Not authorized to access this route'
+      });
+    }
+
+    // Keep database failures distinct from invalid credentials. Returning 401
+    // for a schema or connection error makes every protected route look like
+    // an expired session and hides the real backend failure.
+    try {
       const user = await prisma.user.findUnique({
         where: { id: decoded.id },
         select: {
@@ -51,11 +60,8 @@ exports.protect = async (req, res, next) => {
 
       req.user = user;
       next();
-    } catch (err) {
-      return res.status(401).json({
-        success: false,
-        message: 'Not authorized to access this route'
-      });
+    } catch (error) {
+      next(error);
     }
   } catch (error) {
     next(error);
