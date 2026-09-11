@@ -98,8 +98,8 @@ export function useRoomsInstant() {
   const lastFetchedAt = useRef(0);
 
   // Step 2: Background API fetch
-  const fetchFromAPI = useCallback(async (silent = false) => {
-    if (Date.now() - lastFetchedAt.current < ROOMS_LIST_TTL) {
+  const fetchFromAPI = useCallback(async (silent = false, force = false) => {
+    if (!force && Date.now() - lastFetchedAt.current < ROOMS_LIST_TTL) {
       setLoading(false);
       return;
     }
@@ -186,7 +186,7 @@ export function useRoomsInstant() {
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchFromAPI(true);
+    await fetchFromAPI(true, true);
   }, [fetchFromAPI]);
 
   // Optimistic add after creating a room

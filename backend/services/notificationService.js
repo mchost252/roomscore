@@ -171,7 +171,10 @@ class NotificationService {
         type,
         title,
         message,
-        data: data || null,
+        data: {
+          ...(data || {}),
+          ...(roomId ? { roomId } : {}),
+        },
         category: metadata.category,
         priority: metadata.priority,
         dedupeKey: resolvedDedupeKey,

@@ -492,7 +492,7 @@ router.delete('/:id', protect, isRoomOwner, async (req, res, next) => {
 router.post('/join', protect, validate(joinRoomSchema), async (req, res, next) => {
   try {
     const normalizedJoinCode = typeof req.body.joinCode === 'string'
-      ? req.body.joinCode.replace(/[\s-]/g, '').toUpperCase()
+      ? req.body.joinCode.trim().toUpperCase()
       : '';
 
     if (!normalizedJoinCode) {

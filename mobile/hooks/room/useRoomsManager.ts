@@ -47,7 +47,7 @@ export function useRoomsManager() {
       setError(null);
 
       const response = await api.post('/rooms/join', {
-        joinCode: joinCode.replace(/[\s-]/g, '').toUpperCase(),
+        joinCode: joinCode.trim().toUpperCase(),
       });
 
       setJoinCode('');
@@ -55,6 +55,7 @@ export function useRoomsManager() {
       if (response.data.pending) {
         setSuccess(response.data.message || 'Request sent! Waiting for owner approval.');
         setTimeout(() => setSuccess(null), 4000);
+        await hookRefresh();
         return;
       }
 
@@ -74,7 +75,7 @@ export function useRoomsManager() {
     } finally {
       setJoiningRoom(false);
     }
-  }, [joinCode, router]);
+  }, [joinCode, router, hookRefresh]);
 
   const handleJoinPublicRoom = useCallback(async (room: RoomDetail) => {
     try {
