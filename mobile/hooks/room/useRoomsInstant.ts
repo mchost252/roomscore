@@ -207,6 +207,16 @@ export function useRoomsInstant() {
     });
   }, []);
 
+  const markRoomJoined = useCallback((room: RoomDetail) => {
+    setPublicRooms(prev => prev.filter(item => item.id !== room.id));
+    setMyRooms(prev => {
+      const next = [room, ...prev.filter(item => item.id !== room.id)];
+      cacheRoomsList(next);
+      return next;
+    });
+    syncEngine.joinRooms([room.id]);
+  }, []);
+
   // Real-time synchronization via the app-level socket.
   useEffect(() => {
     const onRoomDeleted = (data: any) => {
@@ -286,5 +296,6 @@ export function useRoomsInstant() {
     refresh,
     addRoom,
     removeRoom,
+    markRoomJoined,
   };
 }

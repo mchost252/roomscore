@@ -16,6 +16,7 @@ export function useRoomsManager() {
     refreshing,
     error: hookError,
     refresh: hookRefresh,
+    markRoomJoined,
   } = useRoomsInstant();
 
   const [activeTab, setActiveTab] = useState<TabType>('my-rooms');
@@ -61,6 +62,13 @@ export function useRoomsManager() {
 
       setSuccess('Successfully joined room!');
       setTimeout(() => setSuccess(null), 3000);
+      if (response.data.room) {
+        const joinedRoom = {
+          ...response.data.room,
+          id: response.data.room._id || response.data.room.id,
+        } as RoomDetail;
+        markRoomJoined(joinedRoom);
+      }
 
       setTimeout(() => {
         router.push({
@@ -75,7 +83,7 @@ export function useRoomsManager() {
     } finally {
       setJoiningRoom(false);
     }
-  }, [joinCode, router, hookRefresh]);
+  }, [joinCode, router, hookRefresh, markRoomJoined]);
 
   const handleJoinPublicRoom = useCallback(async (room: RoomDetail) => {
     try {
@@ -90,24 +98,29 @@ export function useRoomsManager() {
       if (response.data.pending) {
         setSuccess(response.data.message || 'Request sent! Waiting for owner approval.');
         setTimeout(() => setSuccess(null), 4000);
+        markRoomJoined(room);
         hookRefresh();
         return;
       }
 
       setSuccess('Successfully joined room!');
       setTimeout(() => setSuccess(null), 3000);
+      const joinedRoom = response.data.room
+        ? { ...room, ...response.data.room, id: response.data.room._id || response.data.room.id || room.id }
+        : room;
+      markRoomJoined(joinedRoom);
       await hookRefresh();
 
       router.push({
         pathname: '/(home)/room-detail',
-        params: { roomId: response.data.room._id || response.data.room.id },
+        params: { roomId: joinedRoom.id },
       });
     } catch (err: any) {
       console.error('Error joining room:', err);
       setError(err.response?.data?.message || err.message || 'Failed to join room');
       setTimeout(() => setError(null), 5000);
     }
-  }, [router, hookRefresh]);
+  }, [router, hookRefresh, markRoomJoined]);
 
   const filteredMyRooms = useMemo(() => myRooms.filter(room => {
     const isExpired = room.endDate && new Date() > new Date(room.endDate);
