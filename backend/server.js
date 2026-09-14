@@ -171,6 +171,16 @@ connectDatabase()
         logger.info('✅ Ensured User.coverImage exists');
 
         await prisma.$executeRawUnsafe(
+          'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "notificationPreferences" TEXT;'
+        );
+        logger.info('✅ Ensured User.notificationPreferences exists');
+
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "xp" INTEGER NOT NULL DEFAULT 0;'
+        );
+        logger.info('✅ Ensured User.xp exists');
+
+        await prisma.$executeRawUnsafe(
           'ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "chatRetentionDays" INTEGER NOT NULL DEFAULT 5;'
         );
         logger.info('✅ Ensured Room.chatRetentionDays exists');
