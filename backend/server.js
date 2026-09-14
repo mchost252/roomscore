@@ -166,6 +166,11 @@ connectDatabase()
     if (!isSQLite) {
       try {
         await prisma.$executeRawUnsafe(
+          'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "coverImage" TEXT;'
+        );
+        logger.info('✅ Ensured User.coverImage exists');
+
+        await prisma.$executeRawUnsafe(
           'ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "chatRetentionDays" INTEGER NOT NULL DEFAULT 5;'
         );
         logger.info('✅ Ensured Room.chatRetentionDays exists');
