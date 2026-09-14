@@ -218,9 +218,40 @@ connectDatabase()
         logger.info('✅ Ensured Notification compatibility columns exist');
 
         await prisma.$executeRawUnsafe(
+          'ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "requireApproval" BOOLEAN NOT NULL DEFAULT false;'
+        );
+        await prisma.$executeRawUnsafe(
           'ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "chatRetentionDays" INTEGER NOT NULL DEFAULT 5;'
         );
-        logger.info('✅ Ensured Room.chatRetentionDays exists');
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "isPremium" BOOLEAN NOT NULL DEFAULT false;'
+        );
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "premiumActivatedAt" TIMESTAMP(3);'
+        );
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "coverImage" TEXT;'
+        );
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "roomDp" TEXT;'
+        );
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "showJoinCode" BOOLEAN NOT NULL DEFAULT false;'
+        );
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "RoomTask" ADD COLUMN IF NOT EXISTS "daysOfWeek" TEXT;'
+        );
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "RoomTask" ADD COLUMN IF NOT EXISTS "dueDate" TIMESTAMP(3);'
+        );
+        logger.info('✅ Ensured Room and RoomTask compatibility columns exist');
+
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "RoomTask" ADD COLUMN IF NOT EXISTS "hasThread" BOOLEAN NOT NULL DEFAULT false;'
+        );
+        await prisma.$executeRawUnsafe(
+          `ALTER TABLE "RoomTask" ADD COLUMN IF NOT EXISTS "status" TEXT NOT NULL DEFAULT 'upcoming';`
+        );
       } catch (e) {
         logger.warn('⚠️ Could not ensure chatRetentionDays column:', e.message);
       }
