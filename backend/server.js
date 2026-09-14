@@ -195,6 +195,59 @@ connectDatabase()
         logger.info('✅ Ensured DirectMessage compatibility columns exist');
 
         await prisma.$executeRawUnsafe(
+          'ALTER TABLE "ChatMessage" ADD COLUMN IF NOT EXISTS "replyToId" TEXT;'
+        );
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "ChatMessage" ADD COLUMN IF NOT EXISTS "replyToText" TEXT;'
+        );
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "ChatMessage" ADD COLUMN IF NOT EXISTS "reactions" JSONB;'
+        );
+        logger.info('✅ Ensured ChatMessage compatibility columns exist');
+
+        await prisma.$executeRawUnsafe(`
+          CREATE TABLE IF NOT EXISTS "ConversationPreference" (
+            "id" TEXT PRIMARY KEY,
+            "userId" TEXT NOT NULL,
+            "friendId" TEXT NOT NULL,
+            "pinned" BOOLEAN NOT NULL DEFAULT false,
+            "muted" BOOLEAN NOT NULL DEFAULT false,
+            "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "ConversationPreference_userId_fkey"
+              FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+            CONSTRAINT "ConversationPreference_userId_friendId_key"
+              UNIQUE ("userId", "friendId")
+          );
+        `);
+        await prisma.$executeRawUnsafe(
+          'CREATE INDEX IF NOT EXISTS "ConversationPreference_userId_pinned_idx" ON "ConversationPreference"("userId", "pinned");'
+        );
+        logger.info('✅ Ensured ConversationPreference exists');
+
+        await prisma.$executeRawUnsafe(`
+          CREATE TABLE IF NOT EXISTS "UserBlock" (
+            "id" TEXT PRIMARY KEY,
+            "blockerId" TEXT NOT NULL,
+            "blockedId" TEXT NOT NULL,
+            "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "UserBlock_blockerId_blockedId_key"
+              UNIQUE ("blockerId", "blockedId"),
+            CONSTRAINT "UserBlock_blockerId_fkey"
+              FOREIGN KEY ("blockerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+            CONSTRAINT "UserBlock_blockedId_fkey"
+              FOREIGN KEY ("blockedId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE
+          );
+        `);
+        await prisma.$executeRawUnsafe(
+          'CREATE INDEX IF NOT EXISTS "UserBlock_blockerId_idx" ON "UserBlock"("blockerId");'
+        );
+        await prisma.$executeRawUnsafe(
+          'CREATE INDEX IF NOT EXISTS "UserBlock_blockedId_idx" ON "UserBlock"("blockedId");'
+        );
+        logger.info('✅ Ensured UserBlock exists');
+
+        await prisma.$executeRawUnsafe(
           'ALTER TABLE "Notification" ADD COLUMN IF NOT EXISTS "readAt" TIMESTAMP(3);'
         );
         await prisma.$executeRawUnsafe(
