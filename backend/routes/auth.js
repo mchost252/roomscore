@@ -9,6 +9,21 @@ const { sendTokenResponse, verifyRefreshToken, generateToken } = require('../uti
 const logger = require('../utils/logger');
 const cloudinaryService = require('../services/cloudinaryService');
 
+const authUserSelect = {
+  id: true,
+  email: true,
+  username: true,
+  avatar: true,
+  bio: true,
+  timezone: true,
+  onboardingCompleted: true,
+  streak: true,
+  longestStreak: true,
+  totalTasksCompleted: true,
+  xp: true,
+  createdAt: true
+};
+
 // Helper to convert user to public profile
 const toPublicProfile = (user) => ({
   id: user.id,
@@ -81,7 +96,8 @@ router.post('/login', validate(loginSchema), async (req, res, next) => {
 
     // Check for user
     let user = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() }
+      where: { email: email.toLowerCase() },
+      select: authUserSelect
     });
 
     if (!user) {
@@ -111,7 +127,8 @@ router.post('/login', validate(loginSchema), async (req, res, next) => {
     if (timezone && timezone !== user.timezone) {
       user = await prisma.user.update({
         where: { id: user.id },
-        data: { timezone }
+        data: { timezone },
+        select: authUserSelect
       });
       logger.info(`User timezone updated: ${email} -> ${timezone}`);
     }
