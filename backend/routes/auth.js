@@ -12,6 +12,7 @@ const cloudinaryService = require('../services/cloudinaryService');
 const authUserSelect = {
   id: true,
   email: true,
+  password: true,
   username: true,
   avatar: true,
   bio: true,
@@ -47,19 +48,20 @@ const toPublicProfile = (user) => ({
 router.post('/register', validate(registerSchema), async (req, res, next) => {
   try {
     const { email, password, username, timezone } = req.body;
+    const normalizedEmail = email.trim().toLowerCase();
 
     // Check if user exists
     const existingUser = await prisma.user.findFirst({
       where: {
         OR: [
-          { email: email.toLowerCase() },
+          { email: normalizedEmail },
           { username: username }
         ]
       }
     });
 
     if (existingUser) {
-      const field = existingUser.email === email.toLowerCase() ? 'email' : 'username';
+      const field = existingUser.email === normalizedEmail ? 'email' : 'username';
       return res.status(400).json({
         success: false,
         message: `User already exists with this ${field}`
@@ -73,14 +75,14 @@ router.post('/register', validate(registerSchema), async (req, res, next) => {
     // Create user with timezone from browser
     const user = await prisma.user.create({
       data: {
-        email: email.toLowerCase(),
+        email: normalizedEmail,
         password: hashedPassword,
         username,
         timezone: timezone || 'UTC'
       }
     });
 
-    logger.info(`New user registered: ${email} (timezone: ${timezone || 'UTC'})`);
+    logger.info(`New user registered: ${normalizedEmail} (timezone: ${timezone || 'UTC'})`);
     sendTokenResponse(user, 201, res);
   } catch (error) {
     next(error);
@@ -93,10 +95,11 @@ router.post('/register', validate(registerSchema), async (req, res, next) => {
 router.post('/login', validate(loginSchema), async (req, res, next) => {
   try {
     const { email, password, timezone } = req.body;
+    const normalizedEmail = email.trim().toLowerCase();
 
     // Check for user
     let user = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
+      where: { email: normalizedEmail },
       select: authUserSelect
     });
 
@@ -130,10 +133,10 @@ router.post('/login', validate(loginSchema), async (req, res, next) => {
         data: { timezone },
         select: authUserSelect
       });
-      logger.info(`User timezone updated: ${email} -> ${timezone}`);
+      logger.info(`User timezone updated: ${normalizedEmail} -> ${timezone}`);
     }
 
-    logger.info(`User logged in: ${email}`);
+    logger.info(`User logged in: ${normalizedEmail}`);
     sendTokenResponse(user, 200, res);
   } catch (error) {
     next(error);

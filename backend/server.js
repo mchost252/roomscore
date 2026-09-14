@@ -181,6 +181,43 @@ connectDatabase()
         logger.info('✅ Ensured User.xp exists');
 
         await prisma.$executeRawUnsafe(
+          'ALTER TABLE "DirectMessage" ADD COLUMN IF NOT EXISTS "deletedFor" TEXT;'
+        );
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "DirectMessage" ADD COLUMN IF NOT EXISTS "replyToId" TEXT;'
+        );
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "DirectMessage" ADD COLUMN IF NOT EXISTS "replyToText" TEXT;'
+        );
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "DirectMessage" ADD COLUMN IF NOT EXISTS "reactions" JSONB;'
+        );
+        logger.info('✅ Ensured DirectMessage compatibility columns exist');
+
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "Notification" ADD COLUMN IF NOT EXISTS "readAt" TIMESTAMP(3);'
+        );
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "Notification" ADD COLUMN IF NOT EXISTS "seenAt" TIMESTAMP(3);'
+        );
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "Notification" ADD COLUMN IF NOT EXISTS "dedupeKey" TEXT;'
+        );
+        await prisma.$executeRawUnsafe(
+          `ALTER TABLE "Notification" ADD COLUMN IF NOT EXISTS "category" TEXT NOT NULL DEFAULT 'system';`
+        );
+        await prisma.$executeRawUnsafe(
+          `ALTER TABLE "Notification" ADD COLUMN IF NOT EXISTS "priority" TEXT NOT NULL DEFAULT 'normal';`
+        );
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "Notification" ADD COLUMN IF NOT EXISTS "expiresAt" TIMESTAMP(3);'
+        );
+        await prisma.$executeRawUnsafe(
+          'ALTER TABLE "Notification" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;'
+        );
+        logger.info('✅ Ensured Notification compatibility columns exist');
+
+        await prisma.$executeRawUnsafe(
           'ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "chatRetentionDays" INTEGER NOT NULL DEFAULT 5;'
         );
         logger.info('✅ Ensured Room.chatRetentionDays exists');
